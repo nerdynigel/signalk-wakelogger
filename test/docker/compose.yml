@@ -1,0 +1,70 @@
+services:
+  cert-init:
+    build:
+      context: ../..
+      dockerfile: test/docker/cloud.Dockerfile
+    user: root
+    entrypoint: ["/bin/sh", "/app/generate-certs.sh"]
+    volumes:
+      - certificates:/certs
+    restart: "no"
+
+  mosquitto:
+    image: eclipse-mosquitto@sha256:6f8d8a947c506f8a2290ec65cd4bd2bc7cb4d43fb5f6271f861cb013e2ef9797
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    volumes:
+      - certificates:/certs:ro
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "mosquitto", "-p", "8883", "--cafile", "/certs/ca.crt", "-t", "readiness", "-m", "ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  test-cloud:
+    build:
+      context: ../..
+      dockerfile: test/docker/cloud.Dockerfile
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_healthy
+    volumes:
+      - certificates:/certs:ro
+      - cloud-data:/data
+    healthcheck:
+      test: ["CMD", "node", "/app/query.mjs", "https://test-cloud:8443/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  signalk:
+    build:
+      context: ../..
+      dockerfile: test/docker/signalk.Dockerfile
+      args:
+        SIGNALK_IMAGE: ${SIGNALK_IMAGE:-cr.signalk.io/signalk/signalk-server@sha256:e319e79a7e71ea0157f0ca3a112e2a4c8c1b57902998793001e0d89d144f7781}
+    init: true
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      test-cloud:
+        condition: service_healthy
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    volumes:
+      - certificates:/certs:ro
+      - signalk-data:/home/node/.signalk
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/signalk').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  certificates:
+  cloud-data:
+  signalk-data:

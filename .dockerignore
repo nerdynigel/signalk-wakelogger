@@ -1,0 +1,7 @@
+.git
+.github
+.docker-e2e
+coverage
+dist
+node_modules
+npm-debug.log

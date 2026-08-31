@@ -2,7 +2,11 @@
 
 Automated checks cover lifecycle startup without configuration/network, supported-path normalization, managed profiles, adaptive modes, MQTT scheduling, application acknowledgements, file/database outbox restart continuity, corrupt file-tail repair, retention gaps and sequence-safe backend selection. Accelerated release scenarios cover a 24-hour file-outbox outage with restart and partial application ACK, a three-day NORMAL/OFFLINE/CONSTRAINED sampling timeline, and conversion of the earlier telemetry-profile shape.
 
-A disposable Mosquitto 2 CI job exercises the real MQTT.js network path independently of Wake Logger infrastructure. It verifies MQTT 5/QoS 1 publication, retained current-state priority, ordered backlog delivery and removal only after an application ACK delivered through the broker. TLS certificate and scoped-ACL enforcement remain covered in the private cloud integration suite and must be repeated against the release environment.
+A disposable Mosquitto 2 CI job exercises the real MQTT.js network path independently of Wake Logger infrastructure. It verifies MQTT 5/QoS 1 publication, retained current-state priority, ordered backlog delivery and removal only after an application ACK delivered through the broker.
+
+The Docker end-to-end job builds the exact local npm tarball, installs it into a pinned official Signal K image and consumes Signal K's synthesized NMEA 2000 stream. It asserts the resulting telemetry contains position, SOG, COG, true heading, depth and both apparent-wind values. A runtime-generated two-day CA secures both the mock HTTPS pairing service and TLS-only MQTT broker; the plugin uses normal hostname and certificate verification. The mock service syncs each received event to disk before publishing its application ACK. The scenario then stops the broker, kills Signal K with `SIGKILL`, preserves the Signal K data volume, and verifies recovered sequences, current-state-before-backlog ordering and an empty queue after ACK. No test-only branch exists in plugin runtime code. Scoped broker ACL enforcement remains covered in the private cloud integration suite and must be repeated against the release environment.
+
+On 2026-09-01 the final local x64 Docker scenario acknowledged sequence 3 before the outage and sequence 17 after restart, recovering 14 samples produced during the outage. It observed current state before backlog and the final zero-message queue status. A one-shot post-recovery snapshot reported about 276 MiB for the complete Signal K container, 45 MiB for the durable mock service and 3.2 MiB for Mosquitto. These transient development-container values are smoke evidence only: they include the full server, are not a soak average, and do not replace target ARM measurements. Every run prints its own CPU, memory, network and block-I/O snapshot.
 
 On 2026-09-01 the rewritten pull-request commit passed normal CI on Node.js 20/22 and the Signal K reusable matrix on Linux x64, Linux ARM64, macOS and Windows with Node.js 22/24, plus ARMv7/Cerbo emulation on Node.js 20. The integration matrix installed, enabled and started the packaged plugin in Signal K Server latest on Node.js 22/24. This is portable package evidence, not a substitute for resource measurements on the target vessel hardware.
 
@@ -23,8 +27,8 @@ A 2026-09-01 Node.js 22 x64 accelerated production file-outbox run wrote and syn
 | Protocol application bytes | Automated 24-hour encoding model | Capture actual MQTT/TLS bytes during normal and replay traffic |
 | CPU and memory | CI regression/no leak checks | Multi-day process metrics on target ARM host |
 | Outbox disk and writes | Bounded/corruption unit tests | 24-hour offline queue growth and disk-write measurement |
-| Reconnect/replay | Deterministic scheduler and real-broker integration | Poor-link and 30-minute/24-hour outage scenarios |
-| Install/upgrade | npm package dry run and lifecycle CI | Install, version upgrade, reboot and uninstall/reinstall on target |
+| Reconnect/replay | Deterministic scheduler plus real Signal K/TLS/broker crash recovery | Poor-link and real-time 30-minute/24-hour target scenarios |
+| Install/upgrade | npm package dry run, lifecycle CI and packaged Docker install/restart | Version upgrade, reboot and uninstall/reinstall on target |
 
 Do not mark ARM or real-vessel rows complete using x64 development-host results.
 
