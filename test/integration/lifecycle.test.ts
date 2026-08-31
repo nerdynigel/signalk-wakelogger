@@ -62,7 +62,8 @@ describe('Signal K lifecycle', () => {
 })
 
 async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
     if (await predicate()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }

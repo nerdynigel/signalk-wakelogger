@@ -37,6 +37,9 @@ Wake Logger administrators maintain approved telemetry profiles. Vessel Owners a
 ```sh
 npm ci --ignore-scripts
 npm run check
+npm run test:docker
 ```
+
+The Docker test builds the exact local npm tarball and installs it in a pinned official Signal K image. It plays Signal K's sample NMEA 2000 stream through verified HTTPS pairing and TLS MQTT, then proves durable acknowledgement, current-state priority, offline buffering and recovery after an abrupt Signal K stop. All certificates, credentials, broker data and volumes are disposable and local to the test stack.
 
 See the complete [refined implementation plan](docs/implementation-plan.md), [original-plan gap audit](docs/original-plan-gap-audit.md), [validation evidence](docs/validation.md), [development](docs/development.md), [release process](docs/release.md), [architecture](docs/architecture.md), [protocol](docs/telemetry-protocol.md), [pairing](docs/pairing.md), and [trip detection](docs/trip-detection.md). Security issues should follow [SECURITY.md](SECURITY.md).
