@@ -1,0 +1,11 @@
+# Pairing and credentials
+
+The plugin POSTs `{ "code": "...", "name": "Signal K ..." }` to the configured HTTPS pairing endpoint. A valid response provides a nested device and credentials object containing device ID, required MQTT client ID, username, one-time password, host, port, TLS requirement and telemetry profile. Non-production endpoint overrides belong only in local Signal K configuration and must never be committed.
+
+The plugin accepts only HTTPS endpoints, bounded identifiers, DNS hostnames and valid TCP ports. The service should issue codes that are hashed at rest, single-use, account-authorized and expire after ten minutes. Each broker identity must be restricted to publishing its telemetry/state/status/events topics and subscribing only to its acknowledgement topic.
+
+Credentials are stored beneath `app.getDataDirPath()` with directory mode `0700` and file mode `0600`. Rotation should preserve device ID and sequence space. Device replacement creates a new device identity and revokes/disconnects the old broker client. There is no insecure TLS fallback and production credentials must never be placed in source, plugin configuration, screenshots or logs.
+
+The credential record keeps only a SHA-256 fingerprint of the last consumed pairing code. Restarting with that same single-use code does not retry pairing. Supplying a different code explicitly pairs a replacement device and atomically replaces the credential record; the raw pairing code is never copied into credential storage. Outboxes are device-scoped: a replacement starts its own sequence space while the retired device's unacknowledged files remain preserved locally and are never published under the new identity.
+
+After the first outbox opens, the credential record is atomically bound to its selected `file` or `database` backend. If credentials survive but the backend marker is later missing or disagrees, startup fails visibly instead of recreating sequence 1 for the same cloud device. A normal upgrade or reinstall with the plugin data directory preserved retains credentials, binding and sequence state. Removing the entire data directory also removes credentials and requires pairing a newly provisioned device identity; selectively restoring credentials without their bound outbox state is intentionally rejected.

@@ -1,0 +1,46 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*-beta.*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@12.0.2
+      - name: Validate beta tag and source commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node -e "const p=require('./package.json'); const expected='v'+p.version; if (!/-beta\\.[0-9]+$/.test(p.version) || process.env.RELEASE_TAG!==expected) { console.error('Tag must exactly match beta package version '+expected); process.exit(1) }"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - name: Check whether version is already published
+        id: registry
+        run: |
+          if npm view "$(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.registry.outputs.exists != 'true'
+        run: npm publish --access public --tag beta
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag --prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}

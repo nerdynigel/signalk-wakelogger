@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Wake Logger">
+  <rect width="128" height="128" rx="24" fill="#0b3558"/>
+  <path d="M17 78c14-16 28-16 42 0s28 16 52 0" fill="none" stroke="#53c8ef" stroke-width="10" stroke-linecap="round"/>
+  <path d="M22 52h84L91 72H37z" fill="#fff"/>
+  <path d="M64 19v33M64 23l25 24H64z" fill="#f5b642" stroke="#f5b642" stroke-width="5" stroke-linejoin="round"/>
+</svg>
