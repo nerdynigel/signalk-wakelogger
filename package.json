@@ -1,0 +1,79 @@
+{
+  "name": "signalk-wakelogger",
+  "version": "0.2.0-beta.0",
+  "description": "Resilient live Signal K telemetry transport for Wake Logger",
+  "license": "Apache-2.0",
+  "author": "Nigel George",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nerdynigel/signalk-wakelogger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nerdynigel/signalk-wakelogger/issues"
+  },
+  "homepage": "https://github.com/nerdynigel/signalk-wakelogger#readme",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "assets",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-cloud",
+    "signalk",
+    "marine",
+    "telemetry",
+    "mqtt"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run test/integration",
+    "test:broker": "vitest run test/integration/mqtt-broker.test.ts",
+    "test:watch": "vitest",
+    "lint": "eslint src test scripts --max-warnings=0",
+    "check:public": "node scripts/check-public-repo.mjs",
+    "measure:protocol": "node scripts/measure-protocol.mjs",
+    "measure:outbox": "npm run build && node scripts/measure-outbox.mjs",
+    "prepublishOnly": "node scripts/verify-release.mjs && npm run check",
+    "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.2"
+  },
+  "devDependencies": {
+    "@signalk/server-api": "^2.31.1",
+    "@types/node": "^20.17.30",
+    "@typescript-eslint/eslint-plugin": "^8.28.0",
+    "@typescript-eslint/parser": "^8.28.0",
+    "eslint": "^9.23.0",
+    "typescript": "^5.8.2",
+    "vitest": "^2.1.9"
+  },
+  "signalk": {
+    "displayName": "Wake Logger",
+    "appIcon": "./assets/wakelogger.svg",
+    "screenshots": [
+      "./assets/screenshots/plugin-config.svg",
+      "./assets/screenshots/plugin-status.svg"
+    ]
+  },
+  "signalk-plugin-enabled-by-default": false
+}

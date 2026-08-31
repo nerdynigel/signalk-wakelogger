@@ -1,0 +1,15 @@
+# Architecture
+
+Signal K deltas pass through a path allowlist and validation layer into a one-second normalised sample. Valid samples require position; all other fields are optional. The trip state machine adds advisory evidence, then the outbox atomically assigns `deviceId + sequence` and persists the record before the MQTT transport can observe it.
+
+Each device identity has its own outbox and sequence space, so replacing a paired device preserves but never misattributes the retired device's pending records. `OutboxStore` is the only interface used by telemetry and transport. When Signal K exposes its emerging Database API, a plugin-scoped database is preferred as a bounded write-ahead delivery buffer. The portable fallback uses 4 MiB append-only segments. Each file record is a big-endian 32-bit payload length, UTF-8 JSON payload and SHA-256 checksum. Record appends are synced; metadata is atomic and synced at segment rotation, acknowledgement, retention and orderly shutdown. Recovery derives the next sequence from valid records and truncates only an incomplete or corrupt tail. Metadata retains the acknowledgement cursor and dropped-record range/count.
+
+Backend choice is persisted per device and bound into the protected credential record after first initialization. A later startup refuses to create sequence state when that binding's marker is missing or inconsistent. A database-backed device will not silently fall back to files if the Database API later disappears because that could reuse sequences. An existing file queue is drained before a safe one-way selection of the database backend. Legacy files are retained rather than deleted. No native SQLite module is shipped.
+
+MQTT uses version 5, TLS hostname/certificate verification and QoS 1. A retained state topic publishes the newest sample immediately; new live samples bypass historical replay, while a non-retained telemetry topic drains ordered backlog batches. Replay has at most four unacknowledged application batches and uses a one-second token budget from the active profile, so rapid acknowledgements cannot bypass the NORMAL or CONSTRAINED byte rate. Historical records leave the outbox only after an application acknowledgement published following Wake Logger's durable database commit. Duplicates are safe by the cloud uniqueness constraint on `device_id + sequence`.
+
+Pairing is HTTPS and outbound only. Per-device MQTT credentials scope the installation to its own namespace. Signal K configuration stores the single-use pairing code and operational settings, while provisioned credentials live separately in the plugin data directory with mode `0600`.
+
+Wake Logger owns vessel identity mapping, authorization, entitlements, derived wind, current-state selection and final trip construction. The plugin never trusts a payload-supplied vessel ID and never implements cloud business rules.
+
+The local trip state machine produces private Wake Logger protocol evidence only. It does not register a Signal K Track API provider, publish trip deltas into Signal K, or compete with Signal K's own track facilities.

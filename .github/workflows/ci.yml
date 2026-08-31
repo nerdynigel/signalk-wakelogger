@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm audit --omit=dev --audit-level=high
+
+  broker-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Start disposable Mosquitto broker
+        run: >-
+          docker run --detach --rm
+          --name signalk-wakelogger-test-broker
+          --publish 18883:1883
+          --volume "$PWD/test/fixtures/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
+          eclipse-mosquitto@sha256:6f8d8a947c506f8a2290ec65cd4bd2bc7cb4d43fb5f6271f861cb013e2ef9797
+      - name: Wait for broker
+        run: |
+          for attempt in {1..30}; do
+            if docker exec signalk-wakelogger-test-broker mosquitto_pub -h 127.0.0.1 -t readiness -m ready; then exit 0; fi
+            sleep 1
+          done
+          docker logs signalk-wakelogger-test-broker
+          exit 1
+      - run: npm run test:broker
+        env:
+          WAKELOGGER_TEST_MQTT_URL: mqtt://127.0.0.1:18883
+      - name: Stop disposable broker
+        if: always()
+        run: docker stop signalk-wakelogger-test-broker || true
