@@ -55,3 +55,14 @@ jobs:
       - name: Stop disposable broker
         if: always()
         run: docker stop signalk-wakelogger-test-broker || true
+
+  signalk-docker-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Run packaged plugin in disposable Signal K stack
+        run: npm run test:docker
