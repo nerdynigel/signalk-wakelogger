@@ -4,6 +4,21 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-09-02
+
+### Changed
+
+- Replaced the placeholder Signal K App Store artwork with Wake Logger's official 512 px blue-wave app icon.
+- Reworked the App Store summary and README to introduce Wake Logger's live tracking, trip replay, vessel/crew workspace, environmental context and optional performance-analysis features.
+- Clarified how accepted Signal K telemetry appears in Wake Logger's private and optionally shared live vessel views.
+- Updated App Store publication guidance for the npm `latest` alias required by Signal K discovery during the beta period.
+
+### Validated
+
+- Confirmed an active production association transmitted all supported fields and received application-level durable acknowledgements with no pending queue; the synthetic Signal K source was disabled immediately after the check.
+
+## [0.2.0-beta.0] - 2026-09-02
+
 ### Changed
 
 - Separated npm beta publication from Raspberry Pi, real-vessel and target-hardware validation; those remain first-vessel and stable-production gates collected through the beta.
