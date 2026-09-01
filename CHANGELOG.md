@@ -14,6 +14,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 - Disposable real-Mosquitto CI coverage and credential-bound outbox protection against partial-state sequence resets.
 - Idempotent beta-only npm release checks with exact tag/main ancestry, protected environment and trusted-publisher bootstrap documentation.
 - Disposable packaged-plugin Docker testing with real Signal K NMEA 2000 playback, generated HTTPS/MQTT TLS, durable ACKs, broker outage and abrupt-restart recovery.
+- Bounded retry for temporary pairing failures, explicit revoked-device status and a protected local credential-forget action that preserves retired outboxes and sequence state.
 
 ## [0.1.0] - 2026-08-31
 

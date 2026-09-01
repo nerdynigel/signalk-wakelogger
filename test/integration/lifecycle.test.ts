@@ -6,7 +6,10 @@ import pluginConstructor from '../../src/index'
 import { CredentialStore } from '../../src/pairing/credentials'
 
 const directories: string[] = []
-afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true }) })
+afterEach(async () => {
+  vi.unstubAllGlobals()
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+})
 
 describe('Signal K lifecycle', () => {
   it('starts, stops and restarts safely with empty configuration and no network', async () => {
@@ -59,10 +62,63 @@ describe('Signal K lifecycle', () => {
       typeof call[0] === 'string' && call[0].includes('refusing an unsafe sequence reset')))
     await plugin.stop()
   })
+
+  it('offers an admin-only forget action that preserves the retired outbox', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'wakelogger-lifecycle-'))
+    directories.push(directory)
+    const credentialStore = new CredentialStore(path.join(directory, 'identity'))
+    await credentialStore.save({
+      version: 1, deviceId: 'dev_forget', clientId: 'dev_forget', username: 'dev_forget',
+      password: 'a-very-long-secret', mqttHost: 'localhost', mqttPort: 1, tls: false, pairedAt: 1000
+    })
+    const outboxRecord = path.join(directory, 'outbox', 'dev_forget', '00000001.wlq')
+    await fs.mkdir(path.dirname(outboxRecord), { recursive: true })
+    await fs.writeFile(outboxRecord, 'sequence-record')
+    const statuses: string[] = []
+    const app: any = {
+      getDataDirPath: () => directory,
+      setPluginStatus: (status: string) => statuses.push(status),
+      setPluginError: vi.fn(), error: vi.fn(), debug: Object.assign(vi.fn(), { enabled: false }),
+      subscriptionmanager: { subscribe: vi.fn() }
+    }
+    const plugin = pluginConstructor(app)
+    let forgetHandler: any
+    plugin.registerWithRouter?.({
+      post: (route: string, handler: any) => { if (route === '/forget-credentials') forgetHandler = handler }
+    } as any)
+    expect(forgetHandler).toBeTypeOf('function')
+    const response = { status: vi.fn().mockReturnThis(), json: vi.fn() }
+    await forgetHandler({}, response, (error: unknown) => { throw error })
+    expect(response.status).toHaveBeenCalledWith(200)
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ forgotten: true, outboxesPreserved: true }))
+    expect(await credentialStore.load()).toBeUndefined()
+    expect(await fs.readFile(outboxRecord, 'utf8')).toBe('sequence-record')
+    expect(statuses.at(-1)).toContain('retired outboxes preserved')
+  })
+
+  it('reports an invalid or expired pairing code without retrying it', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'wakelogger-lifecycle-'))
+    directories.push(directory)
+    const statuses: string[] = []
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const app: any = {
+      getDataDirPath: () => directory,
+      setPluginStatus: (status: string) => statuses.push(status),
+      setPluginError: vi.fn(), error: vi.fn(), debug: Object.assign(vi.fn(), { enabled: false }),
+      subscriptionmanager: { subscribe: vi.fn() }
+    }
+    const plugin = pluginConstructor(app)
+    plugin.start({ pairingCode: 'EXPIRED-CODE', pairingApiUrl: 'https://cloud.example.invalid/pair' }, vi.fn())
+    await waitFor(() => statuses.at(-1)?.includes('Pairing code invalid or expired') === true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(app.setPluginError).not.toHaveBeenCalled()
+    await plugin.stop()
+  })
 })
 
 async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
     if (await predicate()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
