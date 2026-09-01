@@ -72,8 +72,8 @@
     "displayName": "Wake Logger",
     "appIcon": "./assets/wakelogger.svg",
     "screenshots": [
-      "./assets/screenshots/plugin-config.svg",
-      "./assets/screenshots/plugin-status.svg"
+      "./assets/screenshots/plugin-status.png",
+      "./assets/screenshots/plugin-config.png"
     ]
   },
   "signalk-plugin-enabled-by-default": false
