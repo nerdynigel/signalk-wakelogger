@@ -1,7 +1,7 @@
 {
   "name": "signalk-wakelogger",
-  "version": "0.2.0-beta.0",
-  "description": "Resilient live Signal K telemetry transport for Wake Logger",
+  "version": "0.2.0-beta.1",
+  "description": "Send live Signal K vessel data to Wake Logger for tracking, trip replay and sailing performance analysis",
   "license": "Apache-2.0",
   "author": "Nigel George",
   "repository": {
@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/nerdynigel/signalk-wakelogger/issues"
   },
-  "homepage": "https://github.com/nerdynigel/signalk-wakelogger#readme",
+  "homepage": "https://wakelogger.com/",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -38,6 +38,10 @@
     "signalk-category-cloud",
     "signalk",
     "marine",
+    "sailing",
+    "gps",
+    "vessel-tracking",
+    "trip-log",
     "telemetry",
     "mqtt"
   ],
@@ -70,7 +74,7 @@
   },
   "signalk": {
     "displayName": "Wake Logger",
-    "appIcon": "./assets/wakelogger.svg",
+    "appIcon": "./assets/wakelogger.png",
     "screenshots": [
       "./assets/screenshots/plugin-status.png",
       "./assets/screenshots/plugin-config.png"

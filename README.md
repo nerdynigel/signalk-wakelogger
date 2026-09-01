@@ -1,8 +1,14 @@
 # Wake Logger for Signal K
 
-Wake Logger streams a vessel's live navigation, apparent wind and depth data from Signal K to Wake Logger. It is designed for intermittent marine internet connections: every sample is written to a durable local outbox before transmission, current position takes priority after reconnect, and historical data remains queued until Wake Logger durably acknowledges it.
+[Wake Logger](https://wakelogger.com/) streams a vessel's live navigation, apparent wind and depth data from Signal K to the vessel's Wake Logger workspace. It is designed for intermittent marine internet connections: every sample is written to a durable local outbox before transmission, current position takes priority after reconnect, and historical data remains queued until Wake Logger durably acknowledges it.
 
 This repository handles live telemetry only. It does not upload full-resolution NMEA archives, control vessel equipment or implement Wake Logger account and trip-editing business logic.
+
+## Make more of your time on the water
+
+Wake Logger turns raw GPS and onboard instrument data into a useful vessel history. Follow the latest position while the boat is connected, then review trips with route, speed, course, heading, depth and wind context. Wake Logger also provides private vessel and crew workspaces, trip photos, historical weather and tide context, and optional sailing-performance analysis—including race analytics and AI-assisted coaching where available.
+
+The richer the Signal K data, the richer the review: this plugin supplies a resilient live feed directly from the onboard server, even when marine internet drops in and out. Features depend on the vessel's Wake Logger access, plan and available sensors. [Explore Wake Logger](https://wakelogger.com/) to see the wider trip-replay and vessel-management platform.
 
 ## Requirements
 
@@ -25,6 +31,12 @@ Use Wake Logger's **Replace device** workflow to move to another Signal K instal
 Version 1 sends position and source time, with SOG, COG, heading, depth and apparent wind when supplied by the vessel. It does not collect battery, fuel, engine temperature or other machinery data. Signal K SI values are converted to Wake Logger's documented units. Missing optional sensors are normal. Wake Logger derives true wind, VMG and final trip boundaries in the cloud.
 
 The plugin does not decide who can see vessel data. Private crew access and any owner-controlled public live-sharing option are enforced by Wake Logger.
+
+## Live vessel tracking
+
+After the first accepted position arrives, the vessel's **Signal K Live** panel in Wake Logger shows its latest position on a map together with SOG, COG, heading, depth and apparent wind when those values are available. The display refreshes as new telemetry arrives; missing optional sensors are shown as unavailable rather than preventing position tracking.
+
+The private live panel is read-only for vessel crew. Device pairing and management require the appropriate vessel role, while public live sharing is off by default and remains under the vessel owner's control. Live telemetry is for situational awareness and trip logging, not as a certified navigation display.
 
 ## Offline operation
 

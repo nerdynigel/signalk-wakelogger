@@ -17,7 +17,7 @@ import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-clie
 import { TripStateMachine, type TripSnapshot } from './trips/state-machine'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
-  const pluginVersion = '0.2.0-beta.0'
+  const pluginVersion = '0.2.0-beta.1'
   let generation = 0
   let stopSubscription: (() => void) | undefined
   let sampleTimer: NodeJS.Timeout | undefined
@@ -36,7 +36,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const plugin: Plugin = {
     id: 'signalk-wakelogger',
     name: 'Wake Logger',
-    description: 'Secure, resilient live vessel telemetry for Wake Logger',
+    description: 'Live vessel tracking and resilient Signal K telemetry for Wake Logger',
     schema: configSchema,
     start(configuration: object): void {
       const previous = initialization
