@@ -4,6 +4,10 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 
 ## [Unreleased]
 
+### Changed
+
+- Separated npm beta publication from Raspberry Pi, real-vessel and target-hardware validation; those remain first-vessel and stable-production gates collected through the beta.
+
 ### Added
 
 - Retained, credential-free plugin/outbox diagnostics for the Wake Logger administration dashboard.

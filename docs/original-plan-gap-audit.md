@@ -18,8 +18,17 @@ This audit compares the implementation with the original 44-section implementati
 | Unit, crash and integration testing | Implemented; hardware soak remains | Automated normalization, file/database outbox, corruption, lifecycle, real-broker transport, profile/adaptive, accelerated 24-hour restart/ACK recovery, three-day sampling and legacy-profile upgrade tests exist. A packaged Docker scenario adds real Signal K sample input, verified HTTPS/MQTT TLS, broker outage, `SIGKILL` and volume recovery. The extended outage and upgrade matrix must still run on target hardware. |
 | Signal K CI and registry preparation | Implemented and passing | Normal Node 20/22 CI and the reusable Signal K matrix pass on Linux x64, Linux ARM64, ARMv7/Cerbo emulation, macOS and Windows. Signal K Server latest installs, enables and starts the packaged plugin on Node 22/24. The official registry harness preflight loads and activates it without configuration or unstubbed API use; install/tests/audit/changelog/screenshots meet the current 100-point criteria. |
 | Bandwidth, CPU and memory validation | External evidence pending | Measure on the target Raspberry Pi/ARM installation under live, outage and replay workloads; do not infer hardware results from development hosts. |
-| Raspberry Pi/ARM and real-vessel test | External evidence pending | Required before first-vessel-ready/public beta sign-off. Hardware target is intentionally not embedded in this public repository. |
-| npm/AppStore publication | Prepared, not executed | Beta-only OIDC workflow uses an exact version tag, main ancestry, Node 24/npm 12 and the `beta` dist-tag. The available package name requires a documented one-time 2FA bootstrap before OIDC can be configured. No stable release is automated until its acceptance gate is agreed. |
+| Raspberry Pi/ARM and real-vessel test | External evidence pending | Required before first-vessel and stable-production sign-off, but not for an npm beta. The beta is the field-validation channel. Hardware targets are intentionally not embedded in this public repository. |
+| npm/AppStore publication | Prepared, not executed | Physical hardware is not a beta prerequisite. The beta-only OIDC workflow uses an exact version tag, main ancestry, Node 24/npm 12 and the `beta` dist-tag. The available package name requires a documented one-time 2FA bootstrap before OIDC can be configured. No stable release is automated until its acceptance gate is agreed. |
+
+## npm beta gate
+
+- Normal CI and the Signal K reusable plugin matrix pass on the exact `main` commit.
+- The packaged Signal K/TLS/MQTT Docker recovery scenario passes on that commit.
+- The installed-package audit, package contents, metadata, changelog and public-repository scan pass.
+- The release uses a prerelease version and npm's `beta` dist-tag.
+
+Raspberry Pi, real-vessel, soak and target-hardware resource measurements are explicitly outside this publication gate. They remain product-readiness evidence and can be collected from the published beta.
 
 ## First-vessel blockers
 
@@ -29,7 +38,7 @@ This audit compares the implementation with the original 44-section implementati
 - Record bandwidth, CPU, memory and queue disk results on that host.
 - Verify the documented install, upgrade and full-data-removal/re-pair semantics on the target host; partial credential-only restoration is rejected by design.
 
-## Public-release blockers
+## Stable public-release blockers
 
 - Complete multi-day poor-connectivity and upgrade soak evidence.
 - Complete real-vessel and ARM evidence.
