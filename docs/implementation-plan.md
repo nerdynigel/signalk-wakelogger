@@ -58,7 +58,7 @@ The broker uses one credential per device, required client-ID binding, default-d
 
 ### Milestones
 
-Version 0.2 beta implements the plugin foundation, supported-field normalization, database-preferred durable outbox, pairing contract, MQTT transport, application acknowledgements, private trip evidence, remote telemetry profiles, adaptive transport, expanded status, tests, CI and documentation. Wake Logger cloud/broker/API/UI delivery is implemented in the private Wake Logger repository. Remaining release gates are recorded in `original-plan-gap-audit.md`: target-hardware multi-day/ARM and real-vessel evidence, measured resource use, registry review and beta publication.
+Version 0.2 beta implements the plugin foundation, supported-field normalization, database-preferred durable outbox, pairing contract, MQTT transport, application acknowledgements, private trip evidence, remote telemetry profiles, adaptive transport, expanded status, tests, CI and documentation. Wake Logger cloud/broker/API/UI delivery is implemented in the private Wake Logger repository. Automated CI, packaging and registry preparation gate npm beta publication. Target-hardware multi-day/ARM, real-vessel and measured resource evidence remain separate first-vessel and stable-production gates; the published beta is used to collect them. Remaining evidence is recorded in `original-plan-gap-audit.md`.
 
 ## 1. Purpose
 
