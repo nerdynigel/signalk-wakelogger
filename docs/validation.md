@@ -1,6 +1,6 @@
 # Validation evidence
 
-Automated checks cover lifecycle startup without configuration/network, supported-path normalization, managed profiles, adaptive modes, MQTT scheduling, application acknowledgements, file/database outbox restart continuity, corrupt file-tail repair, retention gaps and sequence-safe backend selection. Accelerated release scenarios cover a 24-hour file-outbox outage with restart and partial application ACK, a three-day NORMAL/OFFLINE/CONSTRAINED sampling timeline, and conversion of the earlier telemetry-profile shape.
+Automated checks cover lifecycle startup without configuration/network, supported-path normalization, managed profiles, adaptive modes, MQTT scheduling, application acknowledgements, file/database outbox restart continuity, corrupt file-tail repair, retention gaps and sequence-safe backend selection. Pairing tests additionally cover bounded transient retry, immediate invalid-code rejection, device-scoped revocation checks and local credential forgetting without deletion or reuse of retired outbox/sequence state. Accelerated release scenarios cover a 24-hour file-outbox outage with restart and partial application ACK, a three-day NORMAL/OFFLINE/CONSTRAINED sampling timeline, and conversion of the earlier telemetry-profile shape.
 
 A disposable Mosquitto 2 CI job exercises the real MQTT.js network path independently of Wake Logger infrastructure. It verifies MQTT 5/QoS 1 publication, retained current-state priority, ordered backlog delivery and removal only after an application ACK delivered through the broker.
 

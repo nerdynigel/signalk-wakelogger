@@ -35,7 +35,7 @@ Each sample receives a persistent monotonic sequence before its durable append. 
 - Public pairing uses the Wake Logger HTTPS endpoint configured by the plugin.
 - Non-production overrides remain local and are never committed.
 - Request: `{ "code": "...", "name": "Signal K ..." }`.
-- Response: `{ "device": { "id": "..." }, "credentials": { "broker_host": "...", "broker_port": 8883, "tls": true, "client_id": "...", "username": "...", "password": "...", "telemetry_profile": {} } }`.
+- Response: `{ "device": { "id": "..." }, "credentials": { "broker_host": "...", "broker_port": 8883, "tls": true, "client_id": "...", "username": "...", "password": "...", "telemetry_profile": {}, "association_status_url": "https://...", "association_token": "..." } }`.
 - Topics: `wakelogger/v1/devices/<device-id>/{telemetry,state,status,events,ack,profile,profile-ack}`.
 - Cloud acknowledgement: `{ "v": 1, "deviceId": "...", "ackSequence": 123, "acknowledgedAt": 1788143912200 }`.
 
@@ -48,6 +48,8 @@ The broker uses one credential per device, required client-ID binding, default-d
 - Keep `OutboxStore` as the boundary. Prefer Signal K's emerging plugin-scoped Database API as a bounded delivery buffer when available, with the native-free segmented file outbox under `app.getDataDirPath()` as the portable fallback. SQLite is not shipped.
 - Persist the backend selection per device. Never silently fall back from database to files because that could reuse a sequence; retain legacy files and select the database only after their pending queue is empty.
 - Keep an independent outbox/sequence space per device ID. Pairing a replacement preserves the retired device's queue locally but never republishes those records under the new authenticated identity.
+- Retry temporary pairing failures at most six times with bounded exponential delays; reject invalid/expired codes immediately and retain the current credential if replacement provisioning fails.
+- Confirm broker revocation through a device-scoped outbound HTTPS status credential and expose `Device revoked — enter a new pairing code`. A local admin-only forget action removes credentials but preserves the consumed-code tombstone, retired outboxes and sequence records.
 - Records are length-prefixed, SHA-256 checksummed and append-only, with synced appends and atomic metadata. Corrupt/incomplete tails are truncated during recovery.
 - Defaults are 4 MiB segments, seven-day/250 MB retention, one-second live samples, batches up to 60 samples and a 64 KiB payload ceiling.
 - Preserve newest data at a limit, report count/range of dropped samples and never crash Signal K. Restore retained current state from the outbox after restart.
@@ -838,7 +840,12 @@ MQTT port
 credential/certificate
 allowed protocol version
 telemetry profile
+association status URL and scoped token
 ```
+
+Temporary network, rate-limit and server failures are retried a bounded number of times while the code remains valid. Invalid or expired codes stop immediately. Replacement must be transactional: the old device remains active until new broker provisioning succeeds.
+
+Wake Logger Owners/First Mates and site administrators can revoke an association without deleting telemetry history. The plugin confirms revocation through its device-scoped status endpoint and reports a specific status. A Signal K administrator can forget the local credential without deleting retired outboxes or sequence evidence, then enter a new pairing code.
 
 Never place production credentials in source code.
 
@@ -1539,6 +1546,8 @@ After a simulated one-hour outage:
 - credential persistence
 - credential replacement
 - credential revocation handling
+- bounded retry and invalid-code handling
+- local credential-forget action with retained device state
 - authentication error states
 - status reporting
 
@@ -1553,7 +1562,7 @@ unpaired
 → connected
 ```
 
-without manual MQTT configuration.
+without manual MQTT configuration. Temporary service failures show a bounded retry state; confirmed revocation shows `Device revoked — enter a new pairing code`; forgetting local credentials preserves retired outboxes and requires a fresh code.
 
 ---
 

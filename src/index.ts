@@ -5,8 +5,9 @@ import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
 import type { OutboxStore } from './outbox/interface'
+import { checkAssociationStatus } from './pairing/association-client'
 import { CredentialStore, fingerprintPairingCode, shouldExchangePairingCode, type DeviceCredentials } from './pairing/credentials'
-import { pairDevice } from './pairing/pairing-client'
+import { PairingError, pairDeviceWithRetry } from './pairing/pairing-client'
 import { TelemetryNormaliser } from './signalk/normaliser'
 import { subscribeToTelemetry } from './signalk/subscriber'
 import { legacyProfile, parseTelemetryProfile, type TelemetryProfile } from './telemetry/profile'
@@ -24,10 +25,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let outbox: OutboxStore | undefined
   let transport: WakeLoggerTransport | undefined
   let tripState: TripStateMachine | undefined
-  let connectionState: ConnectionState | 'unpaired' = 'unpaired'
+  let connectionState: ConnectionState | 'unpaired' | 'device_revoked' = 'unpaired'
   let activeProfile: TelemetryProfile | undefined
   let storageBackend: 'file' | 'database' = 'file'
   let initialization: Promise<void> | undefined
+  let pairingAbortController: AbortController | undefined
+  let associationAbortController: AbortController | undefined
+  let associationCheck: Promise<void> | undefined
 
   const plugin: Plugin = {
     id: 'signalk-wakelogger',
@@ -51,42 +55,115 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     async stop(): Promise<void> {
       const running = initialization
       generation += 1
+      pairingAbortController?.abort()
+      associationAbortController?.abort()
       await running?.catch(() => undefined)
       await cleanupResources()
       initialization = undefined
       app.setPluginStatus('Wake Logger: Stopped')
-    }
+    },
+    registerWithRouter(router): void {
+      // Signal K protects routes registered directly on the plugin router with
+      // administrator authentication. Do not downgrade this action via access().
+      const adminRouter = router as unknown as {
+        post: (route: string, handler: (
+          request: unknown,
+          response: { status: (code: number) => { json: (body: unknown) => void } },
+          next: (error: unknown) => void
+        ) => Promise<void>) => void
+      }
+      adminRouter.post('/forget-credentials', async (_request, response, next) => {
+        try {
+          generation += 1
+          pairingAbortController?.abort()
+          associationAbortController?.abort()
+          await initialization?.catch(() => undefined)
+          await cleanupResources()
+          const store = new CredentialStore(path.join(app.getDataDirPath(), 'identity'))
+          const result = await store.forget()
+          initialization = undefined
+          connectionState = 'unpaired'
+          app.setPluginStatus('Wake Logger: Not paired — credentials forgotten; retired outboxes preserved')
+          response.status(200).json({
+            forgotten: result.forgotten,
+            retiredDeviceId: result.deviceId,
+            outboxesPreserved: true,
+            next: 'Enter and save a fresh Wake Logger pairing code.'
+          })
+        } catch (error) { next(error) }
+      })
+    },
+    getOpenApi: () => ({
+      openapi: '3.0.3',
+      info: { title: 'Wake Logger Signal K plugin', version: pluginVersion },
+      paths: {
+        '/forget-credentials': {
+          post: {
+            summary: 'Forget Wake Logger credentials while preserving all device outboxes',
+            responses: { '200': { description: 'Credentials forgotten or already absent' } }
+          }
+        }
+      }
+    })
   }
 
   async function cleanupResources(): Promise<void> {
-      stopSubscription?.()
-      stopSubscription = undefined
-      if (sampleTimer) clearTimeout(sampleTimer)
-      if (statusTimer) clearInterval(statusTimer)
-      sampleTimer = undefined
-      statusTimer = undefined
-      await transport?.stop()
-      transport = undefined
-      await outbox?.close()
-      outbox = undefined
-      tripState = undefined
+    stopSubscription?.()
+    stopSubscription = undefined
+    if (sampleTimer) clearTimeout(sampleTimer)
+    if (statusTimer) clearInterval(statusTimer)
+    sampleTimer = undefined
+    statusTimer = undefined
+    await transport?.stop()
+    transport = undefined
+    await outbox?.close()
+    outbox = undefined
+    tripState = undefined
+    pairingAbortController = undefined
+    associationAbortController = undefined
+    associationCheck = undefined
   }
 
   async function initialise(config: PluginConfig, thisGeneration: number): Promise<void> {
     const dataDirectory = app.getDataDirPath()
     const credentialStore = new CredentialStore(path.join(dataDirectory, 'identity'))
     let credentials = await credentialStore.load()
-    if (shouldExchangePairingCode(credentials, config.pairingCode)) {
-      app.setPluginStatus('Wake Logger: Pairing')
+    const lastPairingCodeFingerprint = await credentialStore.lastPairingCodeFingerprint()
+    if (shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
+      const controller = new AbortController()
+      pairingAbortController = controller
       try {
-        const replacement = await pairDevice(config.pairingApiUrl, config.pairingCode, await credentialStore.installationId())
+        const replacement = await pairDeviceWithRetry(config.pairingApiUrl, config.pairingCode, await credentialStore.installationId(), {
+          signal: controller.signal,
+          onAttempt: (attempt, maximum) => {
+            if (generation === thisGeneration) app.setPluginStatus(`Wake Logger: Pairing attempt ${attempt}/${maximum}`)
+          },
+          onRetry: (attempt, maximum, delayMs) => {
+            if (generation === thisGeneration) app.setPluginStatus(`Wake Logger: Retry pairing ${attempt}/${maximum} in ${Math.ceil(delayMs / 1000)} seconds`)
+          }
+        })
         if (generation !== thisGeneration) return
         replacement.pairingCodeFingerprint = fingerprintPairingCode(config.pairingCode)
         await credentialStore.save(replacement)
         credentials = replacement
       } catch (error) {
-        if (!credentials) throw error
+        if (generation !== thisGeneration || controller.signal.aborted) return
+        if (!credentials) {
+          connectionState = 'unpaired'
+          const expired = error instanceof PairingError && error.status === 400
+          const retryExhausted = error instanceof PairingError && error.retryable
+          app.setPluginStatus(
+            expired
+              ? 'Wake Logger: Pairing code invalid or expired — enter a new pairing code'
+              : retryExhausted
+                ? 'Wake Logger: Retry pairing stopped after 6 attempts — save configuration to retry or enter a new code'
+                : `Wake Logger: Pairing rejected — ${safeError(error)}; enter a new pairing code`
+          )
+          return
+        }
         app.error(`Wake Logger replacement pairing failed; continuing with the existing device: ${safeError(error)}`)
+      } finally {
+        if (pairingAbortController === controller) pairingAbortController = undefined
       }
     }
     if (!credentials) {
@@ -127,8 +204,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     transport = new WakeLoggerTransport(credentials, outbox, {
       profile,
       onState: (state, detail) => {
+        if (connectionState === 'device_revoked') return
         connectionState = state
         void updateStatus(detail)
+        if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
       onMode: (mode) => sampler.updateMode(mode),
       onProfile: async (replacement) => {
@@ -195,7 +274,32 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       profileRevision: activeProfile?.revision,
       ...transport?.transportMetrics()
     })
+    if (connectionState === 'device_revoked') {
+      app.setPluginStatus(`Wake Logger: Device revoked — enter a new pairing code; ${queue}${dropped}${sequence}`)
+      return
+    }
     app.setPluginStatus(`Wake Logger: ${connectionState} — ${queue}${dropped}${sequence}${trip}${extra}`)
+  }
+
+  function confirmAssociation(credentials: DeviceCredentials, thisGeneration: number): Promise<void> {
+    if (associationCheck) return associationCheck
+    const controller = new AbortController()
+    associationAbortController = controller
+    associationCheck = (async () => {
+      const status = await checkAssociationStatus(credentials, controller.signal)
+      if (status !== 'revoked' || generation !== thisGeneration || controller.signal.aborted) return
+      connectionState = 'device_revoked'
+      stopSubscription?.()
+      stopSubscription = undefined
+      if (sampleTimer) clearTimeout(sampleTimer)
+      sampleTimer = undefined
+      await transport?.stop()
+      await updateStatus()
+    })().finally(() => {
+      if (associationAbortController === controller) associationAbortController = undefined
+      associationCheck = undefined
+    })
+    return associationCheck
   }
 
   return plugin
