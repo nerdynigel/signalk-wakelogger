@@ -118,7 +118,10 @@ describe('Signal K lifecycle', () => {
 })
 
 async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 15_000
+  // Windows Node 22 runners can spend well over 15 seconds in temporary
+  // filesystem and failed-loopback-MQTT setup under load. This test observes
+  // asynchronous lifecycle completion rather than measuring startup speed.
+  const deadline = Date.now() + 25_000
   while (Date.now() < deadline) {
     if (await predicate()) return
     await new Promise((resolve) => setTimeout(resolve, 10))

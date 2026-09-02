@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     fileParallelism: false,
-    testTimeout: 30_000,
+    testTimeout: 45_000,
     coverage: { reporter: ['text', 'html'] }
   }
 })

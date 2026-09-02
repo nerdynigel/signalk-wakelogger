@@ -10,6 +10,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 
 - Changed App Store screenshots to immutable absolute npm CDN URLs so installed server-only plugins do not select local static URLs that Signal K does not mount.
 - Added publication verification for the npm `gitHead`, icon and screenshots, and rejected publication from a dirty working tree or source export without an authoritative Git `HEAD`.
+- Increased the asynchronous lifecycle-test budget for slower Windows runners without changing plugin runtime timeouts.
 
 ## [0.2.0-beta.1] - 2026-09-02
 
