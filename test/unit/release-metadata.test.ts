@@ -25,6 +25,16 @@ describe('release metadata', () => {
     }
   })
 
+  it('leads the App Store gallery with vessel-owner outcomes before technical setup', () => {
+    const screenshots = metadata.signalk?.screenshots ?? []
+    expect(screenshots.map((screenshot) => path.basename(screenshot))).toEqual([
+      'live-tracking.png',
+      'route-review.png',
+      'plugin-status.png',
+      'plugin-config.png'
+    ])
+  })
+
   it('packages the declared App Store icon', () => {
     const icon = metadata.signalk?.appIcon?.replace(/^(?:\.?\/)+/, '')
     expect(icon).toBeTruthy()

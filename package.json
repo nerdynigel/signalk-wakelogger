@@ -1,7 +1,7 @@
 {
   "name": "signalk-wakelogger",
   "version": "0.2.0-beta.2",
-  "description": "Send live Signal K vessel data to Wake Logger for tracking, trip replay and sailing performance analysis",
+  "description": "Turn Signal K navigation data into resilient Wake Logger live tracking and trip history, even through internet outages",
   "license": "Apache-2.0",
   "author": "Nigel George",
   "repository": {
@@ -77,6 +77,8 @@
     "displayName": "Wake Logger",
     "appIcon": "./assets/wakelogger.png",
     "screenshots": [
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/live-tracking.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/route-review.png",
       "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-status.png",
       "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-config.png"
     ]
