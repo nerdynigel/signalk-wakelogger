@@ -1,7 +1,7 @@
 {
   "name": "signalk-wakelogger",
-  "version": "0.2.0-beta.1",
-  "description": "Send live Signal K vessel data to Wake Logger for tracking, trip replay and sailing performance analysis",
+  "version": "0.2.0-beta.2",
+  "description": "Turn Signal K navigation data into resilient Wake Logger live tracking and trip history, even through internet outages",
   "license": "Apache-2.0",
   "author": "Nigel George",
   "repository": {
@@ -57,6 +57,7 @@
     "check:public": "node scripts/check-public-repo.mjs",
     "measure:protocol": "node scripts/measure-protocol.mjs",
     "measure:outbox": "npm run build && node scripts/measure-outbox.mjs",
+    "verify:published": "node scripts/verify-published.mjs",
     "prepublishOnly": "node scripts/verify-release.mjs && npm run check",
     "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build"
   },
@@ -76,8 +77,10 @@
     "displayName": "Wake Logger",
     "appIcon": "./assets/wakelogger.png",
     "screenshots": [
-      "./assets/screenshots/plugin-status.png",
-      "./assets/screenshots/plugin-config.png"
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/live-tracking.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/route-review.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-status.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-config.png"
     ]
   },
   "signalk-plugin-enabled-by-default": false

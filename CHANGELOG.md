@@ -4,6 +4,19 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2026-09-02
+
+### Fixed
+
+- Changed App Store screenshots to immutable absolute npm CDN URLs so installed server-only plugins do not select local static URLs that Signal K does not mount.
+- Added publication verification for the npm `gitHead`, icon and screenshots, and rejected publication from a dirty working tree or source export without an authoritative Git `HEAD`.
+- Increased the asynchronous lifecycle-test budget for slower Windows runners without changing plugin runtime timeouts.
+
+### Changed
+
+- Reframed the App Store summary and opening README around the vessel owner's live-tracking, outage-recovery and trip-review outcomes.
+- Added authentic Wake Logger live-tracking and route-review screens ahead of the technical Signal K status and pairing screens in the App Store gallery.
+
 ## [0.2.0-beta.1] - 2026-09-02
 
 ### Changed

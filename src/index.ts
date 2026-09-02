@@ -17,7 +17,7 @@ import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-clie
 import { TripStateMachine, type TripSnapshot } from './trips/state-machine'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
-  const pluginVersion = '0.2.0-beta.1'
+  const pluginVersion = '0.2.0-beta.2'
   let generation = 0
   let stopSubscription: (() => void) | undefined
   let sampleTimer: NodeJS.Timeout | undefined

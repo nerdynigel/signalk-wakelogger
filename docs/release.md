@@ -52,4 +52,10 @@ The bootstrap-version tag may be created from its exact merged commit after trus
 4. Verify the Publish workflow, npm provenance, `beta` dist-tag and GitHub prerelease notes.
 5. Interactively move `latest` to the exact published beta, then verify the npm tags, Signal K App Store metadata/assets and registry result.
 
+The publish guard requires a clean Git checkout with a valid `HEAD`. After npm publication, CI reads the immutable version metadata back from the registry and requires `gitHead` to equal the tagged GitHub commit. It also downloads every declared App Store image and verifies an image content type. A publication with missing commit provenance or broken artwork therefore fails before the GitHub release is created.
+
+The screenshots use version-pinned absolute unpkg URLs while the same image files remain inside the npm tarball. This avoids a Signal K 2.31.1 installed-plugin behaviour that prefers local screenshot URLs even though server-only plugins have no static-file mount. Update the version in those URLs whenever the package version changes.
+
+Order screenshots around the operator's experience: Wake Logger outcomes first, then connection status and configuration. Only include real product screens that the live telemetry integration genuinely enables; do not imply that broader Wake Logger cloud features run inside the Signal K plugin. Review every image for private endpoints, credentials and unintended personal information before release.
+
 Never reuse or move a published tag. A stable workflow must be introduced separately and reviewed against an explicitly agreed stable-release gate.
