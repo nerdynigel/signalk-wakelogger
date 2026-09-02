@@ -41,6 +41,10 @@ jobs:
           fi
       - if: steps.registry.outputs.exists != 'true'
         run: npm publish --access public --tag beta
+      - name: Verify published commit and App Store assets
+        env:
+          EXPECTED_GIT_HEAD: ${{ github.sha }}
+        run: npm run verify:published
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag --prerelease
         env:
           GH_TOKEN: ${{ github.token }}
