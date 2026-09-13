@@ -50,9 +50,11 @@ Signal K supplies the onboard observations; this plugin delivers them reliably; 
 
 ## Offline operation
 
+To defer uploads deliberately, pair the plugin first, then set **Upload mode** to **local_only** and save in Signal K Plugin Config. The setting survives restarts. Recording continues at the selected profile’s normal quality while the plugin makes no Wake Logger pairing or MQTT connection. When ready, set **automatic** and save; live tracking resumes and stored history uploads in the background. The local queue count shows how much remains. This setting controls this plugin’s traffic, not other Signal K plugins or boat internet services.
+
 The default queue retains up to seven days or 250 MB. Records have persistent device-scoped sequence numbers and checksums. MQTT broker acknowledgement is not enough to remove a record: Wake Logger must acknowledge that the database commit completed. If a configured limit is reached, the oldest backlog is discarded, the newest data is preserved, and the dropped count is shown in plugin status.
 
-Useful status examples include `Not paired`, `connecting`, `online`, `offline`, `degraded`, queue count/size, and dropped-record count. Enable telemetry debug logging only while troubleshooting; it does not log payloads or secrets.
+Useful status examples include `recording_locally`, `Not paired`, `connecting`, `online`, `offline`, `degraded`, queue count/size, and dropped-record count. Enable telemetry debug logging only while troubleshooting; it does not log payloads or secrets.
 
 An authenticated Signal K administrator can call `POST /plugins/signalk-wakelogger/forget-credentials` to forget the local cloud credential before entering a fresh pairing code. This intentionally preserves the installation identity, consumed-code fingerprint, retired device outboxes, sequence records and diagnostics; it does not revoke the cloud association, so revoke it in Wake Logger as well when retiring a device. A forgotten pairing code must be replaced with a new one.
 

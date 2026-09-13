@@ -9,6 +9,7 @@ export const DEFAULTS = {
 } as const
 
 export interface PluginConfig {
+  uploadMode: 'automatic' | 'local_only'
   pairingCode?: string
   pairingApiUrl: string
   samplePeriodMs: number
@@ -20,6 +21,7 @@ export interface PluginConfig {
 export function parseConfig(value: object): PluginConfig {
   const input = value as Record<string, unknown>
   return {
+    uploadMode: input.uploadMode === 'local_only' ? 'local_only' : 'automatic',
     pairingCode: typeof input.pairingCode === 'string' && input.pairingCode.trim() ? input.pairingCode.trim() : undefined,
     pairingApiUrl:
       typeof input.pairingApiUrl === 'string' && /^https:\/\//.test(input.pairingApiUrl)

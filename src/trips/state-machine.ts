@@ -52,8 +52,8 @@ export class TripStateMachine {
         this.snapshot.stationaryPosition = origin
         const distance = distanceMetres(origin, position)
         if (sog > this.thresholds.startSogKn || distance > this.thresholds.startDistanceM) {
-          this.snapshot = { state: 'START_CANDIDATE', candidateAt: at, candidatePosition: origin }
-          return evidence('trip_start_candidate', at, sog, distance, 0)
+          this.snapshot = { state: 'START_CANDIDATE', candidateAt: at, candidatePosition: origin, trackingSessionId: randomUUID() }
+          return { ...evidence('trip_start_candidate', at, sog, distance, 0), trackingSessionId: this.snapshot.trackingSessionId }
         }
         if (distance <= this.thresholds.stopRadiusM) {
           this.snapshot.stationaryPosition = {
@@ -72,7 +72,7 @@ export class TripStateMachine {
           return undefined
         }
         if (duration >= this.thresholds.startDwellMs) {
-          const trackingSessionId = randomUUID()
+          const trackingSessionId = this.snapshot.trackingSessionId ?? randomUUID()
           const effectiveAt = this.snapshot.candidateAt ?? at
           this.snapshot = { state: 'MOVING', trackingSessionId }
           return { ...evidence('trip_started', effectiveAt, sog, distance, duration), trackingSessionId }

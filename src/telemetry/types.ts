@@ -29,7 +29,17 @@ export interface TripEvidence {
   }
 }
 
+export interface RecordingManifest {
+  id: string
+  startedAt: number
+  firstSequence: number
+  state: 'recording' | 'complete' | 'cancelled' | 'interrupted'
+  endedAt?: number
+  lastSequence?: number
+}
+
 export interface TelemetryDraft {
+  recording?: RecordingManifest
   capturedAt: number
   receivedAt: number
   trackingSessionId?: string
@@ -52,7 +62,10 @@ export interface TelemetryBatch {
   samples: TelemetrySample[]
 }
 
+export type RecordingAcknowledgement = Pick<RecordingManifest, 'id' | 'lastSequence' | 'state'>
+
 export interface ApplicationAck {
+  recordingAcks?: RecordingAcknowledgement[]
   v: 1
   deviceId: string
   ackSequence: number
@@ -60,6 +73,8 @@ export interface ApplicationAck {
 }
 
 export interface PluginStatusMetrics {
+  uploadMode?: 'automatic' | 'local_only'
+  recordings?: RecordingManifest[]
   pluginVersion: string
   connectionState: string
   queueMessageCount: number

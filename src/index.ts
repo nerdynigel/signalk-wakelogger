@@ -14,7 +14,8 @@ import { legacyProfile, parseTelemetryProfile, type TelemetryProfile } from './t
 import { TelemetryProfileStore } from './telemetry/profile-store'
 import { PathSampler } from './telemetry/sampler'
 import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-client'
-import { TripStateMachine, type TripSnapshot } from './trips/state-machine'
+import { type TripSnapshot } from './trips/state-machine'
+import { RecordingStore } from './trips/recording-store'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const pluginVersion = '0.2.0-beta.2'
@@ -24,8 +25,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let statusTimer: NodeJS.Timeout | undefined
   let outbox: OutboxStore | undefined
   let transport: WakeLoggerTransport | undefined
-  let tripState: TripStateMachine | undefined
-  let connectionState: ConnectionState | 'unpaired' | 'device_revoked' = 'unpaired'
+  let tripState: RecordingStore | undefined
+  let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
+  let sampleOperation: Promise<void> = Promise.resolve()
+  let connectionState: ConnectionState | 'unpaired' | 'device_revoked' | 'recording_locally' = 'unpaired'
   let activeProfile: TelemetryProfile | undefined
   let storageBackend: 'file' | 'database' = 'file'
   let initialization: Promise<void> | undefined
@@ -39,9 +42,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     description: 'Live vessel tracking and resilient Signal K telemetry for Wake Logger',
     schema: configSchema,
     start(configuration: object): void {
+      pairingAbortController?.abort()
+      associationAbortController?.abort()
+      // Stop all transmission immediately when a saved configuration restarts us.
+      const stopping = transport?.stop(false)
       const previous = initialization
       const thisGeneration = ++generation
       initialization = (async () => {
+        await stopping
         await previous?.catch(() => undefined)
         await cleanupResources()
         if (thisGeneration === generation) await initialise(parseConfig(configuration), thisGeneration)
@@ -115,6 +123,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     sampleTimer = undefined
     statusTimer = undefined
     await transport?.stop()
+    await sampleOperation
     transport = undefined
     await outbox?.close()
     outbox = undefined
@@ -125,11 +134,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function initialise(config: PluginConfig, thisGeneration: number): Promise<void> {
+    activeUploadMode = config.uploadMode
     const dataDirectory = app.getDataDirPath()
     const credentialStore = new CredentialStore(path.join(dataDirectory, 'identity'))
     let credentials = await credentialStore.load()
     const lastPairingCodeFingerprint = await credentialStore.lastPairingCodeFingerprint()
-    if (shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
+    if (config.uploadMode === 'automatic' && shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
       const controller = new AbortController()
       pairingAbortController = controller
       try {
@@ -168,7 +178,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     if (!credentials) {
       connectionState = 'unpaired'
-      app.setPluginStatus('Wake Logger: Not paired')
+      app.setPluginStatus(config.uploadMode === 'local_only' ? 'Wake Logger: Not paired — switch to automatic and pair before recording locally' : 'Wake Logger: Not paired')
       return
     }
     if (generation !== thisGeneration) return
@@ -178,9 +188,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   async function startTelemetry(config: PluginConfig, credentials: DeviceCredentials, credentialStore: CredentialStore, dataDirectory: string, thisGeneration: number): Promise<void> {
     const normaliser = new TelemetryNormaliser()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
-    const trip = new TripStateMachine(await readTripSnapshot(tripFile))
+    const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
+    await trip.open(await readTripSnapshot(tripFile))
     tripState = trip
-    let tripSnapshotJson = JSON.stringify(trip.currentState())
     // Each provisioned device owns an independent sequence space. A replacement
     // device must never replay the retired device's records under new credentials.
     const profileStore = new TelemetryProfileStore(path.join(dataDirectory, 'profiles', credentials.deviceId))
@@ -188,7 +198,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const legacy = credentials.telemetryProfile as { sample_period_ms?: number; batch_size?: number } | undefined
     const profile = await profileStore.load() ?? credentialProfile ?? legacyProfile(legacy?.sample_period_ms ?? config.samplePeriodMs, legacy?.batch_size)
     activeProfile = profile
-    const sampler = new PathSampler(profile)
+    const sampler = new PathSampler(profile, config.uploadMode === 'local_only' ? 'NORMAL' : 'OFFLINE')
     const selected = await createOutbox(app, dataDirectory, credentials.deviceId, {
       maxBytes: config.maxOutboxMb * 1024 * 1024,
       maxAgeMs: config.maxOutboxDays * 24 * 60 * 60 * 1000,
@@ -209,6 +219,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         void updateStatus(detail)
         if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
+      onRecordingAcks: async (acks) => {
+        sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
+        await sampleOperation
+      },
       onMode: (mode) => sampler.updateMode(mode),
       onProfile: async (replacement) => {
         await profileStore.save(replacement)
@@ -218,33 +232,27 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       debug: config.debugTelemetry ? (message) => app.debug(message) : undefined
     })
     stopSubscription = subscribeToTelemetry(app, (delta) => normaliser.ingest(delta))
-    const sample = () => {
+    const sample = async () => {
+      if (generation !== thisGeneration) return
       const now = Date.now()
       const draft = normaliser.takeSample(now, sampler.dueFields(now))
-      if (!draft || !outbox || !transport) return
-      const evidence = trip.process(draft)
-      draft.trackingSessionId = evidence?.trackingSessionId ?? trip.trackingSessionId()
-      if (evidence) draft.evidence = evidence
-      const nextSnapshotJson = JSON.stringify(trip.currentState())
-      if (nextSnapshotJson !== tripSnapshotJson) {
-        tripSnapshotJson = nextSnapshotJson
-        void atomicWrite(tripFile, `${tripSnapshotJson}\n`).catch((error) => app.error(`Unable to persist Wake Logger trip state: ${safeError(error)}`))
-      }
-      void outbox.append(credentials.deviceId, draft).then((sample) => {
-        transport?.updateCurrent(sample)
-        if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${sample.sequence}`)
-      }).catch((error) => app.error(`Unable to queue Wake Logger telemetry: ${safeError(error)}`))
+      if (!draft || !outbox) return
+      const sequence = (await outbox.stats()).currentSequence + 1
+      await trip.prepare(draft, sequence)
+      const queued = await outbox.append(credentials.deviceId, draft)
+      transport?.updateCurrent(queued)
+      if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${queued.sequence}`)
     }
     const scheduleSample = () => {
       if (generation !== thisGeneration) return
       sampleTimer = setTimeout(() => {
-        sample()
-        scheduleSample()
+        sampleOperation = sampleOperation.then(sample).catch((error) => app.error(`Unable to queue Wake Logger telemetry: ${safeError(error)}`)).then(scheduleSample)
       }, sampler.samplePeriodMs())
     }
     scheduleSample()
     statusTimer = setInterval(() => void updateStatus(), 10_000)
-    transport.start()
+    if (config.uploadMode === 'automatic') transport.start()
+    else connectionState = 'recording_locally'
     await updateStatus()
   }
 
@@ -261,6 +269,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const extra = detail ? ` — ${detail}` : ''
     transport?.updateStatus({
       pluginVersion,
+      uploadMode: activeUploadMode,
+      recordings: tripState?.statusManifests(),
       connectionState,
       queueMessageCount: stats.messageCount,
       queueDiskBytes: stats.diskBytes,
@@ -311,12 +321,6 @@ async function readTripSnapshot(target: string): Promise<TripSnapshot | undefine
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' || error instanceof SyntaxError) return undefined
     throw error
   }
-}
-
-async function atomicWrite(target: string, contents: string): Promise<void> {
-  const temporary = `${target}.tmp`
-  await fs.writeFile(temporary, contents, { mode: 0o600 })
-  await fs.rename(temporary, target)
 }
 
 function safeError(error: unknown): string {
