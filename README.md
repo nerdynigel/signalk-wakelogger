@@ -60,6 +60,10 @@ An authenticated Signal K administrator can call `POST /plugins/signalk-wakelogg
 
 Wake Logger administrators maintain approved telemetry profiles. Vessel Owners and First Mates can select one; other crew can see the selection but cannot change it. Navigation stays at its configured priority while depth and apparent wind can slow under constrained or offline conditions. Profile revisions and application results are visible to Wake Logger operations.
 
+## Course navigation
+
+Select a race course in Wake Logger to deliver it to the boat. The plugin caches the course and creates a named native Signal K route, which remains available offline. If another app controls the active route, Wake Logger reports the mismatch and waits for explicit local activation. Course progression and navigation values come from Signal K; map readiness is tracked separately from course receipt. See [course synchronization](docs/course-sync.md) for the protocol, local controls and chart-readiness states.
+
 ## Development
 
 ```sh

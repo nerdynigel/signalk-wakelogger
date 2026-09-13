@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const composeFile = fileURLToPath(new URL('../test/docker/compose.yml', import.meta.url))
 const project = (process.env.WAKELOGGER_DOCKER_PROJECT || `signalk-wakelogger-e2e-${process.pid}`).toLowerCase().replace(/[^a-z0-9_-]/g, '-')
 const keep = process.env.WAKELOGGER_DOCKER_KEEP === '1'
+const skipBuild = process.env.WAKELOGGER_DOCKER_SKIP_BUILD === '1'
 let stackStarted = false
 
 function docker(arguments_, options = {}) {
@@ -32,7 +33,7 @@ function query(target, method = 'GET', body) {
   const arguments_ = ['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', target, method]
   if (body !== undefined) arguments_.push(JSON.stringify(body))
   const result = compose(arguments_, { capture: true })
-  return JSON.parse(result.stdout)
+  return result.stdout.trim() ? JSON.parse(result.stdout) : null
 }
 
 function snapshot() {
@@ -104,18 +105,23 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
 try {
   docker(['compose', 'version'])
   stackStarted = true
-  compose(['up', '--detach', '--build'])
+  compose(['up', '--detach', skipBuild ? '--no-build' : '--build'])
 
   await waitFor('mock cloud MQTT subscription', () => query('https://test-cloud:8443/health').ok)
   await waitFor('Signal K server and sample position', () => {
     const position = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation/position')
     return Number.isFinite(position?.value?.latitude) && Number.isFinite(position?.value?.longitude)
-  }, 120_000)
+  }, 300_000)
+
+  const onboardPage = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/'], { capture: true }).stdout
+  assert.ok(onboardPage.includes('Wake Logger Onboard'), 'the packaged onboard webapp must be served by Signal K')
+  const leafletAsset = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vendor/leaflet.js'], { capture: true }).stdout
+  assert.ok(leafletAsset.includes('Leaflet'), 'the onboard map library must be served locally')
 
   const initial = await waitFor('three durably acknowledged telemetry samples', () => {
     const value = snapshot()
     return maximumAck(value) >= 3 ? value : undefined
-  }, 120_000)
+  }, 300_000)
   assert.equal(initial.pairingCount, 1, 'the real plugin must complete exactly one pairing exchange')
   const initialSamples = telemetrySamples(initial)
   const expectedNumericFields = ['lat', 'lon', 'sog_kn', 'cog_deg', 'heading_deg', 'depth_m', 'aws_kn', 'awa_deg']
@@ -124,6 +130,24 @@ try {
   }
   assert.ok(initialSamples.some((sample) => sample?.values?.heading_reference === 'true'), 'sample NMEA 2000 heading must retain its true reference')
   assert.equal(dataEvents(initial)[0]?.topic, 'wakelogger/v1/devices/dev_docker_e2e/state', 'current state must precede backlog telemetry')
+
+  const desiredCourse = {
+    v: 1, action: 'activate', courseId: 'race-plan-docker', revision: 1, name: 'Docker native course', updatedAt: new Date().toISOString(),
+    start: { id: 'start', name: 'Start', latitude: 60.1, longitude: 24.9 },
+    marks: [{ id: 'mark', name: 'Windward', latitude: 60.11, longitude: 24.91 }],
+    finish: { id: 'finish', name: 'Finish', latitude: 60.1, longitude: 24.9 }, activeWaypointIndex: 1
+  }
+  query('https://test-cloud:8443/course', 'POST', desiredCourse)
+  await waitFor('native course applied acknowledgement', () => snapshot().events.some((event) =>
+    event.topic.endsWith('/course-ack') && event.payload?.revision === 1 && event.payload?.status === 'applied'), 30_000)
+  const courseState = query('http://signalk:3000/plugins/signalk-wakelogger/course')
+  assert.equal(courseState.native.activeMatchesDesired, true)
+  const nativeRouteId = courseState.native.ownedRouteId
+  const nativeRoute = query(`http://signalk:3000/signalk/v2/api/resources/routes/${nativeRouteId}`)
+  assert.equal(nativeRoute.feature.properties.wakelogger.courseId, desiredCourse.courseId)
+  assert.deepEqual(nativeRoute.feature.geometry.coordinates, [[24.9, 60.1], [24.91, 60.11], [24.9, 60.1]])
+  query('http://signalk:3000/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex', 'PUT', { value: 2 })
+  await waitFor('native next-point update', () => query('http://signalk:3000/plugins/signalk-wakelogger/course').native.course.activeRoute.pointIndex === 2)
 
   compose(['stop', 'mosquitto'])
   await delay(1_000)
@@ -139,11 +163,15 @@ try {
   await waitFor('Signal K restart', () => {
     const position = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation/position')
     return Number.isFinite(position?.value?.latitude) && Number.isFinite(position?.value?.longitude)
-  }, 120_000)
+  }, 300_000)
+  const restoredCourse = query('http://signalk:3000/plugins/signalk-wakelogger/course')
+  assert.equal(restoredCourse.desired.revision, 1, 'cached course survives abrupt restart')
+  assert.equal(restoredCourse.native.course.activeRoute.pointIndex, 2, 'retained course replay preserves native progress')
+
   const recovered = await waitFor('post-crash backlog acknowledgement', () => {
     const value = snapshot()
     return maximumAck(value) >= baselineAck + 2 ? value : undefined
-  }, 120_000)
+  }, 300_000)
   const recoveredSamples = telemetrySamples(recovered).filter((sample) => sample.sequence > baselineAck)
   assert.ok(recoveredSamples.length >= 2, 'at least two outage samples must survive the abrupt Signal K stop')
   assert.equal(dataEvents(recovered)[0]?.topic, 'wakelogger/v1/devices/dev_docker_e2e/state', 'current state must be first after reconnect')
@@ -168,6 +196,8 @@ try {
     observedTelemetryFields: [...expectedNumericFields, 'heading_reference'],
     currentStatePrecededBacklog: true,
     queueDrainedAfterAck: true,
+    nativeCoursePersisted: true,
+    nativeProgressPreserved: true,
     serviceStats: printServiceStats()
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)

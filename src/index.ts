@@ -1,6 +1,9 @@
 import type { Plugin, PluginConstructor, ServerAPI } from '@signalk/server-api'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { CourseStore } from './courses/course-store'
+import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
+import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
@@ -25,6 +28,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let statusTimer: NodeJS.Timeout | undefined
   let outbox: OutboxStore | undefined
   let transport: WakeLoggerTransport | undefined
+  let courses: CourseStore | undefined
+  let courseInitializationError: string | undefined
+  let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
   let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let sampleOperation: Promise<void> = Promise.resolve()
@@ -74,12 +80,44 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       // Signal K protects routes registered directly on the plugin router with
       // administrator authentication. Do not downgrade this action via access().
       const adminRouter = router as unknown as {
+        get?: (route: string, handler: (request: unknown, response: { status: (code: number) => { json: (body: unknown) => void } }, next: (error: unknown) => void) => void) => void
         post: (route: string, handler: (
           request: unknown,
           response: { status: (code: number) => { json: (body: unknown) => void } },
           next: (error: unknown) => void
         ) => Promise<void>) => void
       }
+      adminRouter.get?.('/course', async (_request, response, next) => {
+        try {
+          response.status(200).json({
+            ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError
+          })
+        } catch (error) { next(error) }
+      })
+      adminRouter.post('/course/activate', async (_request, response, next) => {
+        try {
+          if (!courses) throw new CourseError('no_selected_course')
+          await courses.activate()
+          void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Course acknowledgement deferred: ${safeError(error)}`))
+          response.status(200).json({ ...await courses.status(), uploadMode: activeUploadMode, connectionState })
+        } catch (error) {
+          if (error instanceof CourseError) response.status(409).json({ error: error.code })
+          else next(error)
+        }
+      })
+      adminRouter.post('/course/map-readiness', async (request, response, next) => {
+        try {
+          if (!courses) throw new CourseError('no_selected_course')
+          const body = (request as { body?: { revision?: unknown; status?: unknown } }).body
+          await courses.setMapReadiness(body?.revision, body?.status)
+          void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Course acknowledgement deferred: ${safeError(error)}`))
+          response.status(200).json(await courses.status())
+        } catch (error) {
+          if (error instanceof CourseError) response.status(409).json({ error: error.code })
+          else next(error)
+        }
+      })
       adminRouter.post('/forget-credentials', async (_request, response, next) => {
         try {
           generation += 1
@@ -105,6 +143,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       openapi: '3.0.3',
       info: { title: 'Wake Logger Signal K plugin', version: pluginVersion },
       paths: {
+        '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
+        '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
+        '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
         '/forget-credentials': {
           post: {
             summary: 'Forget Wake Logger credentials while preserving all device outboxes',
@@ -124,6 +165,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     statusTimer = undefined
     await transport?.stop()
     await sampleOperation
+    await courses?.close()
+    courses = undefined
+    courseInitializationError = undefined
+    courseFailureAcknowledgement = undefined
     transport = undefined
     await outbox?.close()
     outbox = undefined
@@ -186,6 +231,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function startTelemetry(config: PluginConfig, credentials: DeviceCredentials, credentialStore: CredentialStore, dataDirectory: string, thisGeneration: number): Promise<void> {
+    courses = new CourseStore(path.join(dataDirectory, 'courses', credentials.deviceId, 'state.json'), new NativeCourseService(app as unknown as NativeCourseApp))
+    try { await courses.open() }
+    catch (error) {
+      courses = undefined
+      courseInitializationError = safeError(error)
+      app.error(`Wake Logger course cache unavailable; telemetry recording continues: ${courseInitializationError}`)
+    }
     const normaliser = new TelemetryNormaliser()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
@@ -206,6 +258,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }, credentials.outboxBinding?.backend)
     outbox = selected.store
     storageBackend = selected.backend
+    let nextSequence = (await outbox.stats()).currentSequence + 1
     if (!credentials.outboxBinding) {
       credentials.outboxBinding = { version: 1, backend: selected.backend, initializedAt: Date.now() }
       await credentialStore.save(credentials)
@@ -219,6 +272,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         void updateStatus(detail)
         if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
+      onCourse: async (payload) => {
+        if (courses) return courses.receive(payload)
+        let revision = 0
+        try { revision = parseCourse(payload).revision } catch { /* Report unavailable storage without accepting a new course. */ }
+        courseFailureAcknowledgement = { v: 1, revision, status: 'rejected', errorCode: 'course_storage_unavailable' }
+        return courseFailureAcknowledgement
+      },
+      getCourseAcknowledgement: () => courses?.acknowledgement() ?? courseFailureAcknowledgement,
       onRecordingAcks: async (acks) => {
         sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
         await sampleOperation
@@ -237,9 +298,17 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       const now = Date.now()
       const draft = normaliser.takeSample(now, sampler.dueFields(now))
       if (!draft || !outbox) return
-      const sequence = (await outbox.stats()).currentSequence + 1
-      await trip.prepare(draft, sequence)
-      const queued = await outbox.append(credentials.deviceId, draft)
+      await trip.prepare(draft, nextSequence)
+      let queued
+      try {
+        queued = await outbox.append(credentials.deviceId, draft)
+        nextSequence = queued.sequence + 1
+      } catch (error) {
+        // Append may commit before a later maintenance error. Recover only on
+        // failure; scanning the complete offline queue every sample is costly.
+        nextSequence = (await outbox.stats()).currentSequence + 1
+        throw error
+      }
       transport?.updateCurrent(queued)
       if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${queued.sequence}`)
     }
@@ -289,6 +358,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       return
     }
     app.setPluginStatus(`Wake Logger: ${connectionState} — ${queue}${dropped}${sequence}${trip}${extra}`)
+    void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Unable to report Wake Logger course: ${safeError(error)}`))
   }
 
   function confirmAssociation(credentials: DeviceCredentials, thisGeneration: number): Promise<void> {

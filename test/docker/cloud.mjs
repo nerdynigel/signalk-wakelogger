@@ -15,6 +15,7 @@ let persistedCount = 0
 let events = []
 let processing = Promise.resolve()
 const maximumAcknowledged = new Map()
+const receivedSequences = new Set()
 
 await fs.mkdir('/data', { recursive: true })
 try {
@@ -63,9 +64,11 @@ async function processMessage(topic, payloadBuffer) {
   if (events.length > maximumEvents) events = events.slice(-maximumEvents)
   if (topic !== `${baseTopic}/telemetry` || !Array.isArray(payload?.samples)) return
   const sequences = payload.samples.map((sample) => sample?.sequence).filter(Number.isSafeInteger)
-  const through = sequences.length ? Math.max(...sequences) : undefined
-  if (through === undefined) return
+  if (!sequences.length) return
+  for (const sequence of sequences) receivedSequences.add(sequence)
   const prior = maximumAcknowledged.get(deviceId) ?? 0
+  let through = Math.max(prior, Number.isSafeInteger(payload.droppedThrough) ? payload.droppedThrough : 0)
+  while (receivedSequences.has(through + 1)) through += 1
   await publish(`${baseTopic}/ack`, JSON.stringify({ v: 1, deviceId, ackSequence: through, acknowledgedAt: Date.now() }))
   maximumAcknowledged.set(deviceId, Math.max(prior, through))
 }
@@ -108,6 +111,11 @@ const server = https.createServer({
       await processing
       events = []
       return json(response, 200, { reset: true, persistedCount })
+    }
+    if (request.method === 'POST' && request.url === '/course') {
+      const body = await readJson(request)
+      await new Promise((resolve, reject) => client.publish(`${baseTopic}/course`, JSON.stringify(body), { qos: 1, retain: true }, (error) => error ? reject(error) : resolve()))
+      return json(response, 200, { published: true })
     }
     if (request.method === 'POST' && request.url === '/pair') {
       const body = await readJson(request)
