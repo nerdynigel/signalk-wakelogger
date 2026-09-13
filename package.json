@@ -28,7 +28,8 @@
     "README.md",
     "CHANGELOG.md",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    "public"
   ],
   "engines": {
     "node": ">=20"
@@ -43,10 +44,11 @@
     "vessel-tracking",
     "trip-log",
     "telemetry",
-    "mqtt"
+    "mqtt",
+    "signalk-webapp"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && npm run build:webapp",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run test/integration",
@@ -59,12 +61,16 @@
     "measure:outbox": "npm run build && node scripts/measure-outbox.mjs",
     "verify:published": "node scripts/verify-published.mjs",
     "prepublishOnly": "node scripts/verify-release.mjs && npm run check",
-    "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build",
+    "build:webapp": "node scripts/build-webapp.mjs",
+    "test:webapp": "node --test test/webapp/services.test.mjs && playwright test --config test/webapp/playwright.config.mjs"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "mqtt": "^5.15.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@signalk/server-api": "^2.31.1",
     "@types/node": "^20.17.30",
     "@typescript-eslint/eslint-plugin": "^8.28.0",
