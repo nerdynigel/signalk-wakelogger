@@ -50,17 +50,28 @@ describe('Signal K lifecycle', () => {
       subscriptionmanager: { subscribe: vi.fn() }
     }
     const plugin = pluginConstructor(app)
-    plugin.start({}, vi.fn())
-    await waitFor(async () => (await credentialStore.load())?.outboxBinding?.backend === 'file')
-    await plugin.stop()
-    expect((await credentialStore.load())?.outboxBinding).toMatchObject({ version: 1, backend: 'file' })
+    try {
+      // Observe completed initialization in memory. Reopening credentials every
+      // 10ms races their atomic replacement on Windows; network setup is not
+      // relevant to this storage identity regression either.
+      plugin.start({ uploadMode: 'local_only' }, vi.fn())
+      await waitFor(() => {
+        expect(app.setPluginError.mock.calls, 'credential upgrade startup errors').toEqual([])
+        return app.subscriptionmanager.subscribe.mock.calls.length > 0
+      })
+      await plugin.stop()
+      expect((await credentialStore.load())?.outboxBinding).toMatchObject({ version: 1, backend: 'file' })
 
-    await fs.unlink(path.join(directory, 'outbox', 'dev_upgrade.backend.json'))
-    app.setPluginError.mockClear()
-    plugin.start({}, vi.fn())
-    await waitFor(() => app.setPluginError.mock.calls.some((call: string[]) =>
-      typeof call[0] === 'string' && call[0].includes('refusing an unsafe sequence reset')))
-    await plugin.stop()
+      await fs.unlink(path.join(directory, 'outbox', 'dev_upgrade.backend.json'))
+      app.setPluginError.mockClear()
+      app.subscriptionmanager.subscribe.mockClear()
+      plugin.start({ uploadMode: 'local_only' }, vi.fn())
+      await waitFor(() => app.setPluginError.mock.calls.length > 0)
+      expect(app.setPluginError.mock.calls[0][0]).toContain('refusing an unsafe sequence reset')
+      expect(app.subscriptionmanager.subscribe).not.toHaveBeenCalled()
+    } finally {
+      await plugin.stop()
+    }
   })
 
   it('offers an admin-only forget action that preserves the retired outbox', async () => {
