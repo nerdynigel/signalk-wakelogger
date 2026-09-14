@@ -1,7 +1,8 @@
+import type { CourseAcknowledgement } from '../courses/protocol'
 import mqtt, { type IClientOptions, type MqttClient } from 'mqtt'
 import type { DeviceCredentials } from '../pairing/credentials'
 import { parseTelemetryProfile, type ProfileAcknowledgement, type TelemetryProfile } from '../telemetry/profile'
-import type { ApplicationAck, NetworkMode, PluginStatusMetrics, TelemetryBatch, TelemetrySample } from '../telemetry/types'
+import type { ApplicationAck, RecordingAcknowledgement, NetworkMode, PluginStatusMetrics, TelemetryBatch, TelemetrySample } from '../telemetry/types'
 import type { OutboxStore } from '../outbox/interface'
 import { AdaptiveModeMonitor } from './adaptive-mode'
 import { deviceTopics } from './topics'
@@ -12,6 +13,9 @@ interface TransportOptions {
   profile: TelemetryProfile
   onState: (state: ConnectionState, detail?: string) => void
   onMode?: (mode: NetworkMode, reason: string) => void
+  onCourse?: (payload: Buffer) => Promise<CourseAcknowledgement>
+  getCourseAcknowledgement?: () => Promise<CourseAcknowledgement | undefined> | CourseAcknowledgement | undefined
+  onRecordingAcks?: (acks: RecordingAcknowledgement[]) => Promise<void>
   onProfile?: (profile: TelemetryProfile) => Promise<void>
   debug?: (message: string) => void
   random?: () => number
@@ -69,7 +73,7 @@ export class WakeLoggerTransport {
     }).catch((error) => this.options.onState('degraded', sanitizeError(String(error))))
   }
 
-  async stop(): Promise<void> {
+  async stop(publishOffline = true): Promise<void> {
     this.stopped = true
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
@@ -79,8 +83,8 @@ export class WakeLoggerTransport {
     this.monitor.disconnected('plugin_stopped')
     this.syncMode()
     if (!client) return
-    if (client.connected) await this.publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
-    await new Promise<void>((resolve) => client.end(false, {}, () => resolve()))
+    if (publishOffline && client.connected) await this.publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
+    await new Promise<void>((resolve) => client.end(!publishOffline, {}, () => resolve()))
   }
 
   updateCurrent(sample: TelemetrySample): void {
@@ -89,6 +93,13 @@ export class WakeLoggerTransport {
     if (this.client?.connected) {
       void this.drainCurrentState().catch((error) => this.transportFailure(error))
       void this.publishLiveSample().catch((error) => this.transportFailure(error))
+    }
+  }
+
+  async publishCourseAcknowledgement(): Promise<void> {
+    const acknowledgement = await this.options.getCourseAcknowledgement?.()
+    if (acknowledgement && this.client?.connected && !this.stopped) {
+      await this.publish(this.client, this.topics.courseAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
     }
   }
 
@@ -124,7 +135,7 @@ export class WakeLoggerTransport {
     const client = mqtt.connect(url, mqttOptions)
     this.client = client
     client.on('connect', () => void this.onConnect(client).catch((error) => { this.transportFailure(error); client.end(true) }))
-    client.on('message', (topic, payload) => void this.onMessage(topic, payload))
+    client.on('message', (topic, payload) => void this.onMessage(topic, payload).catch((error) => this.transportFailure(error)))
     client.on('error', (error) => {
       const auth = /auth|not authorized|bad user/i.test(error.message)
       this.authenticationFailed = auth
@@ -149,7 +160,7 @@ export class WakeLoggerTransport {
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
     this.nextPublishAfter = stats.acknowledgedSequence
-    await subscribe(client, [this.topics.ack, this.topics.profile])
+    await subscribe(client, [this.topics.ack, this.topics.profile, this.topics.course])
     this.monitor.connected()
     this.syncMode()
     this.backlogTokenAt = this.now()
@@ -157,6 +168,7 @@ export class WakeLoggerTransport {
     await this.publish(client, this.topics.status, JSON.stringify(statusPayload('online', this.effectiveStatusMetrics())), { qos: 1, retain: true })
     this.statePublishPending = this.current !== undefined
     await this.drainCurrentState()
+    await this.publishCourseAcknowledgement()
     this.options.onState('online')
     if (this.pumpTimer) clearInterval(this.pumpTimer)
     this.pumpTimer = setInterval(() => void this.pump(), 1000)
@@ -216,6 +228,10 @@ export class WakeLoggerTransport {
   private async onMessage(topic: string, payload: Buffer): Promise<void> {
     if (topic === this.topics.ack) await this.handleAcknowledgement(payload)
     else if (topic === this.topics.profile) await this.handleProfile(payload)
+    else if (topic === this.topics.course && this.options.onCourse) {
+      await this.options.onCourse(payload)
+      await this.publishCourseAcknowledgement()
+    }
   }
 
   private async handleAcknowledgement(payload: Buffer): Promise<void> {
@@ -223,15 +239,21 @@ export class WakeLoggerTransport {
     try {
       const ack = JSON.parse(payload.toString('utf8')) as ApplicationAck
       if (ack.v !== 1 || ack.deviceId !== this.credentials.deviceId || !Number.isSafeInteger(ack.ackSequence)) return
+      const before = await this.outbox.stats()
+      if (ack.ackSequence < 0 || ack.ackSequence > before.currentSequence) return
       const acknowledgedBatch = this.inFlight.find((batch) => ack.ackSequence >= batch.through)
       if (acknowledgedBatch) {
         this.acknowledgementLatencyMs = this.now() - acknowledgedBatch.sentAt
         this.monitor.acknowledgement(this.acknowledgementLatencyMs)
       }
       await this.outbox.acknowledge(ack.ackSequence)
-      this.backlogMessageCount = (await this.outbox.stats()).messageCount
+      const committed = await this.outbox.stats()
+      if (Array.isArray(ack.recordingAcks) && ack.recordingAcks.length <= 25) {
+        await this.options.onRecordingAcks?.(ack.recordingAcks.filter((entry) => entry && typeof entry.id === 'string' && Number.isSafeInteger(entry.lastSequence) && ['complete', 'cancelled', 'interrupted'].includes(entry.state)))
+      }
+      this.backlogMessageCount = committed.messageCount
       this.lastAcknowledgedAt = this.now()
-      this.inFlight = this.inFlight.filter((batch) => batch.through > ack.ackSequence)
+      this.inFlight = this.inFlight.filter((batch) => batch.through > committed.acknowledgedSequence)
       this.syncMode()
       this.options.debug?.(`Application acknowledged telemetry through sequence ${ack.ackSequence}`)
       void this.pump()
@@ -313,6 +335,7 @@ export class WakeLoggerTransport {
 
 function statusPayload(state: string, metrics?: PluginStatusMetrics): object {
   return { v: 1, state, at: Date.now(), ...(metrics ? {
+    uploadMode: metrics.uploadMode, recordings: metrics.recordings,
     pluginVersion: metrics.pluginVersion, queueMessageCount: metrics.queueMessageCount, queueDiskBytes: metrics.queueDiskBytes,
     queueOldestCapturedAt: metrics.queueOldestCapturedAt, queueDroppedCount: metrics.queueDroppedCount,
     acknowledgedSequence: metrics.acknowledgedSequence, currentSequence: metrics.currentSequence, trackingState: metrics.trackingState,

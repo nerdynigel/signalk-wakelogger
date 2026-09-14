@@ -2,6 +2,14 @@ export const configSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    uploadMode: {
+      type: 'string',
+      title: 'Upload mode',
+      enum: ['automatic', 'local_only'],
+      enumNames: ['Automatic upload', 'Record locally'],
+      default: 'automatic',
+      description: 'local_only records on this boat without any Wake Logger network traffic. Pair first. Save automatic when ready to upload the queue.'
+    },
     pairingCode: {
       type: 'string',
       title: 'Wake Logger pairing code',

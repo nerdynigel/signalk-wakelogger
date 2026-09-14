@@ -1,6 +1,6 @@
 {
   "name": "signalk-wakelogger",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "description": "Turn Signal K navigation data into resilient Wake Logger live tracking and trip history, even through internet outages",
   "license": "Apache-2.0",
   "author": "Nigel George",
@@ -28,7 +28,8 @@
     "README.md",
     "CHANGELOG.md",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    "public"
   ],
   "engines": {
     "node": ">=20"
@@ -43,10 +44,11 @@
     "vessel-tracking",
     "trip-log",
     "telemetry",
-    "mqtt"
+    "mqtt",
+    "signalk-webapp"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && npm run build:webapp",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run test/integration",
@@ -59,12 +61,16 @@
     "measure:outbox": "npm run build && node scripts/measure-outbox.mjs",
     "verify:published": "node scripts/verify-published.mjs",
     "prepublishOnly": "node scripts/verify-release.mjs && npm run check",
-    "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build",
+    "build:webapp": "node scripts/build-webapp.mjs",
+    "test:webapp": "node --test test/webapp/services.test.mjs && playwright test --config test/webapp/playwright.config.mjs"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "mqtt": "^5.15.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@signalk/server-api": "^2.31.1",
     "@types/node": "^20.17.30",
     "@typescript-eslint/eslint-plugin": "^8.28.0",
@@ -77,10 +83,10 @@
     "displayName": "Wake Logger",
     "appIcon": "./assets/wakelogger.png",
     "screenshots": [
-      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/live-tracking.png",
-      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/route-review.png",
-      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-status.png",
-      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.2/assets/screenshots/plugin-config.png"
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.3/assets/screenshots/live-tracking.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.3/assets/screenshots/route-review.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.3/assets/screenshots/plugin-status.png",
+      "https://unpkg.com/signalk-wakelogger@0.2.0-beta.3/assets/screenshots/plugin-config.png"
     ]
   },
   "signalk-plugin-enabled-by-default": false

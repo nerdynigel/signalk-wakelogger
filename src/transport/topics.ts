@@ -6,6 +6,8 @@ export interface DeviceTopics {
   ack: string
   profile: string
   profileAck: string
+  course: string
+  courseAck: string
 }
 
 export function deviceTopics(deviceId: string): DeviceTopics {
@@ -13,6 +15,7 @@ export function deviceTopics(deviceId: string): DeviceTopics {
   const base = `wakelogger/v1/devices/${deviceId}`
   return {
     telemetry: `${base}/telemetry`, state: `${base}/state`, status: `${base}/status`,
-    events: `${base}/events`, ack: `${base}/ack`, profile: `${base}/profile`, profileAck: `${base}/profile-ack`
+    events: `${base}/events`, ack: `${base}/ack`, profile: `${base}/profile`, profileAck: `${base}/profile-ack`,
+    course: `${base}/course`, courseAck: `${base}/course-ack`
   }
 }

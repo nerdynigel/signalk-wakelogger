@@ -57,6 +57,56 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('WakeLoggerTransport', () => {
+  it('subscribes to desired courses and retains acknowledgements without publishing while stopped', async () => {
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(undefined), pendingAfter: vi.fn().mockResolvedValue([]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 0, acknowledgedSequence: 0, messageCount: 0 })
+    }
+    let acknowledgement: any
+    const onCourse = vi.fn(async () => {
+      acknowledgement = { v: 1, revision: 4, status: 'applied', activation: 'active', mapReadiness: 'unknown' }
+      return acknowledgement
+    })
+    const transport = new WakeLoggerTransport({
+      version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
+      mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onCourse, getCourseAcknowledgement: async () => acknowledgement })
+    transport.start()
+    await tick()
+    const client = clients[0]!
+    client.emit('connect')
+    await tick(); await tick()
+    expect(client.subscriptions).toContain('wakelogger/v1/devices/dev_1/course')
+    client.emit('message', 'wakelogger/v1/devices/dev_1/course', Buffer.from('{"revision":4}'))
+    await tick(); await tick()
+    expect(onCourse).toHaveBeenCalledTimes(1)
+    const courseAck = client.publications.find((entry) => entry.topic.endsWith('/course-ack'))!
+    expect(JSON.parse(courseAck.payload)).toEqual(acknowledgement)
+    expect(courseAck.options).toMatchObject({ qos: 1, retain: true })
+    await transport.stop(false)
+    const count = client.publications.length
+    await transport.publishCourseAcknowledgement()
+    expect(client.publications).toHaveLength(count)
+  })
+
+  it('accepts committed manifest receipts but ignores an acknowledgement beyond the local sequence', async () => {
+    const outbox: any = {
+      stats: vi.fn().mockResolvedValue({ currentSequence: 4, acknowledgedSequence: 2, messageCount: 2 }),
+      acknowledge: vi.fn().mockResolvedValue(undefined)
+    }
+    const onRecordingAcks = vi.fn().mockResolvedValue(undefined)
+    const transport = new WakeLoggerTransport({
+      version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
+      mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onRecordingAcks })
+    const recordingAcks = [{ id: '00000000-0000-4000-8000-000000000001', lastSequence: 2, state: 'interrupted' }]
+    await (transport as any).handleAcknowledgement(Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 999, recordingAcks })))
+    expect(outbox.acknowledge).not.toHaveBeenCalled()
+    expect(onRecordingAcks).not.toHaveBeenCalled()
+    await (transport as any).handleAcknowledgement(Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 2, recordingAcks })))
+    expect(onRecordingAcks).toHaveBeenCalledWith(recordingAcks)
+  })
+
   it('uses MQTT 5 verified TLS, prioritises current state and applies cloud acknowledgements', async () => {
     const acknowledge = vi.fn().mockResolvedValue(undefined)
     const outbox: any = {

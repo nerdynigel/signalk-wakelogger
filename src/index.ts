@@ -1,6 +1,9 @@
 import type { Plugin, PluginConstructor, ServerAPI } from '@signalk/server-api'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { CourseStore } from './courses/course-store'
+import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
+import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
@@ -14,7 +17,8 @@ import { legacyProfile, parseTelemetryProfile, type TelemetryProfile } from './t
 import { TelemetryProfileStore } from './telemetry/profile-store'
 import { PathSampler } from './telemetry/sampler'
 import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-client'
-import { TripStateMachine, type TripSnapshot } from './trips/state-machine'
+import { type TripSnapshot } from './trips/state-machine'
+import { RecordingStore } from './trips/recording-store'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const pluginVersion = '0.2.0-beta.2'
@@ -24,8 +28,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let statusTimer: NodeJS.Timeout | undefined
   let outbox: OutboxStore | undefined
   let transport: WakeLoggerTransport | undefined
-  let tripState: TripStateMachine | undefined
-  let connectionState: ConnectionState | 'unpaired' | 'device_revoked' = 'unpaired'
+  let courses: CourseStore | undefined
+  let courseInitializationError: string | undefined
+  let courseFailureAcknowledgement: CourseAcknowledgement | undefined
+  let tripState: RecordingStore | undefined
+  let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
+  let sampleOperation: Promise<void> = Promise.resolve()
+  let connectionState: ConnectionState | 'unpaired' | 'device_revoked' | 'recording_locally' = 'unpaired'
   let activeProfile: TelemetryProfile | undefined
   let storageBackend: 'file' | 'database' = 'file'
   let initialization: Promise<void> | undefined
@@ -39,9 +48,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     description: 'Live vessel tracking and resilient Signal K telemetry for Wake Logger',
     schema: configSchema,
     start(configuration: object): void {
+      pairingAbortController?.abort()
+      associationAbortController?.abort()
+      // Stop all transmission immediately when a saved configuration restarts us.
+      const stopping = transport?.stop(false)
       const previous = initialization
       const thisGeneration = ++generation
       initialization = (async () => {
+        await stopping
         await previous?.catch(() => undefined)
         await cleanupResources()
         if (thisGeneration === generation) await initialise(parseConfig(configuration), thisGeneration)
@@ -66,12 +80,44 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       // Signal K protects routes registered directly on the plugin router with
       // administrator authentication. Do not downgrade this action via access().
       const adminRouter = router as unknown as {
+        get?: (route: string, handler: (request: unknown, response: { status: (code: number) => { json: (body: unknown) => void } }, next: (error: unknown) => void) => void) => void
         post: (route: string, handler: (
           request: unknown,
           response: { status: (code: number) => { json: (body: unknown) => void } },
           next: (error: unknown) => void
         ) => Promise<void>) => void
       }
+      adminRouter.get?.('/course', async (_request, response, next) => {
+        try {
+          response.status(200).json({
+            ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError
+          })
+        } catch (error) { next(error) }
+      })
+      adminRouter.post('/course/activate', async (_request, response, next) => {
+        try {
+          if (!courses) throw new CourseError('no_selected_course')
+          await courses.activate()
+          void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Course acknowledgement deferred: ${safeError(error)}`))
+          response.status(200).json({ ...await courses.status(), uploadMode: activeUploadMode, connectionState })
+        } catch (error) {
+          if (error instanceof CourseError) response.status(409).json({ error: error.code })
+          else next(error)
+        }
+      })
+      adminRouter.post('/course/map-readiness', async (request, response, next) => {
+        try {
+          if (!courses) throw new CourseError('no_selected_course')
+          const body = (request as { body?: { revision?: unknown; status?: unknown } }).body
+          await courses.setMapReadiness(body?.revision, body?.status)
+          void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Course acknowledgement deferred: ${safeError(error)}`))
+          response.status(200).json(await courses.status())
+        } catch (error) {
+          if (error instanceof CourseError) response.status(409).json({ error: error.code })
+          else next(error)
+        }
+      })
       adminRouter.post('/forget-credentials', async (_request, response, next) => {
         try {
           generation += 1
@@ -97,6 +143,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       openapi: '3.0.3',
       info: { title: 'Wake Logger Signal K plugin', version: pluginVersion },
       paths: {
+        '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
+        '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
+        '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
         '/forget-credentials': {
           post: {
             summary: 'Forget Wake Logger credentials while preserving all device outboxes',
@@ -115,6 +164,11 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     sampleTimer = undefined
     statusTimer = undefined
     await transport?.stop()
+    await sampleOperation
+    await courses?.close()
+    courses = undefined
+    courseInitializationError = undefined
+    courseFailureAcknowledgement = undefined
     transport = undefined
     await outbox?.close()
     outbox = undefined
@@ -125,11 +179,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function initialise(config: PluginConfig, thisGeneration: number): Promise<void> {
+    activeUploadMode = config.uploadMode
     const dataDirectory = app.getDataDirPath()
     const credentialStore = new CredentialStore(path.join(dataDirectory, 'identity'))
     let credentials = await credentialStore.load()
     const lastPairingCodeFingerprint = await credentialStore.lastPairingCodeFingerprint()
-    if (shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
+    if (config.uploadMode === 'automatic' && shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
       const controller = new AbortController()
       pairingAbortController = controller
       try {
@@ -168,7 +223,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     if (!credentials) {
       connectionState = 'unpaired'
-      app.setPluginStatus('Wake Logger: Not paired')
+      app.setPluginStatus(config.uploadMode === 'local_only' ? 'Wake Logger: Not paired — switch to automatic and pair before recording locally' : 'Wake Logger: Not paired')
       return
     }
     if (generation !== thisGeneration) return
@@ -176,11 +231,18 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function startTelemetry(config: PluginConfig, credentials: DeviceCredentials, credentialStore: CredentialStore, dataDirectory: string, thisGeneration: number): Promise<void> {
+    courses = new CourseStore(path.join(dataDirectory, 'courses', credentials.deviceId, 'state.json'), new NativeCourseService(app as unknown as NativeCourseApp))
+    try { await courses.open() }
+    catch (error) {
+      courses = undefined
+      courseInitializationError = safeError(error)
+      app.error(`Wake Logger course cache unavailable; telemetry recording continues: ${courseInitializationError}`)
+    }
     const normaliser = new TelemetryNormaliser()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
-    const trip = new TripStateMachine(await readTripSnapshot(tripFile))
+    const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
+    await trip.open(await readTripSnapshot(tripFile))
     tripState = trip
-    let tripSnapshotJson = JSON.stringify(trip.currentState())
     // Each provisioned device owns an independent sequence space. A replacement
     // device must never replay the retired device's records under new credentials.
     const profileStore = new TelemetryProfileStore(path.join(dataDirectory, 'profiles', credentials.deviceId))
@@ -188,7 +250,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const legacy = credentials.telemetryProfile as { sample_period_ms?: number; batch_size?: number } | undefined
     const profile = await profileStore.load() ?? credentialProfile ?? legacyProfile(legacy?.sample_period_ms ?? config.samplePeriodMs, legacy?.batch_size)
     activeProfile = profile
-    const sampler = new PathSampler(profile)
+    const sampler = new PathSampler(profile, config.uploadMode === 'local_only' ? 'NORMAL' : 'OFFLINE')
     const selected = await createOutbox(app, dataDirectory, credentials.deviceId, {
       maxBytes: config.maxOutboxMb * 1024 * 1024,
       maxAgeMs: config.maxOutboxDays * 24 * 60 * 60 * 1000,
@@ -196,6 +258,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }, credentials.outboxBinding?.backend)
     outbox = selected.store
     storageBackend = selected.backend
+    let nextSequence = (await outbox.stats()).currentSequence + 1
     if (!credentials.outboxBinding) {
       credentials.outboxBinding = { version: 1, backend: selected.backend, initializedAt: Date.now() }
       await credentialStore.save(credentials)
@@ -209,6 +272,18 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         void updateStatus(detail)
         if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
+      onCourse: async (payload) => {
+        if (courses) return courses.receive(payload)
+        let revision = 0
+        try { revision = parseCourse(payload).revision } catch { /* Report unavailable storage without accepting a new course. */ }
+        courseFailureAcknowledgement = { v: 1, revision, status: 'rejected', errorCode: 'course_storage_unavailable' }
+        return courseFailureAcknowledgement
+      },
+      getCourseAcknowledgement: () => courses?.acknowledgement() ?? courseFailureAcknowledgement,
+      onRecordingAcks: async (acks) => {
+        sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
+        await sampleOperation
+      },
       onMode: (mode) => sampler.updateMode(mode),
       onProfile: async (replacement) => {
         await profileStore.save(replacement)
@@ -218,33 +293,35 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       debug: config.debugTelemetry ? (message) => app.debug(message) : undefined
     })
     stopSubscription = subscribeToTelemetry(app, (delta) => normaliser.ingest(delta))
-    const sample = () => {
+    const sample = async () => {
+      if (generation !== thisGeneration) return
       const now = Date.now()
       const draft = normaliser.takeSample(now, sampler.dueFields(now))
-      if (!draft || !outbox || !transport) return
-      const evidence = trip.process(draft)
-      draft.trackingSessionId = evidence?.trackingSessionId ?? trip.trackingSessionId()
-      if (evidence) draft.evidence = evidence
-      const nextSnapshotJson = JSON.stringify(trip.currentState())
-      if (nextSnapshotJson !== tripSnapshotJson) {
-        tripSnapshotJson = nextSnapshotJson
-        void atomicWrite(tripFile, `${tripSnapshotJson}\n`).catch((error) => app.error(`Unable to persist Wake Logger trip state: ${safeError(error)}`))
+      if (!draft || !outbox) return
+      await trip.prepare(draft, nextSequence)
+      let queued
+      try {
+        queued = await outbox.append(credentials.deviceId, draft)
+        nextSequence = queued.sequence + 1
+      } catch (error) {
+        // Append may commit before a later maintenance error. Recover only on
+        // failure; scanning the complete offline queue every sample is costly.
+        nextSequence = (await outbox.stats()).currentSequence + 1
+        throw error
       }
-      void outbox.append(credentials.deviceId, draft).then((sample) => {
-        transport?.updateCurrent(sample)
-        if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${sample.sequence}`)
-      }).catch((error) => app.error(`Unable to queue Wake Logger telemetry: ${safeError(error)}`))
+      transport?.updateCurrent(queued)
+      if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${queued.sequence}`)
     }
     const scheduleSample = () => {
       if (generation !== thisGeneration) return
       sampleTimer = setTimeout(() => {
-        sample()
-        scheduleSample()
+        sampleOperation = sampleOperation.then(sample).catch((error) => app.error(`Unable to queue Wake Logger telemetry: ${safeError(error)}`)).then(scheduleSample)
       }, sampler.samplePeriodMs())
     }
     scheduleSample()
     statusTimer = setInterval(() => void updateStatus(), 10_000)
-    transport.start()
+    if (config.uploadMode === 'automatic') transport.start()
+    else connectionState = 'recording_locally'
     await updateStatus()
   }
 
@@ -261,6 +338,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const extra = detail ? ` — ${detail}` : ''
     transport?.updateStatus({
       pluginVersion,
+      uploadMode: activeUploadMode,
+      recordings: tripState?.statusManifests(),
       connectionState,
       queueMessageCount: stats.messageCount,
       queueDiskBytes: stats.diskBytes,
@@ -279,6 +358,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       return
     }
     app.setPluginStatus(`Wake Logger: ${connectionState} — ${queue}${dropped}${sequence}${trip}${extra}`)
+    void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Unable to report Wake Logger course: ${safeError(error)}`))
   }
 
   function confirmAssociation(credentials: DeviceCredentials, thisGeneration: number): Promise<void> {
@@ -311,12 +391,6 @@ async function readTripSnapshot(target: string): Promise<TripSnapshot | undefine
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' || error instanceof SyntaxError) return undefined
     throw error
   }
-}
-
-async function atomicWrite(target: string, contents: string): Promise<void> {
-  const temporary = `${target}.tmp`
-  await fs.writeFile(temporary, contents, { mode: 0o600 })
-  await fs.rename(temporary, target)
 }
 
 function safeError(error: unknown): string {

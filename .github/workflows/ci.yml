@@ -56,6 +56,19 @@ jobs:
         if: always()
         run: docker stop signalk-wakelogger-test-broker || true
 
+  onboard-webapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:webapp
+
   signalk-docker-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
