@@ -80,13 +80,21 @@ export class FileOutbox implements OutboxStore {
       this.assertOpen()
       const result: TelemetrySample[] = []
       let bytes = 0
-      for (const segment of await this.readSegments(false)) {
+      const after = Math.max(this.metadata.acknowledgedSequence, sequence)
+      const names = await this.segmentNames()
+      for (let index = 0; index < names.length; index += 1) {
+        // Segment names are their first sequence; the next segment bounds this
+        // one. Skip acknowledged/history prefixes without decoding their JSON.
+        const nextName = names[index + 1]
+        if (nextName && Number(nextName.slice(8, -4)) <= after + 1) continue
+        const segment = await this.readSegment(names[index]!, false)
         for (const { sample } of segment.records) {
-          if (sample.sequence <= Math.max(this.metadata.acknowledgedSequence, sequence)) continue
+          if (sample.sequence <= after) continue
           const size = Buffer.byteLength(JSON.stringify(sample))
           if (result.length > 0 && (result.length >= limit || bytes + size > maxBytes)) return result
           result.push(sample)
           bytes += size
+          if (result.length >= limit || bytes >= maxBytes) return result
         }
       }
       return result
@@ -106,9 +114,9 @@ export class FileOutbox implements OutboxStore {
 
   async latest(): Promise<TelemetrySample | undefined> {
     return this.exclusive(async () => {
-      const segments = await this.readSegments(false)
-      for (let index = segments.length - 1; index >= 0; index -= 1) {
-        const sample = segments[index]?.records.at(-1)?.sample
+      const names = await this.segmentNames()
+      for (let index = names.length - 1; index >= 0; index -= 1) {
+        const sample = (await this.readSegment(names[index]!, false)).records.at(-1)?.sample
         if (sample) return sample
       }
       return undefined
@@ -209,32 +217,34 @@ export class FileOutbox implements OutboxStore {
 
   private async readSegments(repair: boolean): Promise<SegmentContents[]> {
     const result: SegmentContents[] = []
-    for (const name of await this.segmentNames()) {
-      const target = path.join(this.directory, name)
-      const data = await fs.readFile(target)
-      const records: SegmentRecord[] = []
-      let offset = 0
-      while (offset + HEADER_BYTES + CHECKSUM_BYTES <= data.length) {
-        const length = data.readUInt32BE(offset)
-        const end = offset + HEADER_BYTES + length + CHECKSUM_BYTES
-        if (length === 0 || length > this.options.segmentBytes || end > data.length) break
-        const payload = data.subarray(offset + HEADER_BYTES, offset + HEADER_BYTES + length)
-        const expected = data.subarray(offset + HEADER_BYTES + length, end)
-        const actual = createHash('sha256').update(payload).digest()
-        if (!actual.equals(expected)) break
-        try {
-          const sample = JSON.parse(payload.toString('utf8')) as TelemetrySample
-          if (!validSample(sample)) break
-          records.push({ sample, start: offset, end })
-          offset = end
-        } catch {
-          break
-        }
-      }
-      if (repair && offset !== data.length) await fs.truncate(target, offset)
-      result.push({ name, records, bytes: repair ? offset : data.length })
-    }
+    for (const name of await this.segmentNames()) result.push(await this.readSegment(name, repair))
     return result
+  }
+
+  private async readSegment(name: string, repair: boolean): Promise<SegmentContents> {
+    const target = path.join(this.directory, name)
+    const data = await fs.readFile(target)
+    const records: SegmentRecord[] = []
+    let offset = 0
+    while (offset + HEADER_BYTES + CHECKSUM_BYTES <= data.length) {
+      const length = data.readUInt32BE(offset)
+      const end = offset + HEADER_BYTES + length + CHECKSUM_BYTES
+      if (length === 0 || length > this.options.segmentBytes || end > data.length) break
+      const payload = data.subarray(offset + HEADER_BYTES, offset + HEADER_BYTES + length)
+      const expected = data.subarray(offset + HEADER_BYTES + length, end)
+      const actual = createHash('sha256').update(payload).digest()
+      if (!actual.equals(expected)) break
+      try {
+        const sample = JSON.parse(payload.toString('utf8')) as TelemetrySample
+        if (!validSample(sample)) break
+        records.push({ sample, start: offset, end })
+        offset = end
+      } catch {
+        break
+      }
+    }
+    if (repair && offset !== data.length) await fs.truncate(target, offset)
+    return { name, records, bytes: repair ? offset : data.length }
   }
 
   private async segmentNames(): Promise<string[]> {
