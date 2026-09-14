@@ -2,6 +2,7 @@ import { SignalKClient, CourseProgressionService } from './api-client.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
+import { trackingPresentation } from './tracking-controls.mjs'
 
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
@@ -14,6 +15,7 @@ const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
+let trackingStatus = null, trackingChanging = false, trackingRequest = 0
 let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
@@ -21,14 +23,14 @@ const safeText = text => { const node = document.createElement('span'); node.tex
 
 function fitCourse() {
   const points = progress?.points || []
-  if (points.length) map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 55], maxZoom: 15 })
+  if (points.length) map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 55], maxZoom: 15, animate: false })
   else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], 13)
 }
 
 function renderCourse() {
   const course = status.desired?.action === 'clear' ? status.desired : status.cachedCourse || status.desired
   $('course-name').textContent = course?.action !== 'clear' && course?.name ? course.name : 'Onboard navigation'
-  $('cloud-state').textContent = status.uploadMode === 'local_only' ? 'Uploads paused' : status.connectionState === 'online' ? 'Cloud connected' : 'Cloud offline / unconfirmed'
+  if (!trackingStatus) $('cloud-state').textContent = 'Signal K connected'
   const ack = status.acknowledgement
   $('active-status').textContent = progress.matches ? `Wake Logger course active · Revision ${course?.revision ?? '—'}` : progress.points.length ? `Wake Logger course not currently active${status.native?.course?.activeRoute?.name ? ` · Signal K: ${status.native.course.activeRoute.name}` : ''}` : 'No course selected in Wake Logger'
   if (ack?.status === 'rejected') $('active-status').textContent += ' · Update rejected; last usable course retained'
@@ -214,6 +216,112 @@ $('cache-jobs').onclick = async () => {
   } catch (error) { $('cache-status').textContent = error.message }
 }
 
-await poll()
-setInterval(() => { if (!document.hidden) poll() }, 3000)
-window.addEventListener('online', () => poll())
+function renderTracking() {
+  const view = trackingPresentation(trackingStatus)
+  $('live-tracking').setAttribute('aria-checked', String(view.enabled))
+  $('live-tracking').disabled = trackingChanging || !view.available
+  $('live-tracking').setAttribute('aria-busy', String(trackingChanging))
+  $('tracking-mode').textContent = trackingChanging ? 'Saving…' : view.mode
+  $('tracking-description').textContent = view.description
+  $('upload-queue').textContent = view.queue
+  if (trackingStatus) $('cloud-state').textContent = !view.available ? 'Not paired' : !view.enabled ? 'Recording locally' : trackingStatus.connectionState === 'online' ? 'Live connected' : 'Cloud offline'
+}
+async function refreshTracking() {
+  if (trackingChanging) return
+  const request = ++trackingRequest
+  try {
+    const next = await client.request('/plugins/signalk-wakelogger/tracking')
+    if (request !== trackingRequest || trackingChanging) return
+    trackingStatus = next
+  } catch {
+    if (request !== trackingRequest || trackingChanging) return
+    trackingStatus = null
+  }
+  renderTracking()
+}
+$('live-tracking').onclick = async () => {
+  if (trackingChanging || !trackingPresentation(trackingStatus).available) return
+  const uploadMode = trackingStatus.uploadMode === 'automatic' ? 'local_only' : 'automatic'
+  trackingChanging = true
+  ++trackingRequest
+  renderTracking()
+  try {
+    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', body: JSON.stringify({ uploadMode }) })
+    notice(uploadMode === 'local_only' ? 'Live tracking off. Your trip continues recording onboard.' : 'Live tracking on. Saved history uploads when connected.')
+  } catch (error) {
+    // Read the actual mode: a failed settings save can still leave uploads
+    // safely paused. Never show the old toggle as proof of transmission.
+    try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking') }
+    catch { trackingStatus = null }
+    notice(error.status === 503 ? 'The setting could not be saved. Current recorder status is shown below.' : error.message)
+    if ([401, 403].includes(error.status)) {
+      if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen().catch(() => {})
+      setFullscreen(false)
+      $('login').hidden = false
+    }
+  } finally { trackingChanging = false; renderTracking() }
+}
+
+const tabNames = ['race', 'course', 'charts']
+function selectPanel(name, focus = false) {
+  for (const item of tabNames) {
+    const selected = item === name
+    $(`${item}-tab`).setAttribute('aria-selected', String(selected))
+    $(`${item}-tab`).tabIndex = selected ? 0 : -1
+    $(`${item}-panel`).hidden = !selected
+  }
+  if (focus) $(`${name}-tab`).focus()
+}
+for (const name of tabNames) {
+  $(`${name}-tab`).onclick = () => selectPanel(name)
+  $(`${name}-tab`).onkeydown = event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const current = tabNames.indexOf(name)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (current + (event.key === 'ArrowRight' ? 1 : 2)) % 3
+    selectPanel(tabNames[next], true)
+  }
+}
+const chartplotter = $('chartplotter')
+const screen = window.matchMedia('(max-width: 760px)')
+function resizeMap() {
+  chartplotter.dataset.screen = screen.matches ? 'mobile' : 'desktop'
+  requestAnimationFrame(() => map.invalidateSize({ animate: false }))
+}
+screen.addEventListener('change', () => {
+  resizeMap()
+  requestAnimationFrame(fitCourse)
+})
+new ResizeObserver(resizeMap).observe(chartplotter)
+resizeMap()
+function setFullscreen(active) {
+  chartplotter.classList.toggle('is-fullscreen', active)
+  document.body.classList.toggle('chartplotter-fullscreen', active)
+  $('fullscreen').textContent = active ? 'Exit full screen' : 'Full screen'
+  $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen')
+  $('fullscreen').setAttribute('aria-pressed', String(active))
+  resizeMap()
+  requestAnimationFrame(fitCourse)
+}
+$('fullscreen').onclick = async () => {
+  const active = chartplotter.classList.contains('is-fullscreen') || document.fullscreenElement === chartplotter
+  if (active) {
+    if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen().catch(() => {})
+    setFullscreen(false)
+  } else {
+    // Browser fullscreen is not available on every onboard mobile browser.
+    // The fixed viewport presentation provides the same controls there.
+    setFullscreen(true)
+    if (chartplotter.requestFullscreen) await chartplotter.requestFullscreen().catch(() => {})
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) setFullscreen(false)
+})
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !document.fullscreenElement) setFullscreen(false)
+})
+
+await Promise.all([poll(), refreshTracking()])
+setInterval(() => { if (!document.hidden) { poll(); refreshTracking() } }, 3000)
+window.addEventListener('online', () => { poll(); refreshTracking() })
