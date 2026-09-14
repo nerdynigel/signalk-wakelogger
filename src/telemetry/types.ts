@@ -73,6 +73,7 @@ export interface ApplicationAck {
 }
 
 export interface PluginStatusMetrics {
+  courseSyncError?: string
   historicalUpload?: import('../tracking/history').HistoricalUpload
   uploadMode?: 'automatic' | 'local_only'
   recordings?: RecordingManifest[]

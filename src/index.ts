@@ -157,7 +157,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         try {
           response.status(200).json({
             ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
-            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError
           })
         } catch (error) { next(error) }
       })
