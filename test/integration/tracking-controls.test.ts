@@ -5,6 +5,7 @@ import mqtt from 'mqtt'
 import { afterEach, expect, it, vi } from 'vitest'
 import pluginConstructor from '../../src/index'
 import { CredentialStore } from '../../src/pairing/credentials'
+import { FileOutbox } from '../../src/outbox/file-outbox'
 const directories: string[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
 async function fixture() {
@@ -33,8 +34,12 @@ it('toggles persistently without replacing the sampler or splitting the recordin
   const connect = vi.spyOn(mqtt, 'connect')
   const f = await fixture()
   try {
+    const scan = vi.spyOn(FileOutbox.prototype, 'stats')
+    const scanCount = scan.mock.calls.length
+    await Promise.all(Array.from({ length: 20 }, () => f.request('GET')))
+    expect(scan).toHaveBeenCalledTimes(scanCount)
     f.ingest()
-    await vi.waitFor(async () => expect((await f.request('GET')).data.queue.currentSequence).toBeGreaterThan(0), { timeout: 3000 })
+    await vi.waitFor(async () => expect((await f.request('GET')).data.queue.currentSequence).toBeGreaterThan(0), { timeout: 15000 })
     const before = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
     expect((await f.request('POST', { uploadMode: 'automatic' })).code).toBe(200)
     expect(connect).toHaveBeenCalledTimes(1)
@@ -42,7 +47,7 @@ it('toggles persistently without replacing the sampler or splitting the recordin
     const paused = await f.request('POST', { uploadMode: 'local_only' })
     expect(paused.data).toMatchObject({ uploadMode: 'local_only', persistedUploadMode: 'local_only', recording: true, connectionState: 'recording_locally' })
     f.ingest()
-    await vi.waitFor(async () => expect((await f.request('GET')).data.queue.currentSequence).toBeGreaterThan(before.lastSequence), { timeout: 3000 })
+    await vi.waitFor(async () => expect((await f.request('GET')).data.queue.currentSequence).toBeGreaterThan(before.lastSequence), { timeout: 15000 })
     const after = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
     expect(after.active.id).toBe(before.active.id)
     expect(f.app.subscriptionmanager.subscribe).toHaveBeenCalledTimes(1)

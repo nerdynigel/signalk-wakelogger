@@ -8,7 +8,7 @@ import { UploadHistory, durableJson } from './tracking/history'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
-import type { OutboxStore } from './outbox/interface'
+import type { OutboxStats, OutboxStore } from './outbox/interface'
 import { checkAssociationStatus } from './pairing/association-client'
 import { CredentialStore, fingerprintPairingCode, shouldExchangePairingCode, type DeviceCredentials } from './pairing/credentials'
 import { PairingError, pairDeviceWithRetry } from './pairing/pairing-client'
@@ -28,6 +28,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let sampleTimer: NodeJS.Timeout | undefined
   let statusTimer: NodeJS.Timeout | undefined
   let outbox: OutboxStore | undefined
+  let cachedQueueStats: OutboxStats | undefined
+  let queueStatsAt: number | undefined
   let transport: WakeLoggerTransport | undefined
   let courses: CourseStore | undefined
   let courseInitializationError: string | undefined
@@ -244,6 +246,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     transport = undefined
     await outbox?.close()
     outbox = undefined
+    cachedQueueStats = undefined
+    queueStatsAt = undefined
     tripState = undefined
     pairingAbortController = undefined
     associationAbortController = undefined
@@ -431,6 +435,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       return
     }
     const stats = await outbox.stats()
+    cachedQueueStats = stats
+    queueStatsAt = Date.now()
     await updateHistory(stats, beginHistory)
     const queue = `${stats.messageCount} queued, ${(stats.diskBytes / 1024 / 1024).toFixed(1)} MB`
     const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped` : ''
@@ -472,8 +478,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function trackingStatus(): Promise<object> {
-    const stats = await outbox?.stats()
-    if (stats) await updateHistory(stats)
+    // File outbox stats scan the durable queue; browser polls reuse the
+    // normal status refresh instead of taking the outbox lock every request.
+    const stats = cachedQueueStats
     return {
       uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
       persistedUploadMode, persistenceError: persistenceError ?? null,
@@ -483,7 +490,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       queue: stats ? { messageCount: stats.messageCount, diskBytes: stats.diskBytes,
         oldestCapturedAt: stats.oldestCapturedAt ?? null, acknowledgedSequence: stats.acknowledgedSequence,
         currentSequence: stats.currentSequence, droppedCount: stats.droppedCount } : null,
-      at: Date.now()
+      queueStatsAt: queueStatsAt ?? null, at: Date.now()
     }
   }
 
