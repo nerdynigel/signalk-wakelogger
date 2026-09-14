@@ -83,7 +83,7 @@ export class WakeLoggerTransport {
     this.monitor.disconnected('plugin_stopped')
     this.syncMode()
     if (!client) return
-    if (publishOffline && client.connected) await this.publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
+    if (publishOffline && client.connected) await publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
     await new Promise<void>((resolve) => client.end(!publishOffline, {}, () => resolve()))
   }
 
@@ -160,7 +160,9 @@ export class WakeLoggerTransport {
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
     this.nextPublishAfter = stats.acknowledgedSequence
+    if (client !== this.client || this.stopped) return
     await subscribe(client, [this.topics.ack, this.topics.profile, this.topics.course])
+    if (client !== this.client || this.stopped) return
     this.monitor.connected()
     this.syncMode()
     this.backlogTokenAt = this.now()
@@ -318,6 +320,7 @@ export class WakeLoggerTransport {
   }
 
   private async publish(client: MqttClient, topic: string, payload: string, options: { qos: 1; retain?: boolean }): Promise<void> {
+    if (this.stopped || client !== this.client || !client.connected) return
     await publish(client, topic, payload, options)
     this.publishedBytes += Buffer.byteLength(payload)
   }
@@ -335,6 +338,7 @@ export class WakeLoggerTransport {
 
 function statusPayload(state: string, metrics?: PluginStatusMetrics): object {
   return { v: 1, state, at: Date.now(), ...(metrics ? {
+    historicalUpload: metrics.historicalUpload,
     uploadMode: metrics.uploadMode, recordings: metrics.recordings,
     pluginVersion: metrics.pluginVersion, queueMessageCount: metrics.queueMessageCount, queueDiskBytes: metrics.queueDiskBytes,
     queueOldestCapturedAt: metrics.queueOldestCapturedAt, queueDroppedCount: metrics.queueDroppedCount,

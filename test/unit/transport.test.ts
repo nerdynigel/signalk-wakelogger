@@ -89,6 +89,26 @@ describe('WakeLoggerTransport', () => {
     expect(client.publications).toHaveLength(count)
   })
 
+  it('does not publish an asynchronous backlog read that completes after local-only pause', async () => {
+    let release: ((samples: any[]) => void) | undefined
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(sample),
+      pendingAfter: vi.fn(() => new Promise((resolve) => { release = resolve })),
+      stats: vi.fn().mockResolvedValue({ acknowledgedSequence: 0, droppedThrough: 0 })
+    }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 },
+      outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn() })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.emit('connect'); await tick(); await tick()
+    expect(release).toBeTypeOf('function')
+    await transport.stop(false)
+    const count = client.publications.length
+    release!([sample]); await tick(); await tick()
+    expect(client.publications).toHaveLength(count)
+    expect(client.publications.some((entry) => entry.topic.endsWith('/telemetry'))).toBe(false)
+  })
+
   it('accepts committed manifest receipts but ignores an acknowledgement beyond the local sequence', async () => {
     const outbox: any = {
       stats: vi.fn().mockResolvedValue({ currentSequence: 4, acknowledgedSequence: 2, messageCount: 2 }),

@@ -65,12 +65,25 @@ export class RecordingStore {
   async prepare(draft: TelemetryDraft, sequence: number): Promise<void> {
     const next = structuredClone(this.snapshot)
     let trip = new TripStateMachine(next.trip)
+    if (next.active) {
+      next.lastCapturedAt = Math.max(next.active.startedAt, next.lastCapturedAt ?? next.active.startedAt)
+      // Older checkpoints may contain a stop candidate from a clock rollback.
+      // Discard that invalid evidence; require a fresh stationary dwell instead
+      // of fabricating an end time or rejecting the remaining valid recording.
+      if (next.trip.state === 'STOP_CANDIDATE' && (next.trip.candidateAt ?? Infinity) < next.active.startedAt) {
+        trip = new TripStateMachine({ state: 'MOVING', trackingSessionId: next.active.id })
+      }
+    }
     if (next.active && next.lastCapturedAt !== undefined && draft.capturedAt - next.lastCapturedAt > INTERRUPTION_MS) {
       next.closed.push({ ...next.active, state: 'interrupted', endedAt: next.lastCapturedAt, lastSequence: next.lastSequence })
       next.active = undefined
       trip = new TripStateMachine()
     }
-    const evidence = trip.process(draft)
+    // Retain raw out-of-order samples in the same durable sequence range, but
+    // do not let an old source clock cancel a current trip or move its bounds
+    // backwards. Receipt-time fallbacks and replayed instruments can interleave.
+    const outOfOrder = next.lastCapturedAt !== undefined && draft.capturedAt < next.lastCapturedAt
+    const evidence = outOfOrder ? undefined : trip.process(draft)
     if (evidence) draft.evidence = evidence
     const state = trip.currentState()
     if (!next.active && state.trackingSessionId) {
@@ -89,7 +102,7 @@ export class RecordingStore {
       } else draft.recording = structuredClone(next.active)
     }
     next.trip = state
-    next.lastCapturedAt = draft.capturedAt
+    next.lastCapturedAt = Math.max(next.lastCapturedAt ?? draft.capturedAt, draft.capturedAt)
     next.lastSequence = sequence
     await this.persist(next)
     this.snapshot = next
