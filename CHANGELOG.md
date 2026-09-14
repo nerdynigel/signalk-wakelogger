@@ -1,79 +1,72 @@
-# Changelog
+# What's new in Wake Logger for Signal K
 
-All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and semantic versioning.
+Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
 ## [Unreleased]
 
+### Clearer help in Signal K
+
+- Rewritten the App Store guide around pairing, recording trips, uploading later, using courses and preparing offline maps.
+- Replaced technical release summaries with customer-facing notes. Developer setup remains in the separate development documentation.
+
 ## [0.2.0-beta.3] - 2026-09-14
 
-### Added
+### Record your trip now, upload later
 
-- Local-only recording mode, durable recording manifests and deferred historical uploads with committed receipt acknowledgements.
-- Validated, retained cloud course synchronization with revision acknowledgements and restart-safe local persistence.
-- Deterministic native Signal K routes, active-course ownership protection and manual waypoint progression.
-- Packaged onboard interactive map using native navigation calculations and discovered Signal K chart resources, including bounded local chart coverage verification.
+Keep recording when internet access is unavailable, or choose **Record locally** to defer uploading. Switch back to **Automatic upload** when you are ready. Stored readings and recording details are retained through plugin restarts.
 
-### Fixed
+With the supporting Wake Logger service update, you can see historical upload progress and processing status. Trips are finalised once their complete recording has arrived; missing data is clearly flagged.
 
-- Preserve offline samples and trip boundaries through outages and abrupt restarts while prioritizing current position updates.
+Local storage is limited: by default, queued readings are kept for up to seven days or 250 MB. Keep Signal K and the plugin running to record your trip.
 
-### Compatibility
+### Take your race course onboard
 
-- Per-recording upload progress and course synchronization require the companion WakeLogger backend update. Deploy that backend before enabling these features.
-- Offline basemaps require separately provisioned licensed Signal K charts. Automatic online tile prefetch remains a documented design.
+Select a course in Wake Logger and synchronise it to your vessel before departure. Once downloaded, it remains available without internet access.
 
+Your course is available to other Signal K applications. You can advance or correct the current mark manually, and Wake Logger respects route selections made by other apps. Automatic detection of start crossings, mark roundings and finishes is not included in this release.
+
+### Follow your course on an onboard map
+
+The new mobile-friendly webapp displays your vessel, course, marks and current leg. It shows distance, bearing, cross-track error, VMG and arrival estimates when Signal K provides them.
+
+### Prepare for sailing offline
+
+Use locally installed Signal K charts and check coverage around your course before departure. Your vessel and course remain visible even without a basemap.
+
+**Before you update:** Upload progress and course synchronisation require the supporting Wake Logger service update. Offline basemaps require suitable charts installed through Signal K Charts; verification checks existing coverage and does not download missing maps.
+
+This remains a beta release.
 
 ## [0.2.0-beta.2] - 2026-09-02
 
-### Fixed
+### Easier to preview before installing
 
-- Changed App Store screenshots to immutable absolute npm CDN URLs so installed server-only plugins do not select local static URLs that Signal K does not mount.
-- Added publication verification for the npm `gitHead`, icon and screenshots, and rejected publication from a dirty working tree or source export without an authoritative Git `HEAD`.
-- Increased the asynchronous lifecycle-test budget for slower Windows runners without changing plugin runtime timeouts.
-
-### Changed
-
-- Reframed the App Store summary and opening README around the vessel owner's live-tracking, outage-recovery and trip-review outcomes.
-- Added authentic Wake Logger live-tracking and route-review screens ahead of the technical Signal K status and pairing screens in the App Store gallery.
+- Fixed App Store screenshots that could fail to display after installation.
+- Added screenshots of live vessel tracking and trip review, alongside connection status and pairing settings.
+- Clarified how Wake Logger helps you track your vessel and revisit your trips.
 
 ## [0.2.0-beta.1] - 2026-09-02
 
-### Changed
+### A clearer App Store introduction
 
-- Replaced the placeholder Signal K App Store artwork with Wake Logger's official 512 px blue-wave app icon.
-- Reworked the App Store summary and README to introduce Wake Logger's live tracking, trip replay, vessel/crew workspace, environmental context and optional performance-analysis features.
-- Clarified how accepted Signal K telemetry appears in Wake Logger's private and optionally shared live vessel views.
-- Updated App Store publication guidance for the npm `latest` alias required by Signal K discovery during the beta period.
-
-### Validated
-
-- Confirmed an active production association transmitted all supported fields and received application-level durable acknowledgements with no pending queue; the synthetic Signal K source was disabled immediately after the check.
+- Added Wake Logger's blue-wave app icon and improved the product introduction.
+- Explained live tracking, trip replay, crew access and optional trip analysis more clearly.
+- Clarified which navigation readings appear in private and owner-shared live views.
 
 ## [0.2.0-beta.0] - 2026-09-02
 
-### Changed
+### First public beta
 
-- Separated npm beta publication from Raspberry Pi, real-vessel and target-hardware validation; those remain first-vessel and stable-production gates collected through the beta.
-
-### Added
-
-- Retained, credential-free plugin/outbox diagnostics for the Wake Logger administration dashboard.
-- Database API-preferred `OutboxStore` with a portable file fallback and sequence-safe backend selection.
-- Remotely managed, path-specific telemetry profiles and retained application acknowledgements.
-- Adaptive `NORMAL`, `CONSTRAINED` and `OFFLINE` sampling and rate-limited live/backlog scheduling.
-- Public-repository leakage checks, AppStore screenshots and beta-only trusted publishing preparation.
-- Disposable real-Mosquitto CI coverage and credential-bound outbox protection against partial-state sequence resets.
-- Idempotent beta-only npm release checks with exact tag/main ancestry, protected environment and trusted-publisher bootstrap documentation.
-- Disposable packaged-plugin Docker testing with real Signal K NMEA 2000 playback, generated HTTPS/MQTT TLS, durable ACKs, broker outage and abrupt-restart recovery.
-- Bounded retry for temporary pairing failures, explicit revoked-device status and a protected local credential-forget action that preserves retired outboxes and sequence state.
+- Made Wake Logger available through the Signal K App Store for beta use.
+- Improved connection and queued-upload status so support can help diagnose interrupted uploads.
+- Added centrally managed recording profiles to adapt uploads to changing connectivity.
+- Improved recovery of stored readings after outages and restarts.
+- Added clearer feedback for expired pairing codes and revoked device connections.
 
 ## [0.1.0] - 2026-08-31
 
-### Added
+### Initial version
 
-- Signal K lifecycle, configuration and supported navigation subscriptions.
-- SI normalization, validation and one-second sampling.
-- Checksummed segmented outbox with durable sequences and recovery.
-- MQTT 5 TLS/QoS 1 transport, current-state priority and application acknowledgements.
-- HTTPS pairing, protected credential persistence, trip evidence and status metrics.
-- Unit tests, CI, protocol and operational documentation.
+- Connected Signal K position and supported navigation readings to Wake Logger.
+- Added pairing, live updates and onboard storage for readings waiting to upload.
+- Added automatic retries and connection status information.

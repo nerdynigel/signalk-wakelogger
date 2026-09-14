@@ -1,77 +1,90 @@
 # Wake Logger for Signal K
 
-[Wake Logger](https://wakelogger.com/) turns your vessel's Signal K data into a private live view and a trip history you can return to after the voyage. Owners and authorised crew can see where the vessel is, review where it went, and make sense of the journey using the navigation data already available on board.
+**Keep a record of your time on the water—even when you leave internet coverage.**
 
-The plugin is built for real marine connectivity. It stores each sample in a durable local outbox before transmission, sends the current position first when a connection returns, and keeps historical data queued until Wake Logger confirms it is safely stored.
+[Wake Logger](https://wakelogger.com/) connects your boat's Signal K data to live vessel tracking and trip history. Record your outings, review your route afterward, and share the experience with authorised crew. Bring a selected race course onboard and follow it on a map using the navigation data already available on your boat.
 
-## What it gives you
+## What you can do
 
-- **See the vessel's latest position.** Wake Logger presents the accepted Signal K feed in a private, read-only live view for the vessel's authorised crew.
-- **Keep the story when mobile coverage drops.** Telemetry waits safely on the Signal K server and resumes automatically, so an ordinary internet outage does not become a gap in the trip.
-- **Review more than a line on a map.** Trips can include speed over ground, course, heading, depth and apparent wind when the vessel supplies them.
-- **Connect without exposing the vessel.** Pair with a single-use code; no inbound internet connection or manually managed MQTT credentials are required.
-- **Keep access under the owner's control.** Wake Logger vessel roles and sharing settings decide who can see the live view and trip history.
+- **Track your boat live.** See its latest position, speed, heading, depth and apparent wind in Wake Logger when those sensors and an internet connection are available.
+- **Record without uploading.** Keep recording during an internet outage, or choose when uploads are allowed. Upload stored history when you reconnect.
+- **Review your trips.** Return to your route and recorded navigation data after the outing. With the supporting Wake Logger update, see upload progress and when a trip is being processed.
+- **Take your race course with you.** Download the selected course before departure and retain it onboard through internet outages and restarts.
+- **Use an onboard map.** View your boat, course, marks and current leg on a phone or tablet connected to the boat's Signal K server.
 
-Wake Logger can add trip photos, historical weather and tide context, private vessel and crew workspaces, and optional sailing-performance analysis where available. Features depend on the vessel's Wake Logger access, plan and sensors. [Explore Wake Logger](https://wakelogger.com/) to see the wider platform.
+This is a **beta release**. Upload progress and course synchronisation need the supporting Wake Logger service update. If those controls are not yet available in your account, contact Wake Logger support.
 
-This repository handles resilient live telemetry transport only. It does not upload full-resolution NMEA archives, control vessel equipment, replace a navigation display, or implement Wake Logger's account and trip-management logic.
+## What you need
 
-## Requirements
+- A running Signal K server receiving your boat's position. Other navigation sensors are optional.
+- A Wake Logger account with permission to pair a device to your vessel.
+- Internet access for initial pairing, course downloads and uploads. Once paired, recording can continue without internet access.
+- For onboard course and map features, Signal K's route and course services. These features have been tested with Signal K Server 2.31.1.
+- For an offline basemap, suitable local charts installed through Signal K Charts. Charts are not included with Wake Logger.
 
-- Signal K Server with Node.js 20 or newer
-- An eligible Wake Logger vessel and a single-use pairing code
-- Outbound HTTPS for pairing and outbound MQTT over TLS on port 8883
+The plugin requires Node.js 20 or newer on the Signal K server. Your boat does not need to accept incoming connections from the internet.
 
-No inbound vessel connection is required. The plugin starts successfully when unpaired, offline, or when Wake Logger is unavailable.
+## Get started
 
-## Install and pair
+1. In Signal K's **App Store**, install **Wake Logger** (`signalk-wakelogger`).
+2. In Wake Logger, open your vessel's settings and generate a Signal K pairing code.
+3. Open **Wake Logger** in Signal K's plugin configuration, enter the code and save. Enable the plugin if it is disabled.
+4. Check the connection status. When your boat supplies a position and the connection is online, it will appear in the vessel's **Signal K Live** view in Wake Logger.
 
-Install `signalk-wakelogger` from the Signal K AppStore, then open **Server → Plugin Config → Wake Logger**. Generate a pairing code in the Wake Logger vessel settings, enter it in the plugin configuration, and save. The public Wake Logger pairing endpoint is configured by default; non-production overrides must never be committed to this repository.
+Pairing codes are single-use. If a code expires or is rejected, generate a new one. You do not need to pair again after an ordinary internet outage or plugin update.
 
-The pairing code is single-use. Temporary pairing-service failures are retried up to six times with bounded exponential delays while the code remains usable; an invalid or expired code stops immediately and requires a fresh code. MQTT credentials are returned once and stored with owner-only filesystem permissions under the plugin data directory. They never appear in normal logs or status messages.
+## Record now, upload later
 
-Use Wake Logger's **Replace device** workflow to move to another Signal K installation: the current association remains active until the replacement is fully provisioned. **Revoke association** stops the old device immediately without deleting its telemetry history. New pairings include a device-scoped status credential, allowing the plugin to report `Device revoked — enter a new pairing code` instead of a generic authentication error.
+Recording and uploading are separate. Keep Signal K and the Wake Logger plugin running, with your boat's navigation data available, for the trip to be recorded.
 
-## Telemetry and privacy
+**For normal use:** Leave **Upload mode** set to **Automatic upload**. If internet access drops, the plugin stores readings onboard and uploads them when the connection returns.
 
-Version 1 sends position and source time, with SOG, COG, heading, depth and apparent wind when supplied by the vessel. It does not collect battery, fuel, engine temperature or other machinery data. Signal K SI values are converted to Wake Logger's documented units. Missing optional sensors are normal. Wake Logger derives true wind, VMG and final trip boundaries in the cloud.
+**To deliberately defer uploading:** Pair first, then choose **Record locally** in the plugin's **Upload mode** setting and save. This setting survives restarts. When you are ready to upload, select **Automatic upload** and save again.
 
-The plugin does not decide who can see vessel data. Private crew access and any owner-controlled public live-sharing option are enforced by Wake Logger.
+On reconnecting, the latest position is sent promptly while stored history uploads in the background. With the supporting Wake Logger service update, your vessel and trip views show upload and processing progress. A percentage is available once the recording has a known total. Missing or rejected readings are flagged rather than presented as a complete trip.
 
-## Live vessel tracking
+**Before a long outing:** Check available storage and your queue limits. The default limits are seven days or 250 MB, whichever is reached first. If a limit is reached, the oldest queued readings are discarded; plugin status reports the dropped count. Recording locally controls this plugin's Wake Logger connections only—it does not switch off other apps or your boat's internet access.
 
-After the first accepted position arrives, the vessel's **Signal K Live** panel in Wake Logger shows its latest position on a map together with SOG, COG, heading, depth and apparent wind when those values are available. The display refreshes as new telemetry arrives; missing optional sensors are shown as unavailable rather than preventing position tracking.
+## Bring your race course onboard
 
-The private live panel is read-only for vessel crew. Device pairing and management require the appropriate vessel role, while public live sharing is off by default and remains under the vessel owner's control. Live telemetry is for situational awareness and trip logging, not as a certified navigation display.
+Select a saved race course for your vessel in Wake Logger while internet access is available. Check that the course has synchronised before departure. The downloaded course stays on the Signal K server and remains available offline.
 
-## From live data to useful trips
+Open the **Wake Logger webapp** from Signal K's Web Apps list, using a phone, tablet or computer connected to the boat's network. Sign in to Signal K if prompted.
 
-Signal K supplies the onboard observations; this plugin delivers them reliably; Wake Logger turns accepted reports into a view people can use. The App Store screenshots show the resulting live vessel and route-review experiences first, followed by the Signal K connection and pairing screens. Wake Logger features beyond live telemetry remain cloud features and may depend on the vessel's plan.
+The onboard view shows the complete course, your boat, the next mark and current leg. Distance, bearing, cross-track error, VMG and arrival estimates appear when Signal K can calculate them; unavailable readings are left clearly marked.
 
-## Offline operation
+Use **Advance point** to move to the next course point, or select a point and choose **Set point** to correct your progress. Progression is manual in this release: it does not automatically judge start-line crossings, mark roundings, gates or finishes.
 
-To defer uploads deliberately, pair the plugin first, then set **Upload mode** to **local_only** and save in Signal K Plugin Config. The setting survives restarts. Recording continues at the selected profile’s normal quality while the plugin makes no Wake Logger pairing or MQTT connection. When ready, set **automatic** and save; live tracking resumes and stored history uploads in the background. The local queue count shows how much remains. This setting controls this plugin’s traffic, not other Signal K plugins or boat internet services.
+Your course is also available as a standard Signal K route for other onboard applications. If another app selects a different active route, Wake Logger shows that state. Choose **Activate Wake Logger course** when you want to return to it.
 
-The default queue retains up to seven days or 250 MB. Records have persistent device-scoped sequence numbers and checksums. MQTT broker acknowledgement is not enough to remove a record: Wake Logger must acknowledge that the database commit completed. If a configured limit is reached, the oldest backlog is discarded, the newest data is preserved, and the dropped count is shown in plugin status.
+## Prepare your map for offline use
 
-Useful status examples include `recording_locally`, `Not paired`, `connecting`, `online`, `offline`, `degraded`, queue count/size, and dropped-record count. Enable telemetry debug logging only while troubleshooting; it does not log payloads or secrets.
+The onboard map can show your boat and course without internet access. Basemap coverage needs a little preparation:
 
-An authenticated Signal K administrator can call `POST /plugins/signalk-wakelogger/forget-credentials` to forget the local cloud credential before entering a fresh pairing code. This intentionally preserves the installation identity, consumed-code fingerprint, retired device outboxes, sequence records and diagnostics; it does not revoke the cloud association, so revoke it in Wake Logger as well when retiring a device. A forgotten pairing code must be replaced with a new one.
+1. Install Signal K Charts and add local charts that you are licensed to use, such as a suitable MBTiles chart.
+2. In the Wake Logger webapp, select a **Chart source**.
+3. Choose the surrounding course margin and zoom range, then select **Verify local chart coverage**.
+4. Check the result before leaving coverage. Verification applies to the selected area and zoom range, not every possible view of the map.
 
-Wake Logger administrators maintain approved telemetry profiles. Vessel Owners and First Mates can select one; other crew can see the selection but cannot change it. Navigation stays at its configured priority while depth and apparent wind can slow under constrained or offline conditions. Profile revisions and application results are visible to Wake Logger operations.
+Verification checks existing local chart coverage; it does not download missing maps. Automatic online map downloads are not included in this release. An online chart working at the dock does not by itself mean it will work offshore.
 
-## Course navigation
+If chart tiles are unavailable, the map still shows your vessel, course and marks. You can fit the map to the course or centre it on your boat.
 
-Select a race course in Wake Logger to deliver it to the boat. The plugin caches the course and creates a named native Signal K route, which remains available offline. If another app controls the active route, Wake Logger reports the mismatch and waits for explicit local activation. Course progression and navigation values come from Signal K; map readiness is tracked separately from course receipt. See [course synchronization](docs/course-sync.md) for the protocol, local controls and chart-readiness states.
+## Your data and privacy
 
-## Development
+Wake Logger records position and time, plus speed over ground, course over ground, heading, depth and apparent wind when supplied. Missing optional sensors do not prevent position tracking. This plugin does not collect engine, fuel or battery readings.
 
-```sh
-npm ci --ignore-scripts
-npm run check
-npm run test:docker
-```
+Vessel roles and sharing settings in Wake Logger control who can see your data. Public live sharing is off by default and stays under the vessel owner's control.
 
-The Docker test builds the exact local npm tarball and installs it in a pinned official Signal K image. It plays Signal K's sample NMEA 2000 stream through verified HTTPS pairing and TLS MQTT, then proves durable acknowledgement, current-state priority, offline buffering and recovery after an abrupt Signal K stop. All certificates, credentials, broker data and volumes are disposable and local to the test stack.
+## If something is not working
 
-See the complete [refined implementation plan](docs/implementation-plan.md), [original-plan gap audit](docs/original-plan-gap-audit.md), [validation evidence](docs/validation.md), [development](docs/development.md), [release process](docs/release.md), [architecture](docs/architecture.md), [protocol](docs/telemetry-protocol.md), [pairing](docs/pairing.md), and [trip detection](docs/trip-detection.md). Security issues should follow [SECURITY.md](SECURITY.md).
+- **Not paired:** Generate a pairing code in Wake Logger and enter it in the plugin settings.
+- **Offline or waiting to upload:** Check **Upload mode**, your internet connection and the plugin's queue status. Leave the plugin running so it can record and retry.
+- **No vessel position:** Check that Signal K itself is receiving a valid position from your boat.
+- **Course not active:** Check whether another app selected a route. Reactivate the Wake Logger course when appropriate.
+- **Blank basemap:** Check your selected chart source and local coverage. Course and vessel information can still be displayed.
+- **Moving to a different Signal K server:** Use **Replace device** in Wake Logger. Use **Revoke association** when retiring an old connection; your existing trip history is retained.
+
+For help with your account, pairing or trips, contact support through [Wake Logger](https://wakelogger.com/). When reporting a problem, include your plugin version, Signal K version and the status shown—never your pairing code or credentials.
+
+See the **Changelog** tab for what's new in each release.
