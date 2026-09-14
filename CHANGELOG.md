@@ -4,6 +4,25 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and s
 
 ## [Unreleased]
 
+## [0.2.0-beta.3] - 2026-09-14
+
+### Added
+
+- Local-only recording mode, durable recording manifests and deferred historical uploads with committed receipt acknowledgements.
+- Validated, retained cloud course synchronization with revision acknowledgements and restart-safe local persistence.
+- Deterministic native Signal K routes, active-course ownership protection and manual waypoint progression.
+- Packaged onboard interactive map using native navigation calculations and discovered Signal K chart resources, including bounded local chart coverage verification.
+
+### Fixed
+
+- Preserve offline samples and trip boundaries through outages and abrupt restarts while prioritizing current position updates.
+
+### Compatibility
+
+- Per-recording upload progress and course synchronization require the companion WakeLogger backend update. Deploy that backend before enabling these features.
+- Offline basemaps require separately provisioned licensed Signal K charts. Automatic online tile prefetch remains a documented design.
+
+
 ## [0.2.0-beta.2] - 2026-09-02
 
 ### Fixed
