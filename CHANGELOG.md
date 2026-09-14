@@ -4,6 +4,8 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## [Unreleased]
 
+## [0.2.0-beta.4] - 2026-09-14
+
 ### Clearer help in Signal K
 
 - Rewritten the App Store guide around pairing, recording trips, uploading later, using courses and preparing offline maps.
