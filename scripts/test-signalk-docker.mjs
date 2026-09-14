@@ -149,6 +149,39 @@ try {
   query('http://signalk:3000/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex', 'PUT', { value: 2 })
   await waitFor('native next-point update', () => query('http://signalk:3000/plugins/signalk-wakelogger/course').native.course.activeRoute.pointIndex === 2)
 
+  const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
+  const paused = query(trackingUrl, 'POST', { uploadMode: 'local_only' })
+  assert.equal(paused.uploadMode, 'local_only')
+  assert.equal(paused.persistedUploadMode, 'local_only')
+  assert.equal(paused.recording, true)
+  // Allow already accepted broker packets to reach the mock cloud before the
+  // no-new-telemetry observation window starts.
+  await delay(1_000)
+  const pausedCloudCount = telemetrySamples(snapshot()).length
+  const pausedBaseline = query(trackingUrl).queue.currentSequence
+  const locallyRecorded = await waitFor('recording queue growth while live tracking is off', () => {
+    const value = query(trackingUrl)
+    return value.queue.currentSequence >= pausedBaseline + 3 ? value : undefined
+  }, 60_000)
+  assert.equal(telemetrySamples(snapshot()).length, pausedCloudCount, 'turning live tracking off must stop cloud telemetry while recording continues')
+  compose(['restart', 'signalk'])
+  await waitFor('paused mode preserved through native Signal K restart', () => {
+    const value = query(trackingUrl)
+    return value.available && value.uploadMode === 'local_only' && value.recording ? value : undefined
+  }, 300_000)
+  assert.equal(telemetrySamples(snapshot()).length, pausedCloudCount, 'persisted off mode must prevent cloud telemetry after restart')
+  const enabled = query(trackingUrl, 'POST', { uploadMode: 'automatic' })
+  assert.equal(enabled.uploadMode, 'automatic')
+  assert.equal(enabled.persistedUploadMode, 'automatic')
+  assert.ok(enabled.historicalUpload.totalSamples >= 3, 'resume reports the offline upload cohort')
+  const toggleRecovered = await waitFor('locally recorded telemetry acknowledged after live tracking resumes', () => {
+    const value = snapshot()
+    return maximumAck(value) >= locallyRecorded.queue.currentSequence ? value : undefined
+  }, 90_000)
+  assert.equal(toggleRecovered.pairingCount, 1, 'live tracking controls must not re-pair the device')
+  const offlineSamples = telemetrySamples(toggleRecovered).filter((sample) => sample.sequence > pausedBaseline && sample.sequence <= locallyRecorded.queue.currentSequence)
+  assert.equal(new Set(offlineSamples.map((sample) => sample.sequence)).size, locallyRecorded.queue.currentSequence - pausedBaseline, 'every locally recorded sample must reach the cloud after resume')
+
   compose(['stop', 'mosquitto'])
   await delay(1_000)
   const baselineAck = maximumAck(snapshot())
@@ -197,6 +230,9 @@ try {
     currentStatePrecededBacklog: true,
     queueDrainedAfterAck: true,
     nativeCoursePersisted: true,
+    nativeTrackingToggleVerified: true,
+    pausedModeSurvivedRestart: true,
+    locallyRecordedSamplesUploaded: offlineSamples.length,
     nativeProgressPreserved: true,
     serviceStats: printServiceStats()
   }
