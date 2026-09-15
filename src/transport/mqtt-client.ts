@@ -36,6 +36,7 @@ export class WakeLoggerTransport {
   private statePublishInFlight = false
   private statePublishPending = false
   private authenticationFailed = false
+  private courseSubscriptionError?: string
   private statusMetrics?: PluginStatusMetrics
   private profile: TelemetryProfile
   private readonly monitor: AdaptiveModeMonitor
@@ -83,7 +84,7 @@ export class WakeLoggerTransport {
     this.monitor.disconnected('plugin_stopped')
     this.syncMode()
     if (!client) return
-    if (publishOffline && client.connected) await this.publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
+    if (publishOffline && client.connected) await publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
     await new Promise<void>((resolve) => client.end(!publishOffline, {}, () => resolve()))
   }
 
@@ -97,6 +98,7 @@ export class WakeLoggerTransport {
   }
 
   async publishCourseAcknowledgement(): Promise<void> {
+    if (this.courseSubscriptionError) return
     const acknowledgement = await this.options.getCourseAcknowledgement?.()
     if (acknowledgement && this.client?.connected && !this.stopped) {
       await this.publish(this.client, this.topics.courseAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
@@ -113,9 +115,9 @@ export class WakeLoggerTransport {
     }
   }
 
-  transportMetrics(): Pick<PluginStatusMetrics, 'networkMode' | 'modeReason' | 'lastAcknowledgedAt' | 'acknowledgementLatencyMs' | 'reconnectCount' | 'publishedBytes'> {
+  transportMetrics(): Pick<PluginStatusMetrics, 'networkMode' | 'modeReason' | 'lastAcknowledgedAt' | 'acknowledgementLatencyMs' | 'reconnectCount' | 'publishedBytes' | 'courseSyncError'> {
     const health = this.monitor.current()
-    return { networkMode: health.mode, modeReason: health.reason, lastAcknowledgedAt: this.lastAcknowledgedAt,
+    return { courseSyncError: this.courseSubscriptionError, networkMode: health.mode, modeReason: health.reason, lastAcknowledgedAt: this.lastAcknowledgedAt,
       acknowledgementLatencyMs: this.acknowledgementLatencyMs, reconnectCount: health.reconnectCount, publishedBytes: this.publishedBytes }
   }
 
@@ -160,7 +162,15 @@ export class WakeLoggerTransport {
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
     this.nextPublishAfter = stats.acknowledgedSequence
-    await subscribe(client, [this.topics.ack, this.topics.profile, this.topics.course])
+    if (client !== this.client || this.stopped) return
+    await subscribe(client, [this.topics.ack, this.topics.profile])
+    if (client !== this.client || this.stopped) return
+    // Existing broker roles may predate course permissions. Optional course
+    // sync must not prevent acknowledged telemetry from draining.
+    this.courseSubscriptionError = undefined
+    try { await subscribe(client, [this.topics.course]) }
+    catch (error) { this.courseSubscriptionError = `Course sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}` }
+    if (client !== this.client || this.stopped) return
     this.monitor.connected()
     this.syncMode()
     this.backlogTokenAt = this.now()
@@ -169,7 +179,7 @@ export class WakeLoggerTransport {
     this.statePublishPending = this.current !== undefined
     await this.drainCurrentState()
     await this.publishCourseAcknowledgement()
-    this.options.onState('online')
+    this.options.onState('online', this.courseSubscriptionError)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
     this.pumpTimer = setInterval(() => void this.pump(), 1000)
     void this.pump()
@@ -318,6 +328,7 @@ export class WakeLoggerTransport {
   }
 
   private async publish(client: MqttClient, topic: string, payload: string, options: { qos: 1; retain?: boolean }): Promise<void> {
+    if (this.stopped || client !== this.client || !client.connected) return
     await publish(client, topic, payload, options)
     this.publishedBytes += Buffer.byteLength(payload)
   }
@@ -335,6 +346,7 @@ export class WakeLoggerTransport {
 
 function statusPayload(state: string, metrics?: PluginStatusMetrics): object {
   return { v: 1, state, at: Date.now(), ...(metrics ? {
+    historicalUpload: metrics.historicalUpload, courseSyncError: metrics.courseSyncError,
     uploadMode: metrics.uploadMode, recordings: metrics.recordings,
     pluginVersion: metrics.pluginVersion, queueMessageCount: metrics.queueMessageCount, queueDiskBytes: metrics.queueDiskBytes,
     queueOldestCapturedAt: metrics.queueOldestCapturedAt, queueDroppedCount: metrics.queueDroppedCount,

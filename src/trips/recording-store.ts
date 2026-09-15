@@ -25,8 +25,13 @@ export class RecordingStore {
   async open(legacy?: TripSnapshot): Promise<void> {
     try {
       const snapshot = JSON.parse(await fs.readFile(this.target, 'utf8')) as RecordingSnapshot
-      if (snapshot.version !== 1 || !snapshot.trip || !['STOPPED', 'START_CANDIDATE', 'MOVING', 'STOP_CANDIDATE'].includes(snapshot.trip.state) || !Array.isArray(snapshot.closed) || !snapshot.closed.every(validManifest) || (snapshot.active && (!validManifest(snapshot.active) || snapshot.active.state !== 'recording'))) throw new Error('Invalid recording checkpoint')
-      this.snapshot = snapshot
+      if (snapshot.version !== 1 || !snapshot.trip || !['STOPPED', 'START_CANDIDATE', 'MOVING', 'STOP_CANDIDATE'].includes(snapshot.trip.state) || !Array.isArray(snapshot.closed) || (snapshot.active && (!validManifest(snapshot.active) || snapshot.active.state !== 'recording'))) throw new Error('Invalid recording checkpoint')
+      // Older demo/rolled-back clocks could persist closed manifests whose end
+      // precedes their start. The cloud can never acknowledge those, so drop
+      // them instead of retrying them forever.
+      const closed = snapshot.closed.filter(validManifest)
+      this.snapshot = closed.length === snapshot.closed.length ? snapshot : { ...snapshot, closed }
+      if (closed.length !== snapshot.closed.length) await this.persist(this.snapshot)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       if (legacy) this.snapshot.trip = legacy
@@ -65,12 +70,25 @@ export class RecordingStore {
   async prepare(draft: TelemetryDraft, sequence: number): Promise<void> {
     const next = structuredClone(this.snapshot)
     let trip = new TripStateMachine(next.trip)
+    if (next.active) {
+      next.lastCapturedAt = Math.max(next.active.startedAt, next.lastCapturedAt ?? next.active.startedAt)
+      // Older checkpoints may contain a stop candidate from a clock rollback.
+      // Discard that invalid evidence; require a fresh stationary dwell instead
+      // of fabricating an end time or rejecting the remaining valid recording.
+      if (next.trip.state === 'STOP_CANDIDATE' && (next.trip.candidateAt ?? Infinity) < next.active.startedAt) {
+        trip = new TripStateMachine({ state: 'MOVING', trackingSessionId: next.active.id })
+      }
+    }
     if (next.active && next.lastCapturedAt !== undefined && draft.capturedAt - next.lastCapturedAt > INTERRUPTION_MS) {
       next.closed.push({ ...next.active, state: 'interrupted', endedAt: next.lastCapturedAt, lastSequence: next.lastSequence })
       next.active = undefined
       trip = new TripStateMachine()
     }
-    const evidence = trip.process(draft)
+    // Retain raw out-of-order samples in the same durable sequence range, but
+    // do not let an old source clock cancel a current trip or move its bounds
+    // backwards. Receipt-time fallbacks and replayed instruments can interleave.
+    const outOfOrder = next.lastCapturedAt !== undefined && draft.capturedAt < next.lastCapturedAt
+    const evidence = outOfOrder ? undefined : trip.process(draft)
     if (evidence) draft.evidence = evidence
     const state = trip.currentState()
     if (!next.active && state.trackingSessionId) {
@@ -81,7 +99,7 @@ export class RecordingStore {
       if (state.state === 'STOPPED') {
         const closed: RecordingManifest = {
           ...next.active, state: evidence?.event === 'trip_stopped' ? 'complete' : 'cancelled',
-          endedAt: evidence?.effectiveAt ?? draft.capturedAt, lastSequence: sequence
+          endedAt: Math.max(next.active.startedAt, evidence?.effectiveAt ?? draft.capturedAt), lastSequence: sequence
         }
         next.closed.push(closed)
         next.active = undefined
@@ -89,7 +107,7 @@ export class RecordingStore {
       } else draft.recording = structuredClone(next.active)
     }
     next.trip = state
-    next.lastCapturedAt = draft.capturedAt
+    next.lastCapturedAt = Math.max(next.lastCapturedAt ?? draft.capturedAt, draft.capturedAt)
     next.lastSequence = sequence
     await this.persist(next)
     this.snapshot = next
@@ -115,5 +133,5 @@ function validManifest(value: RecordingManifest): boolean {
   return !!value && typeof value.id === 'string' && /^[0-9a-f-]{36}$/i.test(value.id)
     && Number.isFinite(value.startedAt) && Number.isSafeInteger(value.firstSequence) && value.firstSequence > 0
     && ['recording', 'complete', 'cancelled', 'interrupted'].includes(value.state)
-    && (value.state === 'recording' || (Number.isFinite(value.endedAt) && Number.isSafeInteger(value.lastSequence) && (value.lastSequence ?? 0) >= value.firstSequence))
+    && (value.state === 'recording' || (typeof value.endedAt === 'number' && Number.isFinite(value.endedAt) && value.endedAt >= value.startedAt && Number.isSafeInteger(value.lastSequence) && (value.lastSequence ?? 0) >= value.firstSequence))
 }

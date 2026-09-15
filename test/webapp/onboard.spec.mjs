@@ -13,6 +13,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false } = {}) {
   const writes = []
+  let uploadMode = 'local_only'
   const external = []
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
@@ -29,6 +30,10 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     const json = (body) => route.fulfill({ json: body })
     const pathname = url.pathname
+    if (pathname === '/plugins/signalk-wakelogger/tracking') {
+      if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: { uploadMode } }) }
+      return json({ uploadMode, paired: true, recording: true, connectionState: uploadMode === 'automatic' ? 'online' : 'recording_locally', queue: { messageCount: 123, currentSequence: 200, acknowledgedSequence: 77 } })
+    }
     if (pathname === '/plugins/signalk-wakelogger/course') {
       return json({ desired, cachedCourse: desired, acknowledgement: { v: 1, revision: 7, status: 'applied' }, routePoints: points,
         native: { available: true, course: navigation, ownedRouteId, activeMatchesDesired: navigation.activeRoute.href === ownedHref, conflict: navigation.activeRoute.href !== ownedHref },
@@ -99,6 +104,7 @@ test('uses discovered local chart tiles without remote assets', async ({ page },
 test('advances native route and sets an explicit zero-based point', async ({ page }) => {
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
   await expect(page.locator(ui.next)).toBeEnabled()
   await page.locator(ui.next).click()
   await expect.poll(() => writes.length).toBe(1)
@@ -112,6 +118,7 @@ test('advances native route and sets an explicit zero-based point', async ({ pag
 test('another native route stays active until explicit activation', async ({ page }) => {
   const { writes } = await mockBoat(page, { conflict: true })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
   await expect(page.locator(ui.activate)).toBeVisible()
   expect(writes).toEqual([])
   await expect(page.locator(ui.next)).toBeDisabled()
@@ -136,4 +143,59 @@ test('missing heading and COG show an un-oriented vessel position', async ({ pag
   await expect(page.locator('#centre-vessel')).toBeEnabled()
   await expect(page.locator('.vessel-icon')).toHaveCount(0)
   await expect(page.locator('.leaflet-marker-pane .mark').filter({ hasText: '●' })).toBeVisible()
+})
+
+test('live switch changes upload mode without stopping local recording', async ({ page }) => {
+  const { writes } = await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await expect(page.locator('#tracking-mode')).toHaveText('Record locally')
+  await expect(page.locator('#upload-queue')).toContainText('123 samples saved onboard')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('#tracking-mode')).toHaveText('Live + history')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  expect(writes.map((entry) => entry.body)).toEqual([{ uploadMode: 'automatic' }, { uploadMode: 'local_only' }])
+  await expect(page.locator('#tracking-description')).toContainText('Recording locally')
+})
+
+test('fullscreen works on desktop and mobile with tracking controls retained', async ({ page }, testInfo) => {
+  await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  await page.getByRole('button', { name: 'Enter fullscreen' }).click()
+  await expect(page.locator('#chartplotter')).toHaveClass(/is-fullscreen/)
+  await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('onboard-desktop-fullscreen.png') })
+  await page.getByRole('button', { name: 'Exit fullscreen' }).click()
+  await expect(page.locator('#chartplotter')).not.toHaveClass(/is-fullscreen/)
+  await page.setViewportSize({ width: 390, height: 844 })
+  // Exercise the viewport fallback used by mobile browsers without the API.
+  await page.evaluate(() => { document.getElementById('chartplotter').requestFullscreen = undefined })
+  await expect(page.locator('#chartplotter')).toHaveAttribute('data-screen', 'mobile')
+  await page.getByRole('button', { name: 'Enter fullscreen' }).click()
+  await expect(page.locator('#chartplotter')).toHaveClass(/is-fullscreen/)
+  const dimensions = await page.locator('#chartplotter').boundingBox()
+  expect(dimensions.width).toBe(390)
+  expect(dimensions.height).toBe(844)
+  await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('onboard-mobile-fullscreen.png') })
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#chartplotter')).not.toHaveClass(/is-fullscreen/)
+})
+
+test('failed mode save reads back the actual safely paused state', async ({ page }) => {
+  await mockBoat(page)
+  await page.route('**/plugins/signalk-wakelogger/tracking', async route => {
+    if (route.request().method() === 'POST') return route.fulfill({ status: 503, json: { message: 'settings save failed' } })
+    return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true, persistenceError: 'settings_save_failed', queue: { messageCount: 123 } } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await expect(page.locator('#notice')).toContainText('could not be saved')
+  await expect(page.locator('#tracking-description')).toContainText('Setting could not be saved')
 })

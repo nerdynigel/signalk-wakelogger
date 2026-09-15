@@ -155,3 +155,28 @@ test('reversed native routes index from finish toward start', () => {
   assert.equal(at(2).pointPercent, 100)
   assert.equal(at(0).direction, null)
 })
+
+test('tracking status distinguishes local recording, disconnected live intent, and unpaired state', async () => {
+  const { trackingPresentation } = await import('../../webapp/tracking-controls.mjs')
+  const snapshot = { paired: true, recording: true, uploadMode: 'local_only', queue: { messageCount: 12 } }
+  assert.equal(trackingPresentation(snapshot).enabled, false)
+  assert.match(trackingPresentation(snapshot).description, /Recording locally/)
+  assert.equal(trackingPresentation({ ...snapshot, uploadMode: 'automatic', connectionState: 'offline' }).mode, 'Waiting for internet')
+  assert.equal(trackingPresentation({ ...snapshot, paired: false }).available, false)
+  assert.equal(trackingPresentation(null).available, false)
+  assert.equal(trackingPresentation({ ...snapshot, queue: { messageCount: 0 } }).queue, 'Upload queue empty')
+})
+
+
+test('tracking controls honor runtime availability and revoked device access', async () => {
+  const { trackingPresentation } = await import('../../webapp/tracking-controls.mjs')
+  const snapshot = { paired: true, recording: true, uploadMode: 'local_only' }
+  assert.equal(trackingPresentation(snapshot).available, true)
+  for (const unavailable of [{ available: false }, { recording: false }, { connectionState: 'device_revoked' }]) {
+    const result = trackingPresentation({ ...snapshot, ...unavailable })
+    assert.equal(result.available, false)
+    assert.notEqual(result.mode, 'Not paired')
+    assert.match(result.description, /unavailable|revoked/)
+  }
+  assert.equal(trackingPresentation({ ...snapshot, available: true }).available, true)
+})

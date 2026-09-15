@@ -4,6 +4,18 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## [Unreleased]
 
+### Live tracking when you want it
+
+- Turn live tracking on or off directly from the onboard map. With it off, recording continues locally within your configured storage limits. Turn it on to resume live updates and upload stored history.
+- Your choice survives restarts, and switching modes does not split a trip.
+
+### A clearer map and upload status
+
+- The onboard map now matches Wake Logger's live instrument view, with layouts for phones and tablets and a full-screen option.
+- Historical uploads show percentage progress and an estimated time remaining once upload speed can be measured. A coloured live-tracking indicator makes connection status easier to see.
+- Recording details are expandable, keeping the main upload view compact. Trips are created only when the recorded movement meets the trip definition.
+
+
 ## [0.2.0-beta.4] - 2026-09-14
 
 ### Clearer help in Signal K

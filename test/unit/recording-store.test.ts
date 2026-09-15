@@ -64,6 +64,40 @@ describe('durable recordings', () => {
     ])
   })
 
+  it('preserves raw backward timestamps without cancelling or fragmenting a recording', async () => {
+    const { store, target } = await fixture()
+    const first = sample(1_800_000_000_000)
+    await store.prepare(first, 1)
+    const old = sample(1_400_000_000_000, 0)
+    await store.prepare(old, 2)
+    expect(old.capturedAt).toBe(1_400_000_000_000)
+    expect(old.recording).toEqual(first.recording)
+    const resumed = new RecordingStore(target)
+    await resumed.open()
+    const current = sample(first.capturedAt + 120_000)
+    await resumed.prepare(current, 3)
+    expect(current.trackingSessionId).toBe(first.trackingSessionId)
+    expect(resumed.currentState().state).toBe('MOVING')
+    expect(resumed.manifests()).toHaveLength(1)
+    await resumed.prepare(sample(first.capturedAt + 4_000_000), 4)
+    expect(resumed.manifests()[0]).toMatchObject({ state: 'interrupted', endedAt: current.capturedAt, lastSequence: 3 })
+  })
+
+  it('discards legacy stop evidence from before the recording instead of inventing an end time', async () => {
+    const { store, target } = await fixture()
+    const first = sample(1_800_000_000_000)
+    await store.prepare(first, 1)
+    const saved = JSON.parse(await fs.readFile(target, 'utf8'))
+    saved.trip = { state: 'STOP_CANDIDATE', trackingSessionId: first.trackingSessionId, candidateAt: 1_400_000_000_000, candidatePosition: { lat: -27, lon: 153 } }
+    saved.lastCapturedAt = 1_400_000_000_000
+    await fs.writeFile(target, JSON.stringify(saved))
+    const resumed = new RecordingStore(target)
+    await resumed.open()
+    await resumed.prepare(sample(first.capturedAt + 120_000, 0), 2)
+    expect(resumed.currentState()).toMatchObject({ state: 'STOP_CANDIDATE', candidateAt: first.capturedAt + 120_000 })
+    expect(resumed.manifests()).toEqual([first.recording])
+  })
+
   it('rotates bounded status pages and only prunes exact durable manifest acknowledgements', async () => {
     const { store, target } = await fixture()
     for (let index = 0; index < 25; index += 1) {
@@ -82,6 +116,19 @@ describe('durable recordings', () => {
     await resumed.open()
     expect(resumed.manifests()).toHaveLength(24)
     expect(resumed.manifests().some((entry) => entry.id === manifest.id)).toBe(false)
+  })
+
+  it('drops stale closed manifests whose end precedes the recording start', async () => {
+    const { target } = await fixture()
+    const stale = {
+      id: '3b12567a-e28a-4fe3-bcf2-dcee766a434f', startedAt: 1_800_000_000_000, firstSequence: 10,
+      state: 'interrupted', endedAt: 1_400_000_000_000, lastSequence: 12
+    }
+    await fs.writeFile(target, JSON.stringify({ version: 1, trip: { state: 'STOPPED' }, closed: [stale] }))
+    const reopened = new RecordingStore(target)
+    await reopened.open()
+    expect(reopened.manifests()).toEqual([])
+    expect(JSON.parse(await fs.readFile(target, 'utf8')).closed).toEqual([])
   })
 
   it('refuses a corrupt checkpoint instead of silently resetting recording identity', async () => {

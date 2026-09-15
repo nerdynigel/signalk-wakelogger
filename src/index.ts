@@ -1,13 +1,14 @@
 import type { Plugin, PluginConstructor, ServerAPI } from '@signalk/server-api'
-import { promises as fs } from 'node:fs'
+import { promises as fs, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { CourseStore } from './courses/course-store'
 import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
 import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
+import { UploadHistory, durableJson } from './tracking/history'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
-import type { OutboxStore } from './outbox/interface'
+import type { OutboxStats, OutboxStore } from './outbox/interface'
 import { checkAssociationStatus } from './pairing/association-client'
 import { CredentialStore, fingerprintPairingCode, shouldExchangePairingCode, type DeviceCredentials } from './pairing/credentials'
 import { PairingError, pairDeviceWithRetry } from './pairing/pairing-client'
@@ -21,18 +22,29 @@ import { type TripSnapshot } from './trips/state-machine'
 import { RecordingStore } from './trips/recording-store'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
-  const pluginVersion = '0.2.0-beta.2'
+  const pluginVersion = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version: string }).version
   let generation = 0
   let stopSubscription: (() => void) | undefined
   let sampleTimer: NodeJS.Timeout | undefined
   let statusTimer: NodeJS.Timeout | undefined
   let outbox: OutboxStore | undefined
+  let cachedQueueStats: OutboxStats | undefined
+  let queueStatsAt: number | undefined
   let transport: WakeLoggerTransport | undefined
   let courses: CourseStore | undefined
   let courseInitializationError: string | undefined
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
   let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
+  let persistedUploadMode: PluginConfig['uploadMode'] = 'automatic'
+  let persistenceError: string | undefined
+  let rawConfiguration: Record<string, unknown> = {}
+  let trackingOperation: Promise<void> = Promise.resolve()
+  let trackingRevision = 0
+  let ready = false
+  let currentSampler: PathSampler | undefined
+  let connectTransport: (() => void) | undefined
+  let history: UploadHistory | undefined
   let sampleOperation: Promise<void> = Promise.resolve()
   let connectionState: ConnectionState | 'unpaired' | 'device_revoked' | 'recording_locally' = 'unpaired'
   let activeProfile: TelemetryProfile | undefined
@@ -48,6 +60,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     description: 'Live vessel tracking and resilient Signal K telemetry for Wake Logger',
     schema: configSchema,
     start(configuration: object): void {
+      ready = false
+      trackingRevision += 1
+      rawConfiguration = structuredClone(configuration) as Record<string, unknown>
       pairingAbortController?.abort()
       associationAbortController?.abort()
       // Stop all transmission immediately when a saved configuration restarts us.
@@ -58,7 +73,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         await stopping
         await previous?.catch(() => undefined)
         await cleanupResources()
-        if (thisGeneration === generation) await initialise(parseConfig(configuration), thisGeneration)
+        if (thisGeneration === generation) {
+          await initialise(parseConfig(configuration), thisGeneration)
+          ready = thisGeneration === generation
+        }
       })().catch((error: unknown) => {
         if (thisGeneration !== generation) return
         const message = safeError(error)
@@ -67,6 +85,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       })
     },
     async stop(): Promise<void> {
+      ready = false
+      trackingRevision += 1
       const running = initialization
       generation += 1
       pairingAbortController?.abort()
@@ -87,11 +107,57 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           next: (error: unknown) => void
         ) => Promise<void>) => void
       }
+      adminRouter.get?.('/tracking', async (_request, response, next) => {
+        try { response.status(200).json(await trackingStatus()) }
+        catch (error) { next(error) }
+      })
+      adminRouter.post('/tracking', async (request, response, next) => {
+        const mode = (request as { body?: { uploadMode?: unknown } }).body?.uploadMode
+        if (mode !== 'automatic' && mode !== 'local_only') {
+          response.status(400).json({ error: 'invalid_upload_mode' })
+          return
+        }
+        if (!ready || !outbox || !transport || connectionState === 'device_revoked') {
+          response.status(409).json({ error: 'tracking_unavailable', ...await trackingStatus() })
+          return
+        }
+        const revision = ++trackingRevision
+        const thisGeneration = generation
+        // Off wins immediately, even while an earlier options save is pending.
+        const stopping = mode === 'local_only' ? pauseTransmission() : undefined
+        const pauseGuard = mode === 'local_only'
+          ? durableJson(path.join(app.getDataDirPath(), 'tracking-pause.json'), { paused: true, at: Date.now() }).catch((error) => { app.error(`Unable to persist immediate tracking pause: ${safeError(error)}`) })
+          : undefined
+        const operation = trackingOperation.then(async () => {
+          await stopping
+          await pauseGuard
+          if (generation !== thisGeneration || !ready) throw new Error('tracking_restarted')
+          if (revision !== trackingRevision) return
+          const wasAutomatic = activeUploadMode === 'automatic'
+          await persistTrackingMode(mode, revision, thisGeneration)
+          if (revision === trackingRevision && generation === thisGeneration) {
+            activeUploadMode = mode
+            if (mode === 'automatic' && !wasAutomatic) {
+              if (outbox) await updateHistory(await outbox.stats(), true)
+              await transport?.stop(false)
+              connectTransport?.()
+            }
+            await updateStatus()
+          }
+        })
+        trackingOperation = operation.catch(() => undefined)
+        try { await operation; response.status(200).json(await trackingStatus()) }
+        catch (error) {
+          if (persistenceError) response.status(503).json({ error: 'tracking_persistence_failed', ...await trackingStatus() })
+          else if (error instanceof Error && error.message === 'tracking_restarted') response.status(409).json({ error: 'tracking_restarted', ...await trackingStatus() })
+          else next(error)
+        }
+      })
       adminRouter.get?.('/course', async (_request, response, next) => {
         try {
           response.status(200).json({
             ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
-            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError
           })
         } catch (error) { next(error) }
       })
@@ -120,6 +186,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       })
       adminRouter.post('/forget-credentials', async (_request, response, next) => {
         try {
+          ready = false
+          trackingRevision += 1
           generation += 1
           pairingAbortController?.abort()
           associationAbortController?.abort()
@@ -143,6 +211,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       openapi: '3.0.3',
       info: { title: 'Wake Logger Signal K plugin', version: pluginVersion },
       paths: {
+        '/tracking': { get: { summary: 'Read live upload mode and the local queue', responses: { '200': { description: 'Tracking status' } } }, post: { summary: 'Persist and apply live upload mode without restarting recording', responses: { '200': { description: 'Tracking mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Tracking unavailable' }, '503': { description: 'Persistence failed; see actual mode in response' } } } },
         '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
         '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
         '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
@@ -164,6 +233,11 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     sampleTimer = undefined
     statusTimer = undefined
     await transport?.stop()
+    await trackingOperation
+    await history?.close()
+    history = undefined
+    currentSampler = undefined
+    connectTransport = undefined
     await sampleOperation
     await courses?.close()
     courses = undefined
@@ -172,6 +246,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     transport = undefined
     await outbox?.close()
     outbox = undefined
+    cachedQueueStats = undefined
+    queueStatsAt = undefined
     tripState = undefined
     pairingAbortController = undefined
     associationAbortController = undefined
@@ -179,7 +255,20 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function initialise(config: PluginConfig, thisGeneration: number): Promise<void> {
+    persistedUploadMode = config.uploadMode
+    persistenceError = undefined
     activeUploadMode = config.uploadMode
+    try {
+      await fs.access(path.join(app.getDataDirPath(), 'tracking-pause.json'))
+      activeUploadMode = 'local_only'
+      persistenceError = 'A previous save failed; uploads remain paused until this setting is saved successfully.'
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        activeUploadMode = 'local_only'
+        persistenceError = 'Unable to read the upload safety state; uploads remain paused.'
+      }
+    }
+    config.uploadMode = activeUploadMode
     const dataDirectory = app.getDataDirPath()
     const credentialStore = new CredentialStore(path.join(dataDirectory, 'identity'))
     let credentials = await credentialStore.load()
@@ -250,7 +339,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const legacy = credentials.telemetryProfile as { sample_period_ms?: number; batch_size?: number } | undefined
     const profile = await profileStore.load() ?? credentialProfile ?? legacyProfile(legacy?.sample_period_ms ?? config.samplePeriodMs, legacy?.batch_size)
     activeProfile = profile
-    const sampler = new PathSampler(profile, config.uploadMode === 'local_only' ? 'NORMAL' : 'OFFLINE')
+    const sampler = new PathSampler(profile, activeUploadMode === 'local_only' ? 'NORMAL' : 'OFFLINE')
+    currentSampler = sampler
     const selected = await createOutbox(app, dataDirectory, credentials.deviceId, {
       maxBytes: config.maxOutboxMb * 1024 * 1024,
       maxAgeMs: config.maxOutboxDays * 24 * 60 * 60 * 1000,
@@ -258,18 +348,25 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }, credentials.outboxBinding?.backend)
     outbox = selected.store
     storageBackend = selected.backend
+    history = new UploadHistory(path.join(dataDirectory, 'uploads', credentials.deviceId, 'state.json'))
+    try { await history.open() } catch (error) {
+      app.error(`Wake Logger upload progress unavailable: ${safeError(error)}`)
+      history = undefined
+    }
+    if (history) await updateHistory(await outbox.stats(), activeUploadMode === 'automatic')
     let nextSequence = (await outbox.stats()).currentSequence + 1
     if (!credentials.outboxBinding) {
       credentials.outboxBinding = { version: 1, backend: selected.backend, initializedAt: Date.now() }
       await credentialStore.save(credentials)
     }
     if (generation !== thisGeneration) return
-    transport = new WakeLoggerTransport(credentials, outbox, {
-      profile,
+    connectTransport = () => {
+      const instance = new WakeLoggerTransport(credentials, selected.store, {
+      profile: activeProfile ?? profile,
       onState: (state, detail) => {
-        if (connectionState === 'device_revoked') return
+        if (transport !== instance || activeUploadMode !== 'automatic' || connectionState === 'device_revoked') return
         connectionState = state
-        void updateStatus(detail)
+        void updateStatus(detail, state === 'online')
         if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
       onCourse: async (payload) => {
@@ -284,7 +381,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
         await sampleOperation
       },
-      onMode: (mode) => sampler.updateMode(mode),
+      onMode: (mode) => { if (transport === instance) sampler.updateMode(activeUploadMode === 'local_only' ? 'NORMAL' : mode) },
       onProfile: async (replacement) => {
         await profileStore.save(replacement)
         activeProfile = replacement
@@ -292,6 +389,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       },
       debug: config.debugTelemetry ? (message) => app.debug(message) : undefined
     })
+      transport = instance
+      instance.start()
+    }
+    // Keep an inert transport in local-only mode for local status/ACK methods.
+    if (activeUploadMode === 'local_only') {
+      transport = new WakeLoggerTransport(credentials, selected.store, { profile, onState: () => undefined })
+    }
     stopSubscription = subscribeToTelemetry(app, (delta) => normaliser.ingest(delta))
     const sample = async () => {
       if (generation !== thisGeneration) return
@@ -320,17 +424,20 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     scheduleSample()
     statusTimer = setInterval(() => void updateStatus(), 10_000)
-    if (config.uploadMode === 'automatic') transport.start()
+    if (activeUploadMode === 'automatic') connectTransport()
     else connectionState = 'recording_locally'
     await updateStatus()
   }
 
-  async function updateStatus(detail?: string): Promise<void> {
+  async function updateStatus(detail?: string, beginHistory = false): Promise<void> {
     if (connectionState === 'unpaired' || !outbox) {
       app.setPluginStatus('Wake Logger: Not paired')
       return
     }
     const stats = await outbox.stats()
+    cachedQueueStats = stats
+    queueStatsAt = Date.now()
+    await updateHistory(stats, beginHistory)
     const queue = `${stats.messageCount} queued, ${(stats.diskBytes / 1024 / 1024).toFixed(1)} MB`
     const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped` : ''
     const sequence = `, seq ${stats.acknowledgedSequence}/${stats.currentSequence}`
@@ -338,6 +445,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const extra = detail ? ` — ${detail}` : ''
     transport?.updateStatus({
       pluginVersion,
+      historicalUpload: history?.current(),
       uploadMode: activeUploadMode,
       recordings: tripState?.statusManifests(),
       connectionState,
@@ -359,6 +467,62 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     app.setPluginStatus(`Wake Logger: ${connectionState} — ${queue}${dropped}${sequence}${trip}${extra}`)
     void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Unable to report Wake Logger course: ${safeError(error)}`))
+  }
+
+  async function updateHistory(stats: import('./outbox/interface').OutboxStats, begin = false): Promise<void> {
+    try { await history?.update(stats, begin) }
+    catch (error) {
+      app.error(`Wake Logger upload progress unavailable: ${safeError(error)}`)
+      history = undefined
+    }
+  }
+
+  async function trackingStatus(): Promise<object> {
+    // File outbox stats scan the durable queue; browser polls reuse the
+    // normal status refresh instead of taking the outbox lock every request.
+    const stats = cachedQueueStats
+    return {
+      uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
+      persistedUploadMode, persistenceError: persistenceError ?? null,
+      paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,
+      available: ready && !!outbox && connectionState !== 'device_revoked',
+      connectionState, historicalUpload: history?.current() ?? null,
+      queue: stats ? { messageCount: stats.messageCount, diskBytes: stats.diskBytes,
+        oldestCapturedAt: stats.oldestCapturedAt ?? null, acknowledgedSequence: stats.acknowledgedSequence,
+        currentSequence: stats.currentSequence, droppedCount: stats.droppedCount } : null,
+      queueStatsAt: queueStatsAt ?? null, at: Date.now()
+    }
+  }
+
+  function pauseTransmission(): Promise<void> | undefined {
+    activeUploadMode = 'local_only'
+    pairingAbortController?.abort()
+    associationAbortController?.abort()
+    const stopping = transport?.stop(false)
+    currentSampler?.updateMode('NORMAL')
+    connectionState = 'recording_locally'
+    return stopping
+  }
+
+  async function persistTrackingMode(mode: PluginConfig['uploadMode'], revision: number, thisGeneration: number): Promise<void> {
+    const guard = path.join(app.getDataDirPath(), 'tracking-pause.json')
+    try {
+      const options = app.readPluginOptions?.() as { configuration?: Record<string, unknown> } | undefined
+      const configuration = { ...(options?.configuration ?? rawConfiguration), uploadMode: mode }
+      await new Promise<void>((resolve, reject) => {
+        app.savePluginOptions(configuration, (error) => error ? reject(error) : resolve())
+      })
+      rawConfiguration = configuration
+      persistedUploadMode = mode
+      if (revision === trackingRevision && generation === thisGeneration) await fs.unlink(guard).catch((error) => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error })
+      persistenceError = undefined
+    } catch (error) {
+      persistenceError = safeError(error)
+      await pauseTransmission()
+      try { await durableJson(guard, { paused: true, at: Date.now() }) }
+      catch { persistenceError += '; unable to persist the safety pause — restart persistence is not confirmed' }
+      throw error
+    }
   }
 
   function confirmAssociation(credentials: DeviceCredentials, thisGeneration: number): Promise<void> {

@@ -39,9 +39,11 @@ Recording and uploading are separate. Keep Signal K and the Wake Logger plugin r
 
 **For normal use:** Leave **Upload mode** set to **Automatic upload**. If internet access drops, the plugin stores readings onboard and uploads them when the connection returns.
 
-**To deliberately defer uploading:** Pair first, then choose **Record locally** in the plugin's **Upload mode** setting and save. This setting survives restarts. When you are ready to upload, select **Automatic upload** and save again.
+**To deliberately defer uploading:** Pair first, then turn **Live tracking** off on the onboard Wake Logger map. The plugin keeps recording locally, up to your storage and age limits. Turn it on when you are ready to send your live position and upload stored history. Changing the switch does not end a trip or restart recording, and the setting survives restarts.
 
-On reconnecting, the latest position is sent promptly while stored history uploads in the background. With the supporting Wake Logger service update, your vessel and trip views show upload and processing progress. A percentage is available once the recording has a known total. Missing or rejected readings are flagged rather than presented as a complete trip.
+You can also choose **Record locally** or **Automatic upload** in the plugin's **Upload mode** setting. These controls change the same setting.
+
+On reconnecting, the latest position is sent promptly while stored history uploads in the background. With the supporting Wake Logger service update, your vessel view shows the percentage of stored history uploaded and an estimated time remaining once there is enough upload progress to measure. Estimates pause when the connection is lost. Detailed recording updates are available under **Upload details**. Wake Logger uses the recorded movement and times to identify trips; switching live tracking does not itself create a new trip. Missing or rejected readings are flagged rather than presented as a complete trip.
 
 **Before a long outing:** Check available storage and your queue limits. The default limits are seven days or 250 MB, whichever is reached first. If a limit is reached, the oldest queued readings are discarded; plugin status reports the dropped count. Recording locally controls this plugin's Wake Logger connections only—it does not switch off other apps or your boat's internet access.
 
@@ -51,7 +53,7 @@ Select a saved race course for your vessel in Wake Logger while internet access 
 
 Open the **Wake Logger webapp** from Signal K's Web Apps list, using a phone, tablet or computer connected to the boat's network. Sign in to Signal K if prompted.
 
-The onboard view shows the complete course, your boat, the next mark and current leg. Distance, bearing, cross-track error, VMG and arrival estimates appear when Signal K can calculate them; unavailable readings are left clearly marked.
+The onboard map uses the same instrument styling as Wake Logger's live view, adapts to phone and tablet screens, and includes a full-screen view. It shows the complete course, your boat, the next mark and current leg. Distance, bearing, cross-track error, VMG and arrival estimates appear when Signal K can calculate them; unavailable readings are left clearly marked.
 
 Use **Advance point** to move to the next course point, or select a point and choose **Set point** to correct your progress. Progression is manual in this release: it does not automatically judge start-line crossings, mark roundings, gates or finishes.
 
