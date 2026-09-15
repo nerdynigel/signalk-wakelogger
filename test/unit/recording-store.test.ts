@@ -118,6 +118,19 @@ describe('durable recordings', () => {
     expect(resumed.manifests().some((entry) => entry.id === manifest.id)).toBe(false)
   })
 
+  it('drops stale closed manifests whose end precedes the recording start', async () => {
+    const { target } = await fixture()
+    const stale = {
+      id: '3b12567a-e28a-4fe3-bcf2-dcee766a434f', startedAt: 1_800_000_000_000, firstSequence: 10,
+      state: 'interrupted', endedAt: 1_400_000_000_000, lastSequence: 12
+    }
+    await fs.writeFile(target, JSON.stringify({ version: 1, trip: { state: 'STOPPED' }, closed: [stale] }))
+    const reopened = new RecordingStore(target)
+    await reopened.open()
+    expect(reopened.manifests()).toEqual([])
+    expect(JSON.parse(await fs.readFile(target, 'utf8')).closed).toEqual([])
+  })
+
   it('refuses a corrupt checkpoint instead of silently resetting recording identity', async () => {
     const { target } = await fixture()
     await fs.writeFile(target, '{')

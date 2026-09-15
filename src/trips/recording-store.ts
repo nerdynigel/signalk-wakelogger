@@ -25,8 +25,13 @@ export class RecordingStore {
   async open(legacy?: TripSnapshot): Promise<void> {
     try {
       const snapshot = JSON.parse(await fs.readFile(this.target, 'utf8')) as RecordingSnapshot
-      if (snapshot.version !== 1 || !snapshot.trip || !['STOPPED', 'START_CANDIDATE', 'MOVING', 'STOP_CANDIDATE'].includes(snapshot.trip.state) || !Array.isArray(snapshot.closed) || !snapshot.closed.every(validManifest) || (snapshot.active && (!validManifest(snapshot.active) || snapshot.active.state !== 'recording'))) throw new Error('Invalid recording checkpoint')
-      this.snapshot = snapshot
+      if (snapshot.version !== 1 || !snapshot.trip || !['STOPPED', 'START_CANDIDATE', 'MOVING', 'STOP_CANDIDATE'].includes(snapshot.trip.state) || !Array.isArray(snapshot.closed) || (snapshot.active && (!validManifest(snapshot.active) || snapshot.active.state !== 'recording'))) throw new Error('Invalid recording checkpoint')
+      // Older demo/rolled-back clocks could persist closed manifests whose end
+      // precedes their start. The cloud can never acknowledge those, so drop
+      // them instead of retrying them forever.
+      const closed = snapshot.closed.filter(validManifest)
+      this.snapshot = closed.length === snapshot.closed.length ? snapshot : { ...snapshot, closed }
+      if (closed.length !== snapshot.closed.length) await this.persist(this.snapshot)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       if (legacy) this.snapshot.trip = legacy
@@ -94,7 +99,7 @@ export class RecordingStore {
       if (state.state === 'STOPPED') {
         const closed: RecordingManifest = {
           ...next.active, state: evidence?.event === 'trip_stopped' ? 'complete' : 'cancelled',
-          endedAt: evidence?.effectiveAt ?? draft.capturedAt, lastSequence: sequence
+          endedAt: Math.max(next.active.startedAt, evidence?.effectiveAt ?? draft.capturedAt), lastSequence: sequence
         }
         next.closed.push(closed)
         next.active = undefined
@@ -128,5 +133,5 @@ function validManifest(value: RecordingManifest): boolean {
   return !!value && typeof value.id === 'string' && /^[0-9a-f-]{36}$/i.test(value.id)
     && Number.isFinite(value.startedAt) && Number.isSafeInteger(value.firstSequence) && value.firstSequence > 0
     && ['recording', 'complete', 'cancelled', 'interrupted'].includes(value.state)
-    && (value.state === 'recording' || (Number.isFinite(value.endedAt) && Number.isSafeInteger(value.lastSequence) && (value.lastSequence ?? 0) >= value.firstSequence))
+    && (value.state === 'recording' || (typeof value.endedAt === 'number' && Number.isFinite(value.endedAt) && value.endedAt >= value.startedAt && Number.isSafeInteger(value.lastSequence) && (value.lastSequence ?? 0) >= value.firstSequence))
 }
