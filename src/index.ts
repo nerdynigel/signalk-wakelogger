@@ -97,21 +97,31 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       app.setPluginStatus('Wake Logger: Stopped')
     },
     registerWithRouter(router): void {
-      // Signal K protects routes registered directly on the plugin router with
-      // administrator authentication. Do not downgrade this action via access().
-      const adminRouter = router as unknown as {
-        get?: (route: string, handler: (request: unknown, response: { status: (code: number) => { json: (body: unknown) => void } }, next: (error: unknown) => void) => void) => void
-        post: (route: string, handler: (
-          request: unknown,
-          response: { status: (code: number) => { json: (body: unknown) => void } },
-          next: (error: unknown) => void
-        ) => Promise<void>) => void
+      type RouteHandler = (
+        request: unknown,
+        response: { status: (code: number) => { json: (body: unknown) => void } },
+        next: (error: unknown) => void
+      ) => void | Promise<void>
+      type RouteRegistrar = {
+        get?: (route: string, handler: RouteHandler) => void
+        post: (route: string, handler: RouteHandler) => void
       }
-      adminRouter.get?.('/tracking', async (_request, response, next) => {
+      const pluginRouter = router as unknown as RouteRegistrar & {
+        access?: (level: 'readonly' | 'readwrite') => RouteRegistrar
+      }
+      // The onboard app serves ordinary crew accounts: status reads accept any
+      // signed-in user and control actions require readwrite (or admin).
+      // Unpairing stays administrator-only because routes registered directly
+      // on the plugin router keep Signal K's administrator default. Older
+      // Signal K servers without access() fall back to that default for all
+      // routes.
+      const readRouter = pluginRouter.access?.('readonly') ?? pluginRouter
+      const writeRouter = pluginRouter.access?.('readwrite') ?? pluginRouter
+      readRouter.get?.('/tracking', async (_request, response, next) => {
         try { response.status(200).json(await trackingStatus()) }
         catch (error) { next(error) }
       })
-      adminRouter.post('/tracking', async (request, response, next) => {
+      writeRouter.post('/tracking', async (request, response, next) => {
         const mode = (request as { body?: { uploadMode?: unknown } }).body?.uploadMode
         if (mode !== 'automatic' && mode !== 'local_only') {
           response.status(400).json({ error: 'invalid_upload_mode' })
@@ -153,7 +163,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           else next(error)
         }
       })
-      adminRouter.get?.('/course', async (_request, response, next) => {
+      readRouter.get?.('/course', async (_request, response, next) => {
         try {
           response.status(200).json({
             ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
@@ -161,7 +171,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           })
         } catch (error) { next(error) }
       })
-      adminRouter.post('/course/activate', async (_request, response, next) => {
+      writeRouter.post('/course/activate', async (_request, response, next) => {
         try {
           if (!courses) throw new CourseError('no_selected_course')
           await courses.activate()
@@ -172,7 +182,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           else next(error)
         }
       })
-      adminRouter.post('/course/map-readiness', async (request, response, next) => {
+      writeRouter.post('/course/map-readiness', async (request, response, next) => {
         try {
           if (!courses) throw new CourseError('no_selected_course')
           const body = (request as { body?: { revision?: unknown; status?: unknown } }).body
@@ -184,7 +194,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           else next(error)
         }
       })
-      adminRouter.post('/forget-credentials', async (_request, response, next) => {
+      // Registered directly: unpairing keeps Signal K's admin-only default.
+      pluginRouter.post('/forget-credentials', async (_request, response, next) => {
         try {
           ready = false
           trackingRevision += 1

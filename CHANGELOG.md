@@ -15,6 +15,10 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - Historical uploads show percentage progress and an estimated time remaining once upload speed can be measured. A coloured live-tracking indicator makes connection status easier to see.
 - Recording details are expandable, keeping the main upload view compact. Trips are created only when the recorded movement meets the trip definition.
 
+### Crew accounts on the onboard map
+
+- The onboard map works with ordinary Signal K user accounts. Any signed-in user can view the map; changing live tracking or activating a course requires an account with read/write access. Unpairing the vessel remains an administrator action.
+
 
 ## [0.2.0-beta.4] - 2026-09-14
 

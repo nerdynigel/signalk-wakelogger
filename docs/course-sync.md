@@ -45,8 +45,11 @@ The plugin's Signal K router exposes:
   for the current desired revision. Status is `unknown`, `unavailable`,
   `online_only`, `preparing` or `offline_ready`; reports for stale revisions fail.
 
-These plugin routes retain Signal K's normal plugin-router administrator access
-controls. Course progression uses the authenticated native REST API directly:
+Onboard access uses Signal K's per-route access levels: the `GET` status route
+accepts any signed-in user, `POST /course/activate` and
+`POST /course/map-readiness` require the readwrite role (or an administrator),
+and `POST /forget-credentials` remains administrator-only. Course progression
+uses the authenticated native REST API directly:
 `PUT /signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex` with
 `{value: zeroBasedIndex}`, or the native nextPoint action. There are no plugin
 point/advance endpoints. The installed plugin API exposes activation but no

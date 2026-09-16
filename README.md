@@ -51,7 +51,7 @@ On reconnecting, the latest position is sent promptly while stored history uploa
 
 Select a saved race course for your vessel in Wake Logger while internet access is available. Check that the course has synchronised before departure. The downloaded course stays on the Signal K server and remains available offline.
 
-Open the **Wake Logger webapp** from Signal K's Web Apps list, using a phone, tablet or computer connected to the boat's network. Sign in to Signal K if prompted.
+Open the **Wake Logger webapp** from Signal K's Web Apps list, using a phone, tablet or computer connected to the boat's network. Sign in to Signal K if prompted. Any Signal K user account can view the onboard map; changing live tracking or activating a course requires an account with read/write access.
 
 The onboard map uses the same instrument styling as Wake Logger's live view, adapts to phone and tablet screens, and includes a full-screen view. It shows the complete course, your boat, the next mark and current leg. Distance, bearing, cross-track error, VMG and arrival estimates appear when Signal K can calculate them; unavailable readings are left clearly marked.
 

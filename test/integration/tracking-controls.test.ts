@@ -13,13 +13,21 @@ async function fixture() {
   await new CredentialStore(path.join(dir, 'identity')).save({ version: 1, deviceId: 'dev_controls', clientId: 'dev_controls', username: 'dev_controls', password: 'long-test-password', mqttHost: 'localhost', mqttPort: 1, tls: false, pairedAt: 1000 })
   let configuration: any = { uploadMode: 'local_only', samplePeriodMs: 250, debugTelemetry: true }
   const handlers: Record<string, any> = {}
+  const accessLevels: Record<string, string> = {}
   let ingest: any
   const app: any = { getDataDirPath: () => dir, setPluginStatus: vi.fn(), setPluginError: vi.fn(), error: vi.fn(), debug: Object.assign(vi.fn(), { enabled: false }),
     readPluginOptions: () => ({ configuration }),
     savePluginOptions: vi.fn((value, callback) => { configuration = value; callback() }),
     subscriptionmanager: { subscribe: vi.fn((_options, unsub, _error, callback) => { ingest = callback; unsub.push(vi.fn()) }) } }
   const plugin = pluginConstructor(app)
-  plugin.registerWithRouter?.({ get: (route: string, handler: any) => { handlers[`GET ${route}`] = handler }, post: (route: string, handler: any) => { handlers[`POST ${route}`] = handler } } as any)
+  const registrar = (level: string) => ({
+    get: (route: string, handler: any) => { handlers[`GET ${route}`] = handler; accessLevels[`GET ${route}`] = level },
+    post: (route: string, handler: any) => { handlers[`POST ${route}`] = handler; accessLevels[`POST ${route}`] = level }
+  })
+  plugin.registerWithRouter?.({
+    access: (level: string) => registrar(level),
+    post: (route: string, handler: any) => { handlers[`POST ${route}`] = handler; accessLevels[`POST ${route}`] = 'admin' }
+  } as any)
   async function request(method: string, body?: unknown) {
     let code = 0; let data: any
     const response = { status(value: number) { code = value; return this }, json(value: unknown) { data = value } }
@@ -28,7 +36,7 @@ async function fixture() {
   }
   plugin.start(configuration, vi.fn())
   await vi.waitFor(async () => expect((await request('GET')).data.available).toBe(true), { timeout: 10000 })
-  return { dir, app, plugin, request, configuration: () => configuration, ingest: () => ingest({ updates: [{ timestamp: new Date().toISOString(), values: [{ path: 'navigation.position', value: { latitude: -27, longitude: 153 } }, { path: 'navigation.speedOverGround', value: 2 }] }] }) }
+  return { dir, app, plugin, request, accessLevels, configuration: () => configuration, ingest: () => ingest({ updates: [{ timestamp: new Date().toISOString(), values: [{ path: 'navigation.position', value: { latitude: -27, longitude: 153 } }, { path: 'navigation.speedOverGround', value: 2 }] }] }) }
 }
 it('toggles persistently without replacing the sampler or splitting the recording', async () => {
   const connect = vi.spyOn(mqtt, 'connect')
@@ -102,5 +110,18 @@ it('waits for an in-flight options save during shutdown and never starts its obs
     release!(); await Promise.all([enabling, shutdown])
     expect(connect).not.toHaveBeenCalled()
     expect(stopped).toBe(true)
+  } finally { await f.plugin.stop() }
+})
+it('opens onboard reads and controls to non-admin users and keeps unpairing admin-only', async () => {
+  const f = await fixture()
+  try {
+    expect(f.accessLevels).toMatchObject({
+      'GET /tracking': 'readonly',
+      'GET /course': 'readonly',
+      'POST /tracking': 'readwrite',
+      'POST /course/activate': 'readwrite',
+      'POST /course/map-readiness': 'readwrite',
+      'POST /forget-credentials': 'admin'
+    })
   } finally { await f.plugin.stop() }
 })
