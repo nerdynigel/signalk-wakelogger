@@ -2,7 +2,7 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
-## [Unreleased]
+## [0.2.0-beta.5] - 2026-09-16
 
 ### Live tracking when you want it
 
