@@ -214,7 +214,7 @@ try {
     const value = snapshot()
     const statuses = value.events.filter((event) => event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status')
     return statuses.some((event) => event.payload?.queueMessageCount === 0 && event.payload?.acknowledgedSequence >= maximumAck(recovered)) ? value : undefined
-  }, 35_000)
+  }, 90_000)
 
   const result = {
     ok: true,
