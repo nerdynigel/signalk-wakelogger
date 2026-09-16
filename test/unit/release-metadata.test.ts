@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import pluginConstructor from '../../src/index'
 
 interface PackageMetadata {
   name: string
@@ -15,6 +16,11 @@ const root = process.cwd()
 const metadata = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as PackageMetadata
 
 describe('release metadata', () => {
+  it('reports the installed package version in its API metadata', async () => {
+    const plugin = pluginConstructor({} as any)
+    expect((await plugin.getOpenApi?.() as any).info.version).toBe(metadata.version)
+  })
+
   it('pins App Store screenshots to this immutable npm version and packages the corresponding files', () => {
     const prefix = `https://unpkg.com/${metadata.name}@${metadata.version}/`
     expect(metadata.signalk?.screenshots?.length).toBeGreaterThan(0)

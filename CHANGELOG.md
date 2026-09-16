@@ -4,6 +4,24 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## [Unreleased]
 
+### Live tracking when you want it
+
+- Turn live tracking on or off directly from the onboard map. When it's off, your trip still records on board and uploads later; turn it back on to resume live updates.
+- The setting is remembered across restarts, and changing it does not split a trip.
+
+### A clearer map and upload status
+
+- The onboard map now matches Wake Logger's live instrument view, with layouts for phones and tablets and a full-screen option.
+- Historical uploads show percentage progress and an estimated time remaining once upload speed can be measured. A coloured live-tracking indicator makes connection status easier to see.
+- Expandable recording details keep the main upload view compact, and only real trips are created from your recordings.
+
+### Crew can use their own Signal K accounts
+
+- The onboard map no longer requires the Signal K administrator login. Any crew member with a Signal K account can sign in and view the map.
+- Changing live tracking or activating a course needs an account with read/write access — ask your Signal K administrator to set this for your account. Unpairing the vessel still requires an administrator.
+- If your crew don't have Signal K accounts yet, an administrator can add them in Signal K's **Security** settings.
+
+
 ## [0.2.0-beta.4] - 2026-09-14
 
 ### Clearer help in Signal K

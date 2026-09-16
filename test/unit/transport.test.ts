@@ -13,6 +13,7 @@ class FakeClient extends EventEmitter {
   connected = true
   publications: Array<{ topic: string; payload: string; options: object }> = []
   subscriptions: string[] = []
+  denyCourseSubscription = false
   delayNextState = false
   delayNextTelemetry = false
   delayedCallbacks: Array<() => void> = []
@@ -29,7 +30,8 @@ class FakeClient extends EventEmitter {
   subscribe(topic: string | Record<string, object>, callbackOrOptions: object | ((error?: Error) => void), maybeCallback?: (error?: Error) => void): void {
     this.subscriptions.push(...(typeof topic === 'string' ? [topic] : Object.keys(topic)))
     const callback = typeof callbackOrOptions === 'function' ? callbackOrOptions : maybeCallback
-    callback?.()
+    if (this.denyCourseSubscription && this.subscriptions.at(-1)?.endsWith('/course')) callback?.(new Error('Subscribe error: Not authorized'))
+    else callback?.()
   }
   end(_force?: boolean, _options?: object, callback?: (error?: Error) => void): void {
     this.connected = false; callback?.()
@@ -87,6 +89,42 @@ describe('WakeLoggerTransport', () => {
     const count = client.publications.length
     await transport.publishCourseAcknowledgement()
     expect(client.publications).toHaveLength(count)
+  })
+
+  it('does not publish an asynchronous backlog read that completes after local-only pause', async () => {
+    let release: ((samples: any[]) => void) | undefined
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(sample),
+      pendingAfter: vi.fn(() => new Promise((resolve) => { release = resolve })),
+      stats: vi.fn().mockResolvedValue({ acknowledgedSequence: 0, droppedThrough: 0 })
+    }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 },
+      outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn() })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.emit('connect'); await tick(); await tick()
+    expect(release).toBeTypeOf('function')
+    await transport.stop(false)
+    const count = client.publications.length
+    release!([sample]); await tick(); await tick()
+    expect(client.publications).toHaveLength(count)
+    expect(client.publications.some((entry) => entry.topic.endsWith('/telemetry'))).toBe(false)
+  })
+
+  it('keeps acknowledged telemetry online when a legacy broker rejects optional course permissions', async () => {
+    const outbox: any = { latest: vi.fn().mockResolvedValue(sample), pendingAfter: vi.fn().mockResolvedValue([sample]), stats: vi.fn().mockResolvedValue({ acknowledgedSequence: 0, droppedThrough: 0 }) }
+    const onState = vi.fn()
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 }, outbox,
+      { profile: DEFAULT_TELEMETRY_PROFILE, onState })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.denyCourseSubscription = true
+    client.emit('connect'); await tick(); await tick()
+    expect(client.connected).toBe(true)
+    expect(onState).toHaveBeenCalledWith('online', expect.stringContaining('Course sync unavailable'))
+    expect(transport.transportMetrics().courseSyncError).toContain('Not authorized')
+    expect(client.publications.some((entry) => entry.topic.endsWith('/telemetry'))).toBe(true)
+    await transport.stop(false)
   })
 
   it('accepts committed manifest receipts but ignores an acknowledgement beyond the local sequence', async () => {
