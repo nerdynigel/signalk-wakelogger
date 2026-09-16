@@ -6,18 +6,20 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ### Live tracking when you want it
 
-- Turn live tracking on or off directly from the onboard map. With it off, recording continues locally within your configured storage limits. Turn it on to resume live updates and upload stored history.
-- Your choice survives restarts, and switching modes does not split a trip.
+- Turn live tracking on or off directly from the onboard map. When it's off, your trip still records on board and uploads later; turn it back on to resume live updates.
+- The setting is remembered across restarts, and changing it does not split a trip.
 
 ### A clearer map and upload status
 
 - The onboard map now matches Wake Logger's live instrument view, with layouts for phones and tablets and a full-screen option.
 - Historical uploads show percentage progress and an estimated time remaining once upload speed can be measured. A coloured live-tracking indicator makes connection status easier to see.
-- Recording details are expandable, keeping the main upload view compact. Trips are created only when the recorded movement meets the trip definition.
+- Expandable recording details keep the main upload view compact, and only real trips are created from your recordings.
 
-### Crew accounts on the onboard map
+### Crew can use their own Signal K accounts
 
-- The onboard map works with ordinary Signal K user accounts. Any signed-in user can view the map; changing live tracking or activating a course requires an account with read/write access. Unpairing the vessel remains an administrator action.
+- The onboard map no longer requires the Signal K administrator login. Any crew member with a Signal K account can sign in and view the map.
+- Changing live tracking or activating a course needs an account with read/write access — ask your Signal K administrator to set this for your account. Unpairing the vessel still requires an administrator.
+- If your crew don't have Signal K accounts yet, an administrator can add them in Signal K's **Security** settings.
 
 
 ## [0.2.0-beta.4] - 2026-09-14
