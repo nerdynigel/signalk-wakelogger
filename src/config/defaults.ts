@@ -16,6 +16,7 @@ export interface PluginConfig {
   maxOutboxMb: number
   maxOutboxDays: number
   debugTelemetry: boolean
+  raceProgressionMode: 'auto' | 'suggest' | 'off'
 }
 
 export function parseConfig(value: object): PluginConfig {
@@ -30,7 +31,8 @@ export function parseConfig(value: object): PluginConfig {
     samplePeriodMs: boundedNumber(input.samplePeriodMs, DEFAULTS.samplePeriodMs, 250, 60_000),
     maxOutboxMb: boundedNumber(input.maxOutboxMb, 250, 10, 4096),
     maxOutboxDays: boundedNumber(input.maxOutboxDays, 7, 1, 30),
-    debugTelemetry: input.debugTelemetry === true
+    debugTelemetry: input.debugTelemetry === true,
+    raceProgressionMode: input.raceProgressionMode === 'suggest' || input.raceProgressionMode === 'off' ? input.raceProgressionMode : 'auto'
   }
 }
 

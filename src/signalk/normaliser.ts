@@ -62,6 +62,17 @@ export class TelemetryNormaliser {
     return { capturedAt, receivedAt: now, values, quality, cleared: cleared.length ? cleared : undefined }
   }
 
+  latestFix(now = Date.now()): { latitude: number; longitude: number; sogKn: number | null; cogDeg: number | null } | null {
+    const position = this.get<PositionValue>('navigation.position', now)
+    if (!position) return null
+    return {
+      latitude: position.value.latitude,
+      longitude: position.value.longitude,
+      sogKn: convertNumber(this.get<number>('navigation.speedOverGround', now), (value) => value * MPS_TO_KNOTS) ?? null,
+      cogDeg: convertNumber(this.get<number>('navigation.courseOverGroundTrue', now), radiansToDegrees) ?? null
+    }
+  }
+
   private get<T>(path: SignalKPath, now: number): TimedValue<T> | undefined {
     const value = this.values.get(path) as TimedValue<T> | undefined
     return value && now - value.receivedAt <= 30_000 ? value : undefined

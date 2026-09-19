@@ -92,6 +92,8 @@ export class RaceProgressionService {
 
   markPublished(sequences: number[]): Promise<void> { return this.options.store.markPublished(sequences) }
 
+  close(): Promise<void> { return this.options.store.close() }
+
   private async record(action: ProgressionAction, detection: ProgressionDetection): Promise<void> {
     await this.options.store.append(action, this.currentMode, detection, this.now())
   }

@@ -11,7 +11,11 @@ const MARK = offset(START, 500, 0)
 const FINISH = offset(MARK, 0, 500)
 
 const directories: string[] = []
-afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true }) })
+const services: RaceProgressionService[] = []
+afterEach(async () => {
+  for (const service of services.splice(0)) await service.close()
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+})
 
 function offset(origin: { latitude: number; longitude: number }, northM: number, eastM: number) {
   return {
@@ -48,6 +52,7 @@ async function fixture(mode: 'auto' | 'suggest' | 'off' = 'auto') {
   const store = new RaceProgressionStore(path.join(directory, 'race', 'state.json'))
   await store.open()
   const service = new RaceProgressionService({ store, defaultMode: mode, config: { minSogKn: 1, captureRadiusM: 75, maxAccuracyM: 25 }, now: () => 2_000_000 })
+  services.push(service)
   service.updateCourse({ revision: 7, points: course(), reverse: false, activeIndex: 1, matches: true })
   return { store, service, directory }
 }

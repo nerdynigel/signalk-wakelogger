@@ -139,10 +139,11 @@ export class RaceProgressionDetector {
 
     const index = this.index
     const point = this.points[index]
+    if (!point) return null
     const origin = point
     const mark = project(point.latitude, point.longitude, origin.latitude)
     const active = project(fix.latitude, fix.longitude, origin.latitude)
-    const approachBearing = index === 0 ? bearingDeg(point, this.points[1]) : bearingDeg(this.points[index - 1], point)
+    const approachBearing = index === 0 ? bearingDeg(point, this.points[1]!) : bearingDeg(this.points[index - 1]!, point)
     const approach = bearingVector(approachBearing)
     const offset = { x: active.x - mark.x, y: active.y - mark.y }
     const along = dot(approach, offset)
@@ -157,7 +158,7 @@ export class RaceProgressionDetector {
       const ratio = span > 0 ? -this.state.previousAlong / span : 1
       const lateralAtCrossing = (this.state.previousLateral ?? 0) + (lateral - (this.state.previousLateral ?? 0)) * ratio
       const crossingHeading = bearingDeg(previous, fix)
-      const exitBearing = index === this.points.length - 1 ? approachBearing : bearingDeg(point, this.points[index + 1])
+      const exitBearing = index === this.points.length - 1 ? approachBearing : bearingDeg(point, this.points[index + 1]!)
       const forward = index === this.points.length - 1 || index === 0
         ? crossingHeadingDot(crossingHeading, exitBearing) > 0
         : crossingHeadingDot(crossingHeading, exitBearing) >= -0.2

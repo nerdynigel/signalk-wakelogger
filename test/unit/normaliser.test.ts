@@ -29,6 +29,18 @@ describe('TelemetryNormaliser', () => {
     })
   })
 
+  it('exposes the latest position fix in knots and degrees for race detection', () => {
+    const normaliser = new TelemetryNormaliser()
+    const now = Date.parse('2026-08-31T01:02:04Z')
+    normaliser.ingest(delta('2026-08-31T01:02:03Z', [
+      { path: 'navigation.position', value: { latitude: -27.4, longitude: 153.1 } },
+      { path: 'navigation.speedOverGround', value: 3.30377 },
+      { path: 'navigation.courseOverGroundTrue', value: Math.PI }
+    ]), now)
+    expect(normaliser.latestFix(now)).toEqual({ latitude: -27.4, longitude: 153.1, sogKn: 6.422015, cogDeg: 180 })
+    expect(normaliser.latestFix(now + 31_000)).toBeNull()
+  })
+
   it('rejects NMEA sentinels and bad time anchors without losing valid position', () => {
     const normaliser = new TelemetryNormaliser()
     const now = Date.parse('2026-08-31T00:00:00Z')

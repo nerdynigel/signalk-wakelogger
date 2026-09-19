@@ -4,6 +4,8 @@ import path from 'node:path'
 import { CourseStore } from './courses/course-store'
 import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
 import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
+import { RaceProgressionService } from './race/progression-service'
+import { RaceProgressionStore } from './race/progression-store'
 import { UploadHistory, durableJson } from './tracking/history'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
@@ -32,6 +34,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let queueStatsAt: number | undefined
   let transport: WakeLoggerTransport | undefined
   let courses: CourseStore | undefined
+  let progression: RaceProgressionService | undefined
   let courseInitializationError: string | undefined
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
@@ -175,6 +178,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         try {
           if (!courses) throw new CourseError('no_selected_course')
           await courses.activate()
+          await syncProgressionCourse()
           void transport?.publishCourseAcknowledgement().catch((error) => app.error(`Course acknowledgement deferred: ${safeError(error)}`))
           response.status(200).json({ ...await courses.status(), uploadMode: activeUploadMode, connectionState })
         } catch (error) {
@@ -193,6 +197,42 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           if (error instanceof CourseError) response.status(409).json({ error: error.code })
           else next(error)
         }
+      })
+      readRouter.get?.('/progression', async (_request, response, next) => {
+        try {
+          response.status(200).json(progression?.status() ?? { mode: null, revision: 0, activeIndex: 0, pending: null, lastDetection: null })
+        } catch (error) { next(error) }
+      })
+      writeRouter.post('/progression/mode', async (request, response, next) => {
+        const mode = (request as { body?: { mode?: unknown } }).body?.mode
+        if (mode !== 'auto' && mode !== 'suggest' && mode !== 'off') {
+          response.status(400).json({ error: 'invalid_progression_mode' })
+          return
+        }
+        if (!progression) {
+          response.status(409).json({ error: 'progression_unavailable' })
+          return
+        }
+        try {
+          await progression.setMode(mode)
+          response.status(200).json(progression.status())
+        } catch (error) { next(error) }
+      })
+      writeRouter.post('/progression/resolve', async (request, response, next) => {
+        const body = (request as { body?: { resolution?: unknown; pointIndex?: unknown } }).body
+        if ((body?.resolution !== 'accepted' && body?.resolution !== 'dismissed') || !Number.isSafeInteger(body?.pointIndex)) {
+          response.status(400).json({ error: 'invalid_resolution' })
+          return
+        }
+        if (!progression) {
+          response.status(409).json({ error: 'progression_unavailable' })
+          return
+        }
+        try {
+          const resolved = await progression.resolve(body.resolution, body.pointIndex as number)
+          if (resolved) response.status(200).json(progression.status())
+          else response.status(409).json({ error: 'no_pending_detection', ...progression.status() })
+        } catch (error) { next(error) }
       })
       // Registered directly: unpairing keeps Signal K's admin-only default.
       pluginRouter.post('/forget-credentials', async (_request, response, next) => {
@@ -226,6 +266,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
         '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
         '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
+        '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
+        '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
+        '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
         '/forget-credentials': {
           post: {
             summary: 'Forget Wake Logger credentials while preserving all device outboxes',
@@ -234,6 +277,38 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         }
       }
     })
+  }
+
+  async function syncProgressionCourse(): Promise<void> {
+    if (!progression) return
+    if (!courses) { progression.updateCourse(null); return }
+    try {
+      const status = await courses.status() as {
+        cachedCourse?: { revision?: number } | null
+        routePoints?: Array<{ latitude: number; longitude: number; name?: string; kind?: 'start' | 'mark' | 'gate' | 'finish'; rounding?: 'port' | 'starboard' | 'either' }>
+        native?: { course?: { activeRoute?: { pointIndex?: number; reverse?: boolean } | null } | null; activeMatchesDesired?: boolean }
+      }
+      progression.updateCourse({
+        revision: status.cachedCourse?.revision ?? 0,
+        points: status.routePoints ?? [],
+        reverse: status.native?.course?.activeRoute?.reverse === true,
+        activeIndex: status.native?.course?.activeRoute?.pointIndex ?? 0,
+        matches: status.native?.activeMatchesDesired === true
+      })
+    } catch { progression.updateCourse(null) }
+  }
+
+  async function flushProgressionEvidence(): Promise<void> {
+    if (!progression || !transport) return
+    const pending = progression.pendingEvents()
+    if (!pending.length) return
+    const published: number[] = []
+    for (const event of pending) {
+      try { if (!await transport.publishEvidence(event)) break }
+      catch { break }
+      published.push(event.sequence)
+    }
+    if (published.length) await progression.markPublished(published)
   }
 
   async function cleanupResources(): Promise<void> {
@@ -250,6 +325,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     currentSampler = undefined
     connectTransport = undefined
     await sampleOperation
+    await progression?.close()
+    progression = undefined
     await courses?.close()
     courses = undefined
     courseInitializationError = undefined
@@ -338,6 +415,15 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       courseInitializationError = safeError(error)
       app.error(`Wake Logger course cache unavailable; telemetry recording continues: ${courseInitializationError}`)
     }
+    const progressionStore = new RaceProgressionStore(path.join(dataDirectory, 'race-progression', credentials.deviceId, 'state.json'))
+    try {
+      await progressionStore.open()
+      progression = new RaceProgressionService({ store: progressionStore, defaultMode: config.raceProgressionMode })
+    } catch (error) {
+      progression = undefined
+      app.error(`Wake Logger mark detection unavailable: ${safeError(error)}`)
+    }
+    await syncProgressionCourse()
     const normaliser = new TelemetryNormaliser()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
@@ -381,7 +467,11 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         if (state === 'authentication_failed') void confirmAssociation(credentials, thisGeneration)
       },
       onCourse: async (payload) => {
-        if (courses) return courses.receive(payload)
+        if (courses) {
+          const acknowledgement = await courses.receive(payload)
+          await syncProgressionCourse()
+          return acknowledgement
+        }
         let revision = 0
         try { revision = parseCourse(payload).revision } catch { /* Report unavailable storage without accepting a new course. */ }
         courseFailureAcknowledgement = { v: 1, revision, status: 'rejected', errorCode: 'course_storage_unavailable' }
@@ -407,7 +497,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     if (activeUploadMode === 'local_only') {
       transport = new WakeLoggerTransport(credentials, selected.store, { profile, onState: () => undefined })
     }
-    stopSubscription = subscribeToTelemetry(app, (delta) => normaliser.ingest(delta))
+    stopSubscription = subscribeToTelemetry(app, (delta) => {
+      normaliser.ingest(delta)
+      if (!progression) return
+      const fix = normaliser.latestFix()
+      if (fix) progression.fix({ at: Date.now(), ...fix })
+    })
     const sample = async () => {
       if (generation !== thisGeneration) return
       const now = Date.now()
@@ -434,7 +529,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       }, sampler.samplePeriodMs())
     }
     scheduleSample()
-    statusTimer = setInterval(() => void updateStatus(), 10_000)
+    statusTimer = setInterval(() => { void syncProgressionCourse(); void updateStatus() }, 10_000)
     if (activeUploadMode === 'automatic') connectTransport()
     else connectionState = 'recording_locally'
     await updateStatus()
@@ -472,6 +567,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       profileRevision: activeProfile?.revision,
       ...transport?.transportMetrics()
     })
+    void flushProgressionEvidence()
     if (connectionState === 'device_revoked') {
       app.setPluginStatus(`Wake Logger: Device revoked — enter a new pairing code; ${queue}${dropped}${sequence}`)
       return

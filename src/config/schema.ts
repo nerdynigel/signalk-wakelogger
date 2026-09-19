@@ -46,6 +46,14 @@ export const configSchema = {
       type: 'boolean',
       title: 'Enable telemetry debug logging',
       default: false
+    },
+    raceProgressionMode: {
+      type: 'string',
+      title: 'Mark detection mode',
+      enum: ['auto', 'suggest', 'off'],
+      enumNames: ['Automatic', 'Suggest', 'Off'],
+      default: 'auto',
+      description: 'Automatic advances the active course point when the onboard app detects a rounding, start or finish; it also records evidence for Wake Logger. Suggest asks the crew first. Off records evidence only.'
     }
   }
 } as const

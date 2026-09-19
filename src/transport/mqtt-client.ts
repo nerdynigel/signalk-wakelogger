@@ -105,6 +105,12 @@ export class WakeLoggerTransport {
     }
   }
 
+  async publishEvidence(event: object): Promise<boolean> {
+    if (!this.client?.connected || this.stopped) return false
+    await this.publish(this.client, this.topics.events, JSON.stringify({ v: 1, kind: 'race', deviceId: this.credentials.deviceId, ...event }), { qos: 1 })
+    return true
+  }
+
   updateProfile(profile: TelemetryProfile): void { this.profile = profile }
 
   updateStatus(metrics: PluginStatusMetrics): void {

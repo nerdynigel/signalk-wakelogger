@@ -47,7 +47,7 @@ describe('race progression detection', () => {
     const track = path(offset(MARK, -200, -20), offset(MARK, 200, -20), 40)
     const detection = run(detector, track)
     expect(detection).toMatchObject({ type: 'rounding', pointIndex: 1, wrongSide: false, passedSide: 'starboard', confidence: 'high', revision: 7 })
-    expect(detection?.at).toBeGreaterThan(track[0].at)
+    expect(detection?.at).toBeGreaterThan(track[0]!.at)
     expect(detection?.distanceM).toBeLessThanOrEqual(75)
   })
 
@@ -60,7 +60,7 @@ describe('race progression detection', () => {
 
   it('accepts a port rounding on the correct side', () => {
     const points = course()
-    points[1].rounding = 'port'
+    points[1]!.rounding = 'port'
     const detector = new RaceProgressionDetector({ ...DEFAULT_PROGRESSION_CONFIG })
     detector.setCourse(2, points, false, 1)
     const detection = run(detector, path(offset(MARK, -200, 35), offset(MARK, 200, 35), 40))
