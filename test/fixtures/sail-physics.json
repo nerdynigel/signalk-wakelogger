@@ -1,0 +1,1670 @@
+{
+  "cases": {
+    "angularDifferenceDegrees": [
+      {
+        "input": {
+          "left": 350,
+          "right": 10
+        },
+        "output": 20.0
+      },
+      {
+        "input": {
+          "left": 10,
+          "right": 350
+        },
+        "output": 20.0
+      },
+      {
+        "input": {
+          "left": 0,
+          "right": 180
+        },
+        "output": 180.0
+      },
+      {
+        "input": {
+          "left": 180,
+          "right": 0
+        },
+        "output": 180.0
+      },
+      {
+        "input": {
+          "left": 45,
+          "right": 45
+        },
+        "output": 0.0
+      },
+      {
+        "input": {
+          "left": 0,
+          "right": 0
+        },
+        "output": 0.0
+      },
+      {
+        "input": {
+          "left": 400,
+          "right": 20
+        },
+        "output": 20.0
+      }
+    ],
+    "apparentWind": [
+      {
+        "input": {
+          "trueWindFromDeg": 90,
+          "trueWindSpeedKnots": 12,
+          "vesselCourseDeg": 0,
+          "vesselSpeedKnots": 6
+        },
+        "output": {
+          "apparent_wind_from_deg": 63.4,
+          "awa_deg": 63.4,
+          "aws_knots": 13.42
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 90,
+          "trueWindSpeedKnots": 12,
+          "vesselCourseDeg": 0,
+          "vesselSpeedKnots": 0
+        },
+        "output": {
+          "apparent_wind_from_deg": 90.0,
+          "awa_deg": 90.0,
+          "aws_knots": 12.0
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 0,
+          "trueWindSpeedKnots": 15,
+          "vesselCourseDeg": 45,
+          "vesselSpeedKnots": 7
+        },
+        "output": {
+          "apparent_wind_from_deg": 13.9,
+          "awa_deg": 31.1,
+          "aws_knots": 20.55
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 90,
+          "trueWindSpeedKnots": 10,
+          "vesselCourseDeg": 180,
+          "vesselSpeedKnots": 5
+        },
+        "output": {
+          "apparent_wind_from_deg": 116.6,
+          "awa_deg": 63.4,
+          "aws_knots": 11.18
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 180,
+          "trueWindSpeedKnots": 20,
+          "vesselCourseDeg": 270,
+          "vesselSpeedKnots": 8
+        },
+        "output": {
+          "apparent_wind_from_deg": 201.8,
+          "awa_deg": 68.2,
+          "aws_knots": 21.54
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 180,
+          "trueWindSpeedKnots": 5,
+          "vesselCourseDeg": 0,
+          "vesselSpeedKnots": 5
+        },
+        "output": {
+          "apparent_wind_from_deg": 180.0,
+          "awa_deg": 180.0,
+          "aws_knots": 0.0
+        }
+      },
+      {
+        "input": {
+          "trueWindFromDeg": 1,
+          "trueWindSpeedKnots": 11,
+          "vesselCourseDeg": 359,
+          "vesselSpeedKnots": 6.5
+        },
+        "output": {
+          "apparent_wind_from_deg": 0.3,
+          "awa_deg": 1.3,
+          "aws_knots": 17.5
+        }
+      }
+    ],
+    "bearingDegrees": [
+      {
+        "input": {
+          "fromLat": -27.4,
+          "fromLon": 153.17,
+          "toLat": -27.39,
+          "toLon": 153.19
+        },
+        "output": 60.6
+      },
+      {
+        "input": {
+          "fromLat": -27.4,
+          "fromLon": 153.17,
+          "toLat": -27.4,
+          "toLon": 153.17
+        },
+        "output": 0.0
+      },
+      {
+        "input": {
+          "fromLat": 0,
+          "fromLon": 0,
+          "toLat": 1,
+          "toLon": 1
+        },
+        "output": 45.0
+      },
+      {
+        "input": {
+          "fromLat": 0,
+          "fromLon": 0,
+          "toLat": -1,
+          "toLon": 0
+        },
+        "output": 180.0
+      },
+      {
+        "input": {
+          "fromLat": 51.5,
+          "fromLon": -0.1,
+          "toLat": 48.85,
+          "toLon": 2.35
+        },
+        "output": 148.4
+      }
+    ],
+    "bestUpwindTargetFromPolarSummary": [
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          }
+        },
+        "output": {
+          "source": "polar",
+          "twa": 45.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 20,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          }
+        },
+        "output": {
+          "source": "polar",
+          "twa": 45.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 5,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          }
+        },
+        "output": {
+          "source": "polar",
+          "twa": 45.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "eligible": false
+          }
+        },
+        "output": {
+          "source": "default",
+          "twa": 45.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": null
+        },
+        "output": {
+          "source": "default",
+          "twa": 45.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [],
+            "eligible": true
+          }
+        },
+        "output": {
+          "source": "default",
+          "twa": 45.0
+        }
+      }
+    ],
+    "classifyPointOfSail": [
+      {
+        "input": {
+          "twaDeg": -10
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 0
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 20
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 34.9
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 35
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 45
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 59.9
+        },
+        "output": "close-hauled"
+      },
+      {
+        "input": {
+          "twaDeg": 60
+        },
+        "output": "close reach"
+      },
+      {
+        "input": {
+          "twaDeg": 70
+        },
+        "output": "close reach"
+      },
+      {
+        "input": {
+          "twaDeg": 89.5
+        },
+        "output": "close reach"
+      },
+      {
+        "input": {
+          "twaDeg": 90
+        },
+        "output": "beam reach"
+      },
+      {
+        "input": {
+          "twaDeg": 90.4
+        },
+        "output": "beam reach"
+      },
+      {
+        "input": {
+          "twaDeg": 100
+        },
+        "output": "broad reach"
+      },
+      {
+        "input": {
+          "twaDeg": 134.9
+        },
+        "output": "broad reach"
+      },
+      {
+        "input": {
+          "twaDeg": 135
+        },
+        "output": "running"
+      },
+      {
+        "input": {
+          "twaDeg": 150
+        },
+        "output": "running"
+      },
+      {
+        "input": {
+          "twaDeg": 180
+        },
+        "output": "running"
+      },
+      {
+        "input": {
+          "twaDeg": 200
+        },
+        "output": "running"
+      }
+    ],
+    "currentComponents": [
+      {
+        "input": {
+          "currentDirectionDeg": null,
+          "currentVelocityKn": null,
+          "legBearingDeg": 90
+        },
+        "output": {
+          "current_along_leg_kn": null,
+          "current_angle_to_leg_deg": null,
+          "current_cross_leg_kn": null,
+          "estimated_sog_delta_kn": 0.0
+        }
+      },
+      {
+        "input": {
+          "currentDirectionDeg": 45,
+          "currentVelocityKn": 1.2,
+          "legBearingDeg": 90
+        },
+        "output": {
+          "current_along_leg_kn": 0.85,
+          "current_angle_to_leg_deg": 45.0,
+          "current_cross_leg_kn": 0.85,
+          "estimated_sog_delta_kn": 0.848528137423857
+        }
+      },
+      {
+        "input": {
+          "currentDirectionDeg": 270,
+          "currentVelocityKn": 0.8,
+          "legBearingDeg": 0
+        },
+        "output": {
+          "current_along_leg_kn": 0.0,
+          "current_angle_to_leg_deg": 90.0,
+          "current_cross_leg_kn": 0.8,
+          "estimated_sog_delta_kn": 4.898587196589413e-17
+        }
+      },
+      {
+        "input": {
+          "currentDirectionDeg": 180,
+          "currentVelocityKn": 0.5,
+          "legBearingDeg": 45
+        },
+        "output": {
+          "current_along_leg_kn": -0.35,
+          "current_angle_to_leg_deg": 135.0,
+          "current_cross_leg_kn": 0.35,
+          "estimated_sog_delta_kn": -0.35355339059327373
+        }
+      },
+      {
+        "input": {
+          "currentDirectionDeg": 0,
+          "currentVelocityKn": 0.0,
+          "legBearingDeg": 90
+        },
+        "output": {
+          "current_along_leg_kn": 0.0,
+          "current_angle_to_leg_deg": 90.0,
+          "current_cross_leg_kn": 0.0,
+          "estimated_sog_delta_kn": 0.0
+        }
+      }
+    ],
+    "distanceNm": [
+      {
+        "input": {
+          "fromLat": -27.4,
+          "fromLon": 153.17,
+          "toLat": -27.39,
+          "toLon": 153.19
+        },
+        "output": 1.224
+      },
+      {
+        "input": {
+          "fromLat": -27.4,
+          "fromLon": 153.17,
+          "toLat": -27.4,
+          "toLon": 153.17
+        },
+        "output": 0.0
+      },
+      {
+        "input": {
+          "fromLat": 0,
+          "fromLon": 0,
+          "toLat": 1,
+          "toLon": 1
+        },
+        "output": 84.908
+      },
+      {
+        "input": {
+          "fromLat": 51.5,
+          "fromLon": -0.1,
+          "toLat": 48.85,
+          "toLon": 2.35
+        },
+        "output": 184.882
+      }
+    ],
+    "estimateBoatSpeedKnots": [
+      {
+        "input": {
+          "forecastGustKnots": 15,
+          "forecastTwsKnots": 12,
+          "pointOfSail": "beam reach",
+          "vessel": {
+            "hull_speed_knots": 7.2
+          }
+        },
+        "output": {
+          "speed": 6.12,
+          "warnings": []
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 5,
+          "forecastTwsKnots": 4,
+          "pointOfSail": "close-hauled",
+          "vessel": {
+            "hull_speed_knots": 7.2
+          }
+        },
+        "output": {
+          "speed": 1.94,
+          "warnings": [
+            "Light wind may substantially reduce boat speed."
+          ]
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 18,
+          "forecastTwsKnots": 7,
+          "pointOfSail": "running",
+          "vessel": {
+            "hull_speed_knots": 7.2
+          }
+        },
+        "output": {
+          "speed": 3.28,
+          "warnings": [
+            "Light wind may moderately reduce boat speed."
+          ]
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 22,
+          "forecastTwsKnots": 10,
+          "pointOfSail": "close-hauled",
+          "vessel": {
+            "length_waterline_m": 9.5
+          }
+        },
+        "output": {
+          "speed": 4.04,
+          "warnings": [
+            "Gust spread is high; estimated speed confidence is reduced."
+          ]
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 14,
+          "forecastTwsKnots": 12,
+          "pointOfSail": "close-hauled / no-sail zone",
+          "vessel": {
+            "length_m": 12.0
+          }
+        },
+        "output": {
+          "speed": 2.94,
+          "warnings": [
+            "Leg is very close to the wind; sailing performance may be poor without tacking."
+          ]
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 8,
+          "forecastTwsKnots": 6,
+          "pointOfSail": "broad reach",
+          "vessel": {}
+        },
+        "output": {
+          "speed": 2.62,
+          "warnings": [
+            "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+            "Light wind may moderately reduce boat speed."
+          ]
+        }
+      },
+      {
+        "input": {
+          "forecastGustKnots": 16,
+          "forecastTwsKnots": 14,
+          "pointOfSail": "beam reach",
+          "vessel": {
+            "hull_speed_knots": 0,
+            "length_waterline_m": 0
+          }
+        },
+        "output": {
+          "speed": 4.25,
+          "warnings": [
+            "Estimated speed uses a default hull speed because vessel performance fields are incomplete."
+          ]
+        }
+      }
+    ],
+    "hullSpeedForVessel": [
+      {
+        "input": {
+          "vessel": {
+            "hull_speed_knots": 7.2
+          }
+        },
+        "output": {
+          "source": "vessel hull speed",
+          "speed": 7.2
+        }
+      },
+      {
+        "input": {
+          "vessel": {
+            "length_waterline_m": 9.5
+          }
+        },
+        "output": {
+          "source": "length at waterline",
+          "speed": 7.480990783104135
+        }
+      },
+      {
+        "input": {
+          "vessel": {
+            "length_m": 12.0
+          }
+        },
+        "output": {
+          "source": "vessel length",
+          "speed": 8.40790778883451
+        }
+      },
+      {
+        "input": {
+          "vessel": {}
+        },
+        "output": {
+          "source": "default hull speed",
+          "speed": 5.0
+        }
+      },
+      {
+        "input": {
+          "vessel": {
+            "hull_speed_knots": 0,
+            "length_waterline_m": 0
+          }
+        },
+        "output": {
+          "source": "default hull speed",
+          "speed": 5.0
+        }
+      }
+    ],
+    "normalizeDegrees": [
+      {
+        "input": {
+          "value": -370
+        },
+        "output": 350.0
+      },
+      {
+        "input": {
+          "value": -10
+        },
+        "output": 350.0
+      },
+      {
+        "input": {
+          "value": 0
+        },
+        "output": 0.0
+      },
+      {
+        "input": {
+          "value": 45
+        },
+        "output": 45.0
+      },
+      {
+        "input": {
+          "value": 359.9
+        },
+        "output": 359.9
+      },
+      {
+        "input": {
+          "value": 720.5
+        },
+        "output": 0.5
+      }
+    ],
+    "polarSpeedForLeg": [
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 45,
+          "windSide": "starboard"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "40/12 stbd",
+            "bucket_side": "starboard",
+            "bucket_twa_deg": 40.0,
+            "bucket_tws_kn": 12.0,
+            "sample_count": 60,
+            "source": "saved_polar"
+          },
+          "speed": 5.4
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 45,
+          "windSide": "port"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "45/12 port",
+            "bucket_side": "port",
+            "bucket_twa_deg": 45.0,
+            "bucket_tws_kn": 12.0,
+            "sample_count": 20,
+            "source": "saved_polar"
+          },
+          "speed": 5.9
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 14,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 90,
+          "windSide": null
+        },
+        "output": {
+          "match": {
+            "bucket_label": "90/14 stbd",
+            "bucket_side": "starboard",
+            "bucket_twa_deg": 90.0,
+            "bucket_tws_kn": 14.0,
+            "sample_count": 30,
+            "source": "saved_polar"
+          },
+          "speed": 6.6
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 18,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 150,
+          "windSide": "starboard"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "150/18 port",
+            "bucket_side": "port",
+            "bucket_twa_deg": 150.0,
+            "bucket_tws_kn": 18.0,
+            "sample_count": 12,
+            "source": "saved_polar"
+          },
+          "speed": 7.1
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 25,
+          "windSide": "port"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "20/12 port",
+            "bucket_side": "port",
+            "bucket_twa_deg": 20.0,
+            "bucket_tws_kn": 12.0,
+            "sample_count": 5,
+            "source": "saved_polar"
+          },
+          "speed": 4.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 5,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 100,
+          "windSide": "starboard"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "90/14 stbd",
+            "bucket_side": "starboard",
+            "bucket_twa_deg": 90.0,
+            "bucket_tws_kn": 14.0,
+            "sample_count": 30,
+            "source": "saved_polar"
+          },
+          "speed": 6.6
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 10,
+          "windSide": "port"
+        },
+        "output": {
+          "match": {
+            "bucket_label": "20/12 port",
+            "bucket_side": "port",
+            "bucket_twa_deg": 20.0,
+            "bucket_tws_kn": 12.0,
+            "sample_count": 5,
+            "source": "saved_polar"
+          },
+          "speed": 4.0
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 30,
+          "polarSummary": {
+            "buckets": [
+              {
+                "abs_twa_deg": 40,
+                "average_speed_kn": 5.4,
+                "label": "40/12 stbd",
+                "sample_count": 60,
+                "side": "starboard",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 45,
+                "average_speed_kn": 5.9,
+                "label": "45/12 port",
+                "sample_count": 20,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 90,
+                "average_speed_kn": 6.6,
+                "label": "90/14 stbd",
+                "sample_count": 30,
+                "side": "starboard",
+                "tws_kn": 14
+              },
+              {
+                "abs_twa_deg": 150,
+                "average_speed_kn": 7.1,
+                "label": "150/18 port",
+                "sample_count": 12,
+                "side": "port",
+                "tws_kn": 18
+              },
+              {
+                "abs_twa_deg": 20,
+                "average_speed_kn": 4.0,
+                "label": "20/12 port",
+                "sample_count": 5,
+                "side": "port",
+                "tws_kn": 12
+              },
+              {
+                "abs_twa_deg": 55,
+                "average_speed_kn": 0.0,
+                "label": "55/20 zero",
+                "sample_count": 3,
+                "side": "starboard",
+                "tws_kn": 20
+              }
+            ],
+            "eligible": true
+          },
+          "twaDeg": 45,
+          "windSide": "starboard"
+        },
+        "output": {
+          "match": null,
+          "speed": null
+        }
+      },
+      {
+        "input": {
+          "forecastTwsKnots": 12,
+          "polarSummary": {
+            "eligible": false
+          },
+          "twaDeg": 45,
+          "windSide": "port"
+        },
+        "output": {
+          "match": null,
+          "speed": null
+        }
+      }
+    ],
+    "sailingCourseForTargetTwa": [
+      {
+        "input": {
+          "legBearingDeg": 45,
+          "targetTwaDeg": 45,
+          "trueWindFromDeg": 0
+        },
+        "output": 45.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 90,
+          "targetTwaDeg": 45,
+          "trueWindFromDeg": 90
+        },
+        "output": 135.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 0,
+          "targetTwaDeg": 45,
+          "trueWindFromDeg": 180
+        },
+        "output": 225.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 350,
+          "targetTwaDeg": 45,
+          "trueWindFromDeg": 10
+        },
+        "output": 325.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 200,
+          "targetTwaDeg": 60,
+          "trueWindFromDeg": 90
+        },
+        "output": 150.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 10,
+          "targetTwaDeg": 40,
+          "trueWindFromDeg": 350
+        },
+        "output": 30.0
+      }
+    ],
+    "sailingSideForCourse": [
+      {
+        "input": {
+          "pointOfSail": "close reach",
+          "sailingCourseDeg": 45,
+          "trueWindFromDeg": 90
+        },
+        "output": {
+          "sails_out_side": null,
+          "tack": "starboard",
+          "wind_side": "starboard"
+        }
+      },
+      {
+        "input": {
+          "pointOfSail": "broad reach",
+          "sailingCourseDeg": 300,
+          "trueWindFromDeg": 90
+        },
+        "output": {
+          "sails_out_side": "port",
+          "tack": "starboard",
+          "wind_side": "starboard"
+        }
+      },
+      {
+        "input": {
+          "pointOfSail": "beam reach",
+          "sailingCourseDeg": 90,
+          "trueWindFromDeg": 90
+        },
+        "output": {
+          "sails_out_side": null,
+          "tack": "port",
+          "wind_side": "port"
+        }
+      },
+      {
+        "input": {
+          "pointOfSail": "running",
+          "sailingCourseDeg": 270,
+          "trueWindFromDeg": 180
+        },
+        "output": {
+          "sails_out_side": "starboard",
+          "tack": "port",
+          "wind_side": "port"
+        }
+      },
+      {
+        "input": {
+          "pointOfSail": "close-hauled",
+          "sailingCourseDeg": 180,
+          "trueWindFromDeg": 0
+        },
+        "output": {
+          "sails_out_side": null,
+          "tack": "port",
+          "wind_side": "port"
+        }
+      },
+      {
+        "input": {
+          "pointOfSail": "broad reach",
+          "sailingCourseDeg": 350,
+          "trueWindFromDeg": 10
+        },
+        "output": {
+          "sails_out_side": "port",
+          "tack": "starboard",
+          "wind_side": "starboard"
+        }
+      }
+    ],
+    "signedAngleDegrees": [
+      {
+        "input": {
+          "left": 350,
+          "right": 10
+        },
+        "output": -20.0
+      },
+      {
+        "input": {
+          "left": 10,
+          "right": 350
+        },
+        "output": 20.0
+      },
+      {
+        "input": {
+          "left": 0,
+          "right": 180
+        },
+        "output": -180.0
+      },
+      {
+        "input": {
+          "left": 180,
+          "right": 0
+        },
+        "output": -180.0
+      },
+      {
+        "input": {
+          "left": 90,
+          "right": 45
+        },
+        "output": 45.0
+      },
+      {
+        "input": {
+          "left": 45,
+          "right": 90
+        },
+        "output": -45.0
+      }
+    ],
+    "waveAngleToLeg": [
+      {
+        "input": {
+          "legBearingDeg": 90,
+          "waveDirectionDeg": null
+        },
+        "output": null
+      },
+      {
+        "input": {
+          "legBearingDeg": 90,
+          "waveDirectionDeg": 45
+        },
+        "output": 45.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 10,
+          "waveDirectionDeg": 200
+        },
+        "output": 170.0
+      },
+      {
+        "input": {
+          "legBearingDeg": 0,
+          "waveDirectionDeg": 0
+        },
+        "output": 0.0
+      }
+    ]
+  },
+  "description": "Golden fixtures generated from the Wake Logger deterministic sail calculation for the onboard port.",
+  "polarSummary": {
+    "buckets": [
+      {
+        "abs_twa_deg": 40,
+        "average_speed_kn": 5.4,
+        "label": "40/12 stbd",
+        "sample_count": 60,
+        "side": "starboard",
+        "tws_kn": 12
+      },
+      {
+        "abs_twa_deg": 45,
+        "average_speed_kn": 5.9,
+        "label": "45/12 port",
+        "sample_count": 20,
+        "side": "port",
+        "tws_kn": 12
+      },
+      {
+        "abs_twa_deg": 90,
+        "average_speed_kn": 6.6,
+        "label": "90/14 stbd",
+        "sample_count": 30,
+        "side": "starboard",
+        "tws_kn": 14
+      },
+      {
+        "abs_twa_deg": 150,
+        "average_speed_kn": 7.1,
+        "label": "150/18 port",
+        "sample_count": 12,
+        "side": "port",
+        "tws_kn": 18
+      },
+      {
+        "abs_twa_deg": 20,
+        "average_speed_kn": 4.0,
+        "label": "20/12 port",
+        "sample_count": 5,
+        "side": "port",
+        "tws_kn": 12
+      },
+      {
+        "abs_twa_deg": 55,
+        "average_speed_kn": 0.0,
+        "label": "55/20 zero",
+        "sample_count": 3,
+        "side": "starboard",
+        "tws_kn": 20
+      }
+    ],
+    "eligible": true
+  },
+  "ruleSetVersion": "race_plan_preview_v1",
+  "source": "wakelogger/api/app/services/race_plan_service.py"
+}
