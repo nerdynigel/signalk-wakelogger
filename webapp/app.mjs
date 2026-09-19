@@ -1,4 +1,4 @@
-import { SignalKClient, CourseProgressionService } from './api-client.mjs'
+import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
@@ -7,6 +7,7 @@ import { trackingPresentation } from './tracking-controls.mjs'
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
 const progression = new CourseProgressionService(client)
+const raceProgressionClient = new RaceProgressionService(client)
 const charts = new ChartSourceService(client)
 const verifier = new LocalChartVerifier()
 const L = window.L
@@ -16,6 +17,7 @@ const vesselLayer = L.layerGroup().addTo(map)
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
+let raceProgression = null, applyingProgression = false
 let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
@@ -127,18 +129,22 @@ async function poll() {
   if (polling) return
   polling = true
   try {
-    const [nextStatus, navigation, calculated] = await Promise.all([
+    const [nextStatus, navigation, calculated, nextProgression] = await Promise.all([
       client.request('/plugins/signalk-wakelogger/course'),
       client.request('/signalk/v1/api/vessels/self/navigation').catch(() => ({})),
       client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues').catch(() => ({})),
+      client.request('/plugins/signalk-wakelogger/progression').catch(() => null),
     ])
     status = nextStatus
+    raceProgression = nextProgression
     const nativeRoute = status.native?.ownedRouteId
       ? await client.request(`/signalk/v2/api/resources/routes/${encodeURIComponent(status.native.ownedRouteId)}`).catch(() => null)
       : null
     progress = raceProgress(status, navigation, calculated, nativeRoute)
     $('login').hidden = true
     renderCourse()
+    renderProgression()
+    if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide) await applyProgression()
     if (Date.now() - lastChartsAt > 60_000) await discoverCharts()
   } catch (error) {
     if ([401, 403].includes(error.status)) $('login').hidden = false
@@ -155,6 +161,45 @@ async function command(action) {
   finally { busy = false; if (progress) renderCourse() }
 }
 
+function renderProgression() {
+  const element = $('progression-status')
+  if (!element) return
+  const labels = { auto: 'Automatic', suggest: 'Suggest', off: 'Off' }
+  const mode = raceProgression?.mode
+  const pending = raceProgression?.pending
+  if (!mode) { element.textContent = ''; $('progression-actions').hidden = true; return }
+  const detail = pending && !pending.wrongSide ? ` · ${pending.type} detected at point ${pending.pointIndex + 1}` : ''
+  element.textContent = `Mark detection: ${labels[mode] ?? mode}${detail}`
+  $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide)
+}
+
+async function applyProgression() {
+  if (applyingProgression) return
+  const pending = raceProgression?.pending
+  const href = status?.native?.course?.activeRoute?.href
+  if (!pending || pending.wrongSide || !href) return
+  applyingProgression = true
+  try {
+    await progression.advance(href)
+    await raceProgressionClient.resolve('accepted', pending.pointIndex)
+    notice(`Mark detection advanced past point ${pending.pointIndex + 1}.`)
+  } catch (error) {
+    notice(`${error.message} Set the point manually if the rounding was missed.`)
+  } finally { applyingProgression = false }
+}
+
+$('progression-accept').onclick = () => command(async () => {
+  await progression.advance(status.native.course.activeRoute.href)
+  await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex)
+})
+$('progression-dismiss').onclick = async () => {
+  try {
+    await raceProgressionClient.resolve('dismissed', raceProgression.pending.pointIndex)
+    raceProgression = { ...raceProgression, pending: null }
+    renderProgression()
+    notice('Rounding dismissed.')
+  } catch (error) { notice(error.message) }
+}
 $('fit-course').onclick = fitCourse
 $('centre-vessel').onclick = () => { if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) }
 $('activate-course').onclick = () => command(() => progression.activate())
