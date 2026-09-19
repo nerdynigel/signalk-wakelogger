@@ -28,6 +28,22 @@ reconnects. Upstreaming a small point-index API would remove that requirement.
 The race pack and onboard sail-plan calculation are not implemented yet; the
 rest of this document is the agreed design for them.
 
+### Sail-plan port progress (2026-09-16, branch `feature/onboard-sail-plan`)
+
+- Ported with golden-fixture parity against the cloud calculation
+  (`scripts/generate-sail-fixtures.py`, 216 cases in
+  `test/fixtures/sail-physics.json`): angle/bearing/distance helpers,
+  point-of-sail classification, polar target and speed selection, sailing
+  course and side, hull and estimated boat speed, apparent wind, current
+  components, wave angle, sail category, range and sail-type scoring, reefing
+  recommendation, per-sail candidates, ranked recommendations and the complete
+  per-leg sail plan (`src/race/sailing/physics.ts`, `selection.ts`).
+- Not yet ported or wired: the race pack schema and MQTT transport, the
+  top-level preview assembly (leg building from the course and forecast
+  timeline, current and wave integration), the fixed race-headsail selection
+  (`select_race_headsail`) and the 15-minute onboard scheduler with its webapp
+  surface.
+
 ## Racing constraint
 
 Some races prohibit transmitting or receiving data while racing. The plugin
