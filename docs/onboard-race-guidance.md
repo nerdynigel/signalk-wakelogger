@@ -3,6 +3,31 @@
 Design for two related onboard features. Both work fully on the boat; the cloud
 remains authoritative for post-race review. No AI runs on the vessel.
 
+## Implementation status (2026-09-16)
+
+Mark detection is implemented in the plugin and the onboard app:
+
+- `src/race/detection.ts` (engine), `src/race/progression-store.ts` (durable
+  mode and evidence log), `src/race/progression-service.ts` (Auto/Suggest/Off).
+- Plugin config `raceProgressionMode` (default `automatic`), runtime changes
+  through `POST /plugins/signalk-wakelogger/progression/mode`, pending state via
+  `GET /plugins/signalk-wakelogger/progression`, resolution through
+  `POST /plugins/signalk-wakelogger/progression/resolve`.
+- Detections and resolutions queue durably and upload as `kind: 'race'` events
+  on the existing events topic whenever the transport is online.
+- The onboard app applies **Auto** advances with Signal K's native
+  `nextPoint` endpoint (the same call as the manual Advance button) and then
+  resolves the detection as accepted.
+
+Known constraint: Signal K publishes no plugin API to change the active route
+point index. `app.activateRoute()` resets the native course start time, so the
+plugin must not use it for advancement. Auto therefore requires the onboard app
+to be open with a signed-in user; otherwise detections wait as pending until it
+reconnects. Upstreaming a small point-index API would remove that requirement.
+
+The race pack and onboard sail-plan calculation are not implemented yet; the
+rest of this document is the agreed design for them.
+
 ## Racing constraint
 
 Some races prohibit transmitting or receiving data while racing. The plugin
