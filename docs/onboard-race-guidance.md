@@ -44,6 +44,19 @@ rest of this document is the agreed design for them.
   (`select_race_headsail`) and the 15-minute onboard scheduler with its webapp
   surface.
 
+Additional progress (2026-09-17, branch `feature/onboard-sail-plan`):
+
+- Race pack parser (`src/race/pack.ts`) validates the versioned pack: course
+  points with rounding and kind, sail inventory, payload, forecast timeline and
+  polar summary, with a 256 KiB cap.
+- Rolling five-minute instrument averages (`src/race/averages.ts`).
+- Onboard planner (`src/race/plan.ts`) builds every remaining leg, selects
+  observed or forecast conditions by estimated time, and runs the ported
+  selection to produce the per-leg plan.
+- Remaining: MQTT `pack` topic transport, the 15-minute scheduler and webapp
+  surface, fixed race-headsail selection, and the cloud-side pack assembly and
+  publication.
+
 ## Racing constraint
 
 Some races prohibit transmitting or receiving data while racing. The plugin
