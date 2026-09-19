@@ -11,9 +11,10 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
+  let progressionState = progression
   const external = []
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
@@ -39,6 +40,13 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
         native: { available: true, course: navigation, ownedRouteId, activeMatchesDesired: navigation.activeRoute.href === ownedHref, conflict: navigation.activeRoute.href !== ownedHref },
         credentials: { password: secret },
       })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression') return json(progressionState)
+    if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
+      const body = request.postDataJSON()
+      writes.push({ path: pathname, method: request.method(), body })
+      if (progressionState?.pending?.pointIndex === body.pointIndex) progressionState = { ...progressionState, pending: null }
+      return json(progressionState)
     }
     if (pathname === '/plugins/signalk-wakelogger/course/activate') {
       writes.push({ path: pathname, method: request.method(), body: request.postDataJSON() })
@@ -198,4 +206,24 @@ test('failed mode save reads back the actual safely paused state', async ({ page
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await expect(page.locator('#notice')).toContainText('could not be saved')
   await expect(page.locator('#tracking-description')).toContainText('Setting could not be saved')
+})
+
+test('auto-advances the active point from a detected rounding', async ({ page }) => {
+  const { writes } = await mockBoat(page, {
+    progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: false, revision: 7, at: 0 }, lastDetection: null }
+  })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
+  await expect.poll(() => writes.find((write) => write.path.endsWith('/nextPoint'))).toMatchObject({ method: 'PUT', body: { value: 1 } })
+  await expect.poll(() => writes.find((write) => write.path.endsWith('/progression/resolve'))).toMatchObject({ body: { resolution: 'accepted', pointIndex: 1 } })
+})
+
+test('holds a wrong-side detection for the crew instead of advancing', async ({ page }) => {
+  const { writes } = await mockBoat(page, {
+    progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: true, revision: 7, at: 0 }, lastDetection: null }
+  })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
 })

@@ -42,3 +42,10 @@ export class CourseProgressionService {
     return this.client.request('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { method: 'PUT', body: JSON.stringify({ value: 1 }) })
   }
 }
+
+export class RaceProgressionService {
+  constructor(client) { this.client = client }
+  status() { return this.client.request('/plugins/signalk-wakelogger/progression') }
+  setMode(mode) { return this.client.request('/plugins/signalk-wakelogger/progression/mode', { method: 'POST', body: JSON.stringify({ mode }) }) }
+  resolve(resolution, pointIndex) { return this.client.request('/plugins/signalk-wakelogger/progression/resolve', { method: 'POST', body: JSON.stringify({ resolution, pointIndex }) }) }
+}
