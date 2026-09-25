@@ -3,16 +3,29 @@ export interface SailingAverageSample {
   twsKnots?: number | null
   twdDeg?: number | null
   headingDeg?: number | null
+  cogDeg?: number | null
   sogKnots?: number | null
+  stwKnots?: number | null
+  heelDeg?: number | null
+  awsKnots?: number | null
+  awaDeg?: number | null
+  latitude?: number | null
+  longitude?: number | null
 }
 
 export interface SailingAverages {
   twsKnots: number | null
   twdDeg: number | null
   headingDeg: number | null
+  cogDeg: number | null
   sogKnots: number | null
+  stwKnots: number | null
+  heelDeg: number | null
+  awsKnots: number | null
+  awaDeg: number | null
   sampleCount: number
   windowSeconds: number
+  windSource: 'true' | 'derived' | null
 }
 
 const DEFAULT_WINDOW_MS = 5 * 60 * 1000
@@ -32,15 +45,26 @@ export class RollingAverages {
     if (!this.samples.length) return null
     const tws = average(this.samples.map((sample) => sample.twsKnots))
     const sog = average(this.samples.map((sample) => sample.sogKnots))
+    const stw = average(this.samples.map((sample) => sample.stwKnots))
     const heading = circularAverage(this.samples.map((sample) => sample.headingDeg))
+    const cog = circularAverage(this.samples.map((sample) => sample.cogDeg))
     const twd = circularAverage(this.samples.map((sample) => sample.twdDeg))
+    const heel = average(this.samples.map((sample) => sample.heelDeg))
+    const aws = average(this.samples.map((sample) => sample.awsKnots))
+    const awa = average(this.samples.map((sample) => sample.awaDeg))
     return {
       twsKnots: tws,
       twdDeg: twd,
       headingDeg: heading,
+      cogDeg: cog,
       sogKnots: sog,
+      stwKnots: stw,
+      heelDeg: heel,
+      awsKnots: aws,
+      awaDeg: awa,
       sampleCount: this.samples.length,
-      windowSeconds: Math.round(this.windowMs / 1000)
+      windowSeconds: Math.round(this.windowMs / 1000),
+      windSource: tws !== null ? 'true' : null
     }
   }
 
@@ -56,7 +80,7 @@ function average(values: Array<number | null | undefined>): number | null {
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length
 }
 
-function circularAverage(values: Array<number | null | undefined>): number | null {
+export function circularAverage(values: Array<number | null | undefined>): number | null {
   const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
   if (!numbers.length) return null
   let x = 0

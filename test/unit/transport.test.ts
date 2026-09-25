@@ -8,6 +8,7 @@ vi.mock('mqtt', () => ({ default: { connect: connectMock } }))
 
 import { WakeLoggerTransport } from '../../src/transport/mqtt-client'
 import { DEFAULT_TELEMETRY_PROFILE } from '../../src/telemetry/profile'
+import type { RacePackAck } from '../../src/race/race-pack-protocol'
 
 class FakeClient extends EventEmitter {
   connected = true
@@ -324,6 +325,39 @@ describe('WakeLoggerTransport', () => {
     await (transport as any).pump()
     expect(pendingAfter.mock.calls.length).toBeGreaterThan(callsAtExhaustion)
     await transport.stop()
+  })
+
+  it('subscribes to Race Pack topics and publishes ACKs and onboard snapshots', async () => {
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(undefined), pendingAfter: vi.fn().mockResolvedValue([]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 0, acknowledgedSequence: 0, messageCount: 0 })
+    }
+    const appliedAck: RacePackAck = { v: 1, packId: 'pack-42-1', revision: 4, sha256: 'a'.repeat(64), status: 'applied', appliedAt: '2026-09-17T02:00:00Z', errorCode: null }
+    const onRacePackManifest = vi.fn(async () => appliedAck)
+    const onRacePackChunk = vi.fn(async () => null)
+    const transport = new WakeLoggerTransport({
+      version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
+      mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onRacePackManifest, onRacePackChunk, getRacePackAck: () => appliedAck })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.emit('connect'); await tick(); await tick()
+    expect(client.subscriptions).toContain('wakelogger/v1/devices/dev_1/race-pack/manifest')
+    expect(client.subscriptions).toContain('wakelogger/v1/devices/dev_1/race-pack/chunk/+')
+    const retained = client.publications.find((entry) => entry.topic.endsWith('/race-pack-ack'))!
+    expect(JSON.parse(retained.payload)).toEqual(appliedAck)
+    expect(retained.options).toMatchObject({ qos: 1, retain: true })
+
+    client.emit('message', 'wakelogger/v1/devices/dev_1/race-pack/manifest', Buffer.from('{"v":1}'))
+    client.emit('message', 'wakelogger/v1/devices/dev_1/race-pack/chunk/0', Buffer.from('{"v":1}'))
+    await tick(); await tick()
+    expect(onRacePackManifest).toHaveBeenCalledTimes(1)
+    expect(onRacePackChunk).toHaveBeenCalledTimes(1)
+
+    expect(await transport.publishRacePlanSnapshot({ v: 1, kind: 'race_plan_snapshot', id: 'snap-1' })).toBe(true)
+    const event = client.publications.filter((entry) => entry.topic.endsWith('/events')).at(-1)!
+    expect(JSON.parse(event.payload)).toMatchObject({ kind: 'race_plan_snapshot', deviceId: 'dev_1', id: 'snap-1' })
+    await transport.stop(false)
   })
 })
 

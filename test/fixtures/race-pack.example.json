@@ -1,0 +1,200 @@
+{
+  "v": 1,
+  "kind": "race_pack",
+  "packId": "pack-42-1",
+  "revision": 4,
+  "racePlanId": 42,
+  "generatedAt": "2026-09-17T01:00:00Z",
+  "validFrom": "2020-01-01T00:00:00Z",
+  "validUntil": "2035-01-01T00:00:00Z",
+  "ruleSetVersion": "race_plan_dynamic_v1",
+  "course": {
+    "courseId": "race-42",
+    "racePlanId": 42,
+    "name": "Saturday bay race",
+    "points": [
+      {
+        "id": "start",
+        "name": "Race start",
+        "latitude": -27.4,
+        "longitude": 153.17,
+        "kind": "start",
+        "rounding": "either"
+      },
+      {
+        "id": "mark-1",
+        "name": "Eastern mark",
+        "latitude": -27.39,
+        "longitude": 153.17,
+        "kind": "mark",
+        "rounding": "starboard"
+      },
+      {
+        "id": "finish",
+        "name": "Race finish",
+        "latitude": -27.39,
+        "longitude": 153.19,
+        "kind": "finish",
+        "rounding": "either"
+      }
+    ]
+  },
+  "sails": [
+    {
+      "id": 1,
+      "sail_name": "Doyle main",
+      "sail_type": "Mainsail",
+      "availability_status": "Available",
+      "is_available": true,
+      "archived_at": null,
+      "max_aws_knots": null,
+      "min_awa_deg": null,
+      "max_awa_deg": null,
+      "min_twa_deg": 0,
+      "max_twa_deg": 180,
+      "min_tws_knots": 0,
+      "max_tws_knots": 25,
+      "crew_required": 1,
+      "reef_1_tws_knots": null,
+      "reef_2_tws_knots": null,
+      "reef_3_tws_knots": null
+    },
+    {
+      "id": 3,
+      "sail_name": "No. 3 jib",
+      "sail_type": "No. 3 jib",
+      "availability_status": "Available",
+      "is_available": true,
+      "archived_at": null,
+      "max_aws_knots": null,
+      "min_awa_deg": 0,
+      "max_awa_deg": 90,
+      "min_twa_deg": 0,
+      "max_twa_deg": 110,
+      "min_tws_knots": 8,
+      "max_tws_knots": 25,
+      "crew_required": 1,
+      "reef_1_tws_knots": null,
+      "reef_2_tws_knots": null,
+      "reef_3_tws_knots": null
+    },
+    {
+      "id": 5,
+      "sail_name": "A2 kite",
+      "sail_type": "Asymmetric A2",
+      "availability_status": "Available",
+      "is_available": true,
+      "archived_at": null,
+      "max_aws_knots": null,
+      "min_awa_deg": 60,
+      "max_awa_deg": 160,
+      "min_twa_deg": 70,
+      "max_twa_deg": 180,
+      "min_tws_knots": 6,
+      "max_tws_knots": 22,
+      "crew_required": 3,
+      "reef_1_tws_knots": null,
+      "reef_2_tws_knots": null,
+      "reef_3_tws_knots": null
+    }
+  ],
+  "raceHeadsail": {
+    "sail_id": 3,
+    "sail_name": "No. 3 jib"
+  },
+  "payload": {
+    "startTime": "2026-09-17T02:00:00Z",
+    "availableCrewCount": 3,
+    "jibChangesAllowed": false
+  },
+  "forecast": {
+    "snapshot": {
+      "provider": "example-model",
+      "runAt": "2026-09-16T18:00:00Z",
+      "fetchedAt": "2026-09-16T18:30:00Z"
+    },
+    "coverage": {
+      "from": "2026-09-17T02:00:00Z",
+      "until": "2026-09-17T04:00:00Z"
+    },
+    "legs": [
+      {
+        "sequence": 1,
+        "latitude": -27.395,
+        "longitude": 153.17,
+        "samples": [
+          {
+            "time": "2026-09-17T02:00:00Z",
+            "twd_deg": 45,
+            "tws_knots": 14,
+            "gust_knots": 18,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 45,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          },
+          {
+            "time": "2026-09-17T03:00:00Z",
+            "twd_deg": 60,
+            "tws_knots": 13,
+            "gust_knots": 17,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 60,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          },
+          {
+            "time": "2026-09-17T04:00:00Z",
+            "twd_deg": 75,
+            "tws_knots": 12,
+            "gust_knots": 16,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 75,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          }
+        ]
+      },
+      {
+        "sequence": 2,
+        "latitude": -27.39,
+        "longitude": 153.18,
+        "samples": [
+          {
+            "time": "2026-09-17T02:00:00Z",
+            "twd_deg": 90,
+            "tws_knots": 12,
+            "gust_knots": 16,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 90,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          },
+          {
+            "time": "2026-09-17T03:00:00Z",
+            "twd_deg": 100,
+            "tws_knots": 11,
+            "gust_knots": 15,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 100,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          },
+          {
+            "time": "2026-09-17T04:00:00Z",
+            "twd_deg": 110,
+            "tws_knots": 10,
+            "gust_knots": 14,
+            "wave_height_m": 0.6,
+            "wave_direction_deg": 110,
+            "current_velocity_kn": 0.4,
+            "current_direction_deg": 200
+          }
+        ]
+      }
+    ]
+  },
+  "polarSummary": {
+    "eligible": false
+  }
+}

@@ -11,7 +11,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -42,6 +42,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       })
     }
     if (pathname === '/plugins/signalk-wakelogger/progression') return json(progressionState)
+    if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
       const body = request.postDataJSON()
       writes.push({ path: pathname, method: request.method(), body })
@@ -226,4 +227,44 @@ test('holds a wrong-side detection for the crew instead of advancing', async ({ 
   await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
   await page.waitForTimeout(500)
   expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
+})
+
+const onboardRacePlan = {
+  uploadMode: 'local_only', calculationAuthority: 'onboard',
+  pack: { available: true, revision: 4, applicable: true, ruleSetVersion: 'race_plan_dynamic_v1' },
+  latestSnapshot: {
+    generatedAt: Date.now(),
+    plan: { legs: [
+      { sequence: 1, to: { name: 'Eastern mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45 }, pointOfSail: 'close reach', plan: { summary: 'Full main + No. 3 jib', confidence: 'high' } },
+      { sequence: 2, to: { name: 'Race finish' }, conditions: { source: 'forecast', twsKnots: 14, twdDeg: 60 }, pointOfSail: 'beam reach', plan: { summary: 'Full main + A2 kite', confidence: 'medium' } }
+    ] }
+  }
+}
+
+test('shows onboard Race Plan authority and recommendations in local-only mode', async ({ page }, testInfo) => {
+  const { external } = await mockBoat(page, { racePlan: onboardRacePlan })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#race-authority')).toHaveText(/Onboard/)
+  await expect(page.locator('#race-authority')).toHaveAttribute('data-pack', 'ready')
+  await expect(page.locator('[data-leg=current]')).toContainText('Eastern mark')
+  await expect(page.locator('[data-leg=current]')).toContainText('Full main + No. 3 jib')
+  await expect(page.locator('[data-leg=current]')).toContainText('observed')
+  await expect(page.locator('[data-leg=remaining]')).toContainText('Race finish')
+  await page.screenshot({ path: testInfo.outputPath('onboard-race-plan.png'), fullPage: true })
+  expect(external).toEqual([])
+})
+
+test('labels Wake Logger as authority and marks onboard plans historical in automatic mode', async ({ page }) => {
+  await mockBoat(page, { racePlan: { ...onboardRacePlan, uploadMode: 'automatic', calculationAuthority: 'cloud' } })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#race-authority')).toHaveText(/Wake Logger/)
+  await expect(page.locator('#race-plan-list')).toContainText('historical')
+})
+
+test('warns without a Race Pack but does not block local-only recording', async ({ page }) => {
+  const { writes } = await mockBoat(page, { racePlan: { uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: false } } })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#race-plan-warning')).toContainText('Recording continues')
+  await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeEnabled()
+  expect(writes).toEqual([])
 })

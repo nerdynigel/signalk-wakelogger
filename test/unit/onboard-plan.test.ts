@@ -2,73 +2,61 @@ import { describe, expect, it } from 'vitest'
 import { RollingAverages } from '../../src/race/averages'
 import { parseRacePack, RacePackError, type RacePack } from '../../src/race/pack'
 import { buildOnboardPlan } from '../../src/race/plan'
-import type { SailInventoryItem } from '../../src/race/sailing/selection'
+import { makeFixturePack, type FixturePack } from '../helpers/race-pack'
 
 const NOW = Date.parse('2026-09-17T02:00:00Z')
 
-function sail(overrides: Partial<SailInventoryItem> & { id: number }): SailInventoryItem {
-  return {
-    sail_name: 'Sail', sail_type: 'Custom sail', availability_status: 'Available', is_available: true, archived_at: null,
-    max_aws_knots: null, min_awa_deg: null, max_awa_deg: null, min_twa_deg: null, max_twa_deg: null,
-    min_tws_knots: null, max_tws_knots: null, crew_required: null,
-    reef_1_tws_knots: null, reef_2_tws_knots: null, reef_3_tws_knots: null,
-    ...overrides
-  }
+function toPack(fixture: FixturePack): RacePack {
+  return parseRacePack(Buffer.from(JSON.stringify(fixture), 'utf8'))
 }
 
-const SAILS: SailInventoryItem[] = [
-  sail({ id: 1, sail_name: 'Doyle main', sail_type: 'Mainsail', min_twa_deg: 0, max_twa_deg: 180, min_tws_knots: 0, max_tws_knots: 25, crew_required: 1 }),
-  sail({ id: 3, sail_name: 'No. 3 jib', sail_type: 'No. 3 jib', min_awa_deg: 0, max_awa_deg: 90, min_twa_deg: 0, max_twa_deg: 110, min_tws_knots: 8, max_tws_knots: 25, crew_required: 1 }),
-  sail({ id: 5, sail_name: 'A2 kite', sail_type: 'Asymmetric A2', min_awa_deg: 60, max_awa_deg: 160, min_twa_deg: 70, max_twa_deg: 180, min_tws_knots: 6, max_tws_knots: 22, crew_required: 3 })
-]
-
-function pack(overrides: Partial<RacePack> = {}): RacePack {
-  return {
-    v: 1,
-    kind: 'race_pack',
-    revision: 4,
-    generatedAt: '2026-09-17T01:00:00Z',
-    ruleSetVersion: 'race_plan_preview_v1',
-    course: {
-      courseId: 'race-42',
-      name: 'Saturday bay race',
-      points: [
-        { name: 'Race start', latitude: -27.4, longitude: 153.17, kind: 'start', rounding: 'either' },
-        { name: 'Eastern mark', latitude: -27.39, longitude: 153.17, kind: 'mark', rounding: 'starboard' },
-        { name: 'Race finish', latitude: -27.39, longitude: 153.19, kind: 'finish', rounding: 'either' }
-      ]
-    },
-    sails: SAILS,
-    payload: { startTime: '2026-09-17T02:00:00Z', availableCrewCount: 3 },
-    legForecasts: [
-      { sequence: 1, sample_time: '2026-09-17T02:00:00Z', twd_deg: 45, tws_knots: 14, gust_knots: 18, wave_height_m: 0.6, wave_direction_deg: 60, current_velocity_kn: 0.4, current_direction_deg: 200 },
-      { sequence: 2, sample_time: '2026-09-17T03:00:00Z', twd_deg: 90, tws_knots: 12, gust_knots: 15, wave_height_m: 0.4, wave_direction_deg: 90, current_velocity_kn: null, current_direction_deg: null }
-    ],
-    polarSummary: { eligible: false },
-    ...overrides
-  }
+function pack(overrides: Partial<FixturePack> = {}): RacePack {
+  return toPack(makeFixturePack(overrides))
 }
 
 describe('race pack parsing', () => {
   it('accepts a valid pack and rejects malformed documents', () => {
-    const parsed = parseRacePack(Buffer.from(JSON.stringify(pack())))
+    const parsed = parseRacePack(Buffer.from(JSON.stringify(makeFixturePack())))
     expect(parsed.revision).toBe(4)
     expect(parsed.course.points).toHaveLength(3)
+    expect(parsed.forecast.legs).toHaveLength(2)
+    expect(parsed.forecast.legs[0]!.samples).toHaveLength(3)
 
-    const invalid = (mutate: (value: RacePack) => void, code: string) => {
-      const value = pack()
+    const invalid = (mutate: (value: FixturePack) => void, code: string) => {
+      const value = makeFixturePack()
       mutate(value)
       expect(() => parseRacePack(Buffer.from(JSON.stringify(value)))).toThrow(RacePackError)
       try { parseRacePack(Buffer.from(JSON.stringify(value))) } catch (error) { expect((error as RacePackError).code).toBe(code) }
     }
     invalid((value) => { value.kind = 'something_else' as never }, 'pack_invalid')
     invalid((value) => { value.revision = 0 }, 'pack_invalid')
+    invalid((value) => { value.ruleSetVersion = 'race_plan_preview_v1' }, 'unsupported_rule_set')
     invalid((value) => { value.course.points = value.course.points.slice(0, 1) }, 'pack_invalid_course')
     invalid((value) => { value.course.points[0]!.latitude = 120 }, 'pack_invalid_course')
-    invalid((value) => { value.legForecasts[0]!.tws_knots = Number.NaN }, 'pack_invalid_forecasts')
+    invalid((value) => { value.forecast.legs[0]!.samples[1]!.tws_knots = Number.NaN }, 'pack_invalid_forecast')
+    invalid((value) => { value.forecast.legs = value.forecast.legs.slice(0, 1) }, 'forecast_leg_coverage')
+    invalid((value) => { for (const leg of value.forecast.legs) leg.samples = leg.samples.slice(0, 1) }, 'forecast_timeline_insufficient')
     invalid((value) => { value.sails = [{ sail_name: 'no id' } as never] }, 'pack_invalid_sails')
+    invalid((value) => { value.raceHeadsail = { sail_id: 'three' } as never }, 'pack_invalid_race_headsail')
     expect(() => parseRacePack(Buffer.from('not json'))).toThrow(RacePackError)
-    expect(() => parseRacePack(Buffer.alloc(300 * 1024, 32))).toThrow(RacePackError)
+    expect(() => parseRacePack(Buffer.alloc(2 * 1024 * 1024, 32))).toThrow(RacePackError)
+  })
+
+  it('rejects a pack when any later leg lacks sufficient temporal coverage', () => {
+    const shortLeg = makeFixturePack()
+    shortLeg.forecast.legs[1]!.samples = shortLeg.forecast.legs[1]!.samples.slice(0, 1)
+    expect(() => parseRacePack(Buffer.from(JSON.stringify(shortLeg)))).toThrow(/forecast_timeline_insufficient/)
+
+    const sparse = makeFixturePack()
+    sparse.forecast.legs[1]!.samples = [
+      sparse.forecast.legs[1]!.samples[0]!,
+      { ...sparse.forecast.legs[1]!.samples[0]!, time: '2026-09-18T06:00:00Z' }
+    ]
+    expect(() => parseRacePack(Buffer.from(JSON.stringify(sparse)))).toThrow(/forecast_gap_too_large/)
+
+    const uncovered = makeFixturePack()
+    uncovered.forecast.coverage = { from: '2026-09-17T00:00:00Z', until: '2026-09-18T00:00:00Z' }
+    expect(() => parseRacePack(Buffer.from(JSON.stringify(uncovered)))).toThrow(/forecast_coverage_gap/)
   })
 })
 
@@ -93,7 +81,7 @@ describe('onboard sail plan', () => {
     averages.add({ at: NOW, twsKnots: 12, twdDeg: 45, headingDeg: 10, sogKnots: 6 })
     const plan = buildOnboardPlan({ pack: pack(), activeIndex: 1, averages: averages.value(NOW), now: NOW })
     expect(plan.packRevision).toBe(4)
-    expect(plan.ruleSetVersion).toBe('race_plan_preview_v1')
+    expect(plan.ruleSetVersion).toBe('race_plan_dynamic_v1')
     expect(plan.legs).toHaveLength(2)
 
     const first = plan.legs[0]!
@@ -107,13 +95,103 @@ describe('onboard sail plan', () => {
     expect(second.to.name).toBe('Race finish')
     expect(second.conditions.source).toBe('forecast')
     expect(second.conditions.twsKnots).not.toBeNull()
+    expect(second.conditions.sampleTime).toBe('2026-09-17T02:00:00Z')
     expect(second.plan).not.toBeNull()
   })
 
-  it('returns legs without plans when no conditions are available', () => {
-    const plan = buildOnboardPlan({ pack: pack({ legForecasts: [] }), activeIndex: 2, averages: null, now: NOW })
-    expect(plan.legs).toHaveLength(1)
+  it('returns legs without plans when the current observation has no wind', () => {
+    const averages = new RollingAverages()
+    averages.add({ at: NOW, twsKnots: null, twdDeg: null, headingDeg: 10, sogKnots: 6 })
+    const plan = buildOnboardPlan({ pack: pack(), activeIndex: 1, averages: averages.value(NOW), now: NOW })
+    expect(plan.legs).toHaveLength(2)
     expect(plan.legs[0]!.conditions.twsKnots).toBeNull()
     expect(plan.legs[0]!.plan).toBeNull()
+    expect(plan.legs[1]!.conditions.twsKnots).not.toBeNull()
+  })
+
+  it('does not recalculate completed legs', () => {
+    const plan = buildOnboardPlan({ pack: pack(), activeIndex: 2, averages: null, now: NOW })
+    expect(plan.completedLegCount).toBe(1)
+    expect(plan.activeLegSequence).toBe(2)
+    expect(plan.legs.map((leg) => leg.sequence)).toEqual([2])
+    expect(plan.legs.map((leg) => leg.to.name)).toEqual(['Race finish'])
+  })
+
+  it('uses each leg own forecast series at its recalculated ETA and never another leg series', () => {
+    // Leg 2 has a materially different forecast at 13:00 (light) and 15:00
+    // (heavy). Leg 1 is long, so a slow actual progress pushes Leg 2's
+    // midpoint near 15:00 while fast progress keeps it near 13:00.
+    const build = () => toPack(makeFixturePack({
+      course: {
+        courseId: 'race-42', racePlanId: 42, name: 'ETA shift', points: [
+          { id: 's', name: 'Start', latitude: -27.4, longitude: 153.17, kind: 'start' },
+          { id: 'm', name: 'Far mark', latitude: -27.4, longitude: 153.3014, kind: 'mark' },
+          { id: 'f', name: 'Finish', latitude: -27.4, longitude: 153.339, kind: 'finish' }
+        ]
+      },
+      forecast: {
+        snapshot: { provider: 'example-model' },
+        coverage: { from: '2026-09-17T13:00:00Z', until: '2026-09-17T15:00:00Z' },
+        legs: [
+          { sequence: 1, latitude: -27.4, longitude: 153.24, samples: [
+            { time: '2026-09-17T13:00:00Z', twd_deg: 200, tws_knots: 8 },
+            { time: '2026-09-17T15:00:00Z', twd_deg: 20, tws_knots: 24 }
+          ] },
+          { sequence: 2, latitude: -27.4, longitude: 153.32, samples: [
+            { time: '2026-09-17T13:00:00Z', twd_deg: 200, tws_knots: 8, gust_knots: 12 },
+            { time: '2026-09-17T15:00:00Z', twd_deg: 20, tws_knots: 24, gust_knots: 30 }
+          ] }
+        ]
+      }
+    }))
+    const now = Date.parse('2026-09-17T11:00:00Z')
+    const average = (tws: number) => {
+      const rolling = new RollingAverages()
+      rolling.add({ at: now, twsKnots: tws, twdDeg: 180, headingDeg: 90, sogKnots: 5 })
+      return rolling.value(now)
+    }
+    const fast = buildOnboardPlan({ pack: build(), activeIndex: 1, averages: average(20), now })
+    const slow = buildOnboardPlan({ pack: build(), activeIndex: 1, averages: average(4), now })
+    expect(fast.legs[1]!.conditions.sampleTime).toBe('2026-09-17T13:00:00Z')
+    expect(fast.legs[1]!.conditions.twsKnots).toBe(8)
+    expect(slow.legs[1]!.conditions.sampleTime).toBe('2026-09-17T15:00:00Z')
+    expect(slow.legs[1]!.conditions.twsKnots).toBe(24)
+    // The recommendation itself moves with the later forecast.
+    expect(slow.legs[1]!.pointOfSail).not.toBe(fast.legs[1]!.pointOfSail)
+    expect(JSON.stringify(slow.legs[1]!.plan)).not.toBe(JSON.stringify(fast.legs[1]!.plan))
+  })
+
+  it('binds the cloud-selected race headsail so the vessel cannot substitute another race jib', () => {
+    const headsail = pack({ raceHeadsail: { sail_id: 5, sail_name: 'A2 kite' }, payload: { availableCrewCount: 3, jibChangesAllowed: false } })
+    const plan = buildOnboardPlan({ pack: headsail, activeIndex: 1, averages: null, now: NOW })
+    expect(plan.legs[0]!.plan?.race_headsail).toMatchObject({ sail_id: 5, sail_name: 'A2 kite' })
+    expect(plan.legs[0]!.plan?.jib_changes_allowed).toBe(false)
+  })
+
+  it('marks a future leg stale once the recalculated ETA leaves the forecast window', () => {
+    // The fixture's leg 2 series covers 02:00-04:00. An 11:00 ETA is more than
+    // 6 h past the last sample, so it must not reuse the 04:00 value.
+    const outside = buildOnboardPlan({ pack: pack(), activeIndex: 2, averages: null, now: Date.parse('2026-09-17T11:00:00Z') })
+    expect(outside.forecastCoverage).toBe('partial')
+    expect(outside.warnings.join(' ')).toMatch(/Leg 2 forecast does not cover/)
+    expect(outside.legs[0]!.conditions.forecastCoverage).toBe('out_of_range')
+    expect(outside.legs[0]!.conditions.twsKnots).toBeNull()
+    expect(outside.legs[0]!.plan).toBeNull()
+
+    // Within the extrapolation bound the nearest sample is still used.
+    const inside = buildOnboardPlan({ pack: pack(), activeIndex: 2, averages: null, now: Date.parse('2026-09-17T09:00:00Z') })
+    expect(inside.forecastCoverage).toBe('complete')
+    expect(inside.legs[0]!.conditions.forecastCoverage).toBe('within')
+    expect(inside.legs[0]!.conditions.twsKnots).not.toBeNull()
+  })
+
+  it('is deterministic for identical inputs and reports the estimated finish', () => {
+    const options = { pack: pack(), activeIndex: 1, averages: null, now: NOW }
+    const first = buildOnboardPlan(options)
+    const second = buildOnboardPlan(options)
+    expect(first).toEqual(second)
+    expect(first.estimatedFinishAt).not.toBeNull()
+    expect(first.remainingDurationSeconds).toBeGreaterThan(0)
+    expect(first.packId).toBe('pack-42-1')
   })
 })

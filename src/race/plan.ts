@@ -1,6 +1,6 @@
 import { angularDifferenceDegrees, apparentWind, bearingDegrees, classifyPointOfSail, distanceNm, estimateBoatSpeedKnots, polarSpeedForLeg, signedAngleDegrees, type VesselPerformance } from './sailing/physics'
 import { buildRecommendedSailPlan, recommendSails, reefingRecommendation } from './sailing/selection'
-import type { RacePack } from './pack'
+import { MAX_FORECAST_EXTRAPOLATION_MS, type PackLegForecast, type RacePack } from './pack'
 import type { SailingAverages } from './averages'
 
 export interface OnboardPlanConditions {
@@ -13,6 +13,7 @@ export interface OnboardPlanConditions {
   currentVelocityKn: number | null
   currentDirectionDeg: number | null
   sampleTime: string | null
+  forecastCoverage: 'within' | 'out_of_range' | null
 }
 
 export interface OnboardPlanLeg {
@@ -33,8 +34,17 @@ export interface OnboardPlanLeg {
 export interface OnboardPlan {
   v: 1
   generatedAt: string
+  packId: string | null
   packRevision: number
   ruleSetVersion: string
+  courseId: string
+  racePlanId: number | null
+  activeLegSequence: number | null
+  completedLegCount: number
+  estimatedFinishAt: string | null
+  remainingDurationSeconds: number | null
+  forecastCoverage: 'complete' | 'partial'
+  warnings: string[]
   observed: SailingAverages | null
   legs: OnboardPlanLeg[]
 }
@@ -46,8 +56,13 @@ export function buildOnboardPlan(options: { pack: RacePack; activeIndex: number;
   const points = options.pack.course.points
   const lastIndex = points.length - 1
   const firstIndex = Math.min(Math.max(options.activeIndex, 1), lastIndex)
-  const forecasts = options.pack.legForecasts
+  const forecastByLeg = new Map<number, PackLegForecast>()
+  for (const leg of options.pack.forecast.legs) forecastByLeg.set(leg.sequence, leg)
+  const raceHeadsail = options.pack.raceHeadsail ?? null
+  const raceHeadsailId = raceHeadsail && Number.isSafeInteger(raceHeadsail.sail_id) ? raceHeadsail.sail_id : null
   const legs: OnboardPlanLeg[] = []
+  const warnings: string[] = []
+  let partialCoverage = false
   let cursor = options.now
 
   for (let index = firstIndex; index <= lastIndex; index += 1) {
@@ -58,7 +73,12 @@ export function buildOnboardPlan(options: { pack: RacePack; activeIndex: number;
     const midpointAt = cursor + (distance / ASSUMED_MIDPOINT_SPEED_KNOTS) * MILLISECONDS_PER_HOUR / 2
     const conditions = index === firstIndex && options.averages
       ? observedConditions(options.averages)
-      : forecastConditions(forecasts, midpointAt)
+      : forecastConditions(forecastByLeg.get(index), midpointAt)
+    if (index === firstIndex && conditions.source === 'forecast' && !options.averages) warnings.push('Fresh onboard observations not yet available')
+    if (conditions.forecastCoverage === 'out_of_range') {
+      partialCoverage = true
+      warnings.push(`Leg ${index} forecast does not cover the recalculated time`)
+    }
     const tws = conditions.twsKnots
     const twd = conditions.twdDeg
     const gust = conditions.gustKnots ?? tws
@@ -82,13 +102,19 @@ export function buildOnboardPlan(options: { pack: RacePack; activeIndex: number;
         apparent_gust_knots: apparentGust.awsKnots,
         available_crew_count: availableCrewCount
       })
+      // A race-specific headsail chosen by the cloud is binding onboard: the
+      // vessel must not independently substitute a different race jib.
+      const fixedHeadsailCandidate = raceHeadsailId !== null ? candidates.find((candidate) => candidate.sail_id === raceHeadsailId) ?? null : null
       plan = buildRecommendedSailPlan({
         candidates,
         reefing: reefingRecommendation(options.pack.sails, { forecastTwsKnots: tws, forecastGustKnots: gust ?? tws }),
         pointOfSail,
         forecastTwsKnots: tws,
         forecastGustKnots: gust ?? tws,
-        availableCrewCount
+        availableCrewCount,
+        raceHeadsail: raceHeadsailId !== null ? { sail_id: raceHeadsailId, sail_name: raceHeadsail?.sail_name ?? null } : null,
+        fixedHeadsailCandidate,
+        jibChangesAllowed: options.pack.payload.jibChangesAllowed === true
       })
     }
 
@@ -112,8 +138,17 @@ export function buildOnboardPlan(options: { pack: RacePack; activeIndex: number;
   return {
     v: 1,
     generatedAt: new Date(options.now).toISOString(),
+    packId: options.pack.packId ?? null,
     packRevision: options.pack.revision,
     ruleSetVersion: options.pack.ruleSetVersion,
+    courseId: options.pack.course.courseId,
+    racePlanId: options.pack.racePlanId ?? options.pack.course.racePlanId ?? null,
+    activeLegSequence: legs.length ? firstIndex : null,
+    completedLegCount: Math.max(0, firstIndex - 1),
+    estimatedFinishAt: legs.length ? new Date(cursor).toISOString() : null,
+    remainingDurationSeconds: legs.length ? Math.max(0, Math.round((cursor - options.now) / 1000)) : null,
+    forecastCoverage: partialCoverage ? 'partial' : 'complete',
+    warnings: [...new Set(warnings)],
     observed: options.averages,
     legs
   }
@@ -129,24 +164,32 @@ function observedConditions(averages: SailingAverages): OnboardPlanConditions {
     waveDirectionDeg: null,
     currentVelocityKn: null,
     currentDirectionDeg: null,
-    sampleTime: null
+    sampleTime: null,
+    forecastCoverage: null
   }
 }
 
-function forecastConditions(forecasts: RacePack['legForecasts'], targetAt: number): OnboardPlanConditions {
-  if (!forecasts.length) {
-    return { source: 'forecast', twsKnots: null, twdDeg: null, gustKnots: null, waveHeightM: null, waveDirectionDeg: null, currentVelocityKn: null, currentDirectionDeg: null, sampleTime: null }
-  }
-  let best = forecasts[0]!
+function outOfCoverageConditions(): OnboardPlanConditions {
+  return { source: 'forecast', twsKnots: null, twdDeg: null, gustKnots: null, waveHeightM: null, waveDirectionDeg: null, currentVelocityKn: null, currentDirectionDeg: null, sampleTime: null, forecastCoverage: 'out_of_range' }
+}
+
+// Temporal selection rule for `race_plan_dynamic_v1`: use the sample from this
+// leg's own forecast series whose timestamp is nearest the leg's recalculated
+// midpoint ETA. A leg never borrows another leg's forecast series, and the
+// planner never silently extrapolates beyond the coverage bound.
+function forecastConditions(series: PackLegForecast | undefined, targetAt: number): OnboardPlanConditions {
+  if (!series || !series.samples.length) return outOfCoverageConditions()
+  let best = series.samples[0]!
   let bestDelta = Number.POSITIVE_INFINITY
-  for (const forecast of forecasts) {
-    const at = forecast.sample_time ? Date.parse(forecast.sample_time) : Number.NaN
+  for (const sample of series.samples) {
+    const at = Date.parse(sample.time)
     const delta = Number.isFinite(at) ? Math.abs(at - targetAt) : Number.POSITIVE_INFINITY
     if (delta < bestDelta) {
-      best = forecast
+      best = sample
       bestDelta = delta
     }
   }
+  if (bestDelta > MAX_FORECAST_EXTRAPOLATION_MS) return outOfCoverageConditions()
   return {
     source: 'forecast',
     twsKnots: best.tws_knots,
@@ -156,7 +199,8 @@ function forecastConditions(forecasts: RacePack['legForecasts'], targetAt: numbe
     waveDirectionDeg: best.wave_direction_deg ?? null,
     currentVelocityKn: best.current_velocity_kn ?? null,
     currentDirectionDeg: best.current_direction_deg ?? null,
-    sampleTime: best.sample_time ?? null
+    sampleTime: best.time,
+    forecastCoverage: 'within'
   }
 }
 

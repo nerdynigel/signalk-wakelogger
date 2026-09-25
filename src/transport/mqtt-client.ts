@@ -1,6 +1,7 @@
 import type { CourseAcknowledgement } from '../courses/protocol'
 import mqtt, { type IClientOptions, type MqttClient } from 'mqtt'
 import type { DeviceCredentials } from '../pairing/credentials'
+import type { RacePackAck } from '../race/race-pack-protocol'
 import { parseTelemetryProfile, type ProfileAcknowledgement, type TelemetryProfile } from '../telemetry/profile'
 import type { ApplicationAck, RecordingAcknowledgement, NetworkMode, PluginStatusMetrics, TelemetryBatch, TelemetrySample } from '../telemetry/types'
 import type { OutboxStore } from '../outbox/interface'
@@ -15,6 +16,9 @@ interface TransportOptions {
   onMode?: (mode: NetworkMode, reason: string) => void
   onCourse?: (payload: Buffer) => Promise<CourseAcknowledgement>
   getCourseAcknowledgement?: () => Promise<CourseAcknowledgement | undefined> | CourseAcknowledgement | undefined
+  onRacePackManifest?: (payload: Buffer) => Promise<RacePackAck | null>
+  onRacePackChunk?: (payload: Buffer, topicIndex: number) => Promise<RacePackAck | null>
+  getRacePackAck?: () => RacePackAck | null
   onRecordingAcks?: (acks: RecordingAcknowledgement[]) => Promise<void>
   onProfile?: (profile: TelemetryProfile) => Promise<void>
   debug?: (message: string) => void
@@ -37,6 +41,7 @@ export class WakeLoggerTransport {
   private statePublishPending = false
   private authenticationFailed = false
   private courseSubscriptionError?: string
+  private racePackSubscriptionError?: string
   private statusMetrics?: PluginStatusMetrics
   private profile: TelemetryProfile
   private readonly monitor: AdaptiveModeMonitor
@@ -111,6 +116,27 @@ export class WakeLoggerTransport {
     return true
   }
 
+  async publishRacePlanSnapshot(snapshot: object): Promise<boolean> {
+    if (!this.client?.connected || this.stopped) return false
+    await this.publish(this.client, this.topics.events, JSON.stringify({ v: 1, deviceId: this.credentials.deviceId, ...snapshot }), { qos: 1 })
+    return true
+  }
+
+  async publishRacePackAck(ack: RacePackAck): Promise<void> {
+    if (!this.client?.connected || this.stopped) return
+    await this.publish(this.client, this.topics.racePackAck, JSON.stringify(ack), { qos: 1, retain: true })
+  }
+
+  private async publishRacePackAcknowledgement(): Promise<void> {
+    if (this.racePackSubscriptionError) return
+    try {
+      const ack = this.options.getRacePackAck?.()
+      if (ack && this.client?.connected && !this.stopped) {
+        await this.publish(this.client, this.topics.racePackAck, JSON.stringify(ack), { qos: 1, retain: true })
+      }
+    } catch { /* re-advertising the ACK is best effort */ }
+  }
+
   updateProfile(profile: TelemetryProfile): void { this.profile = profile }
 
   updateStatus(metrics: PluginStatusMetrics): void {
@@ -121,9 +147,9 @@ export class WakeLoggerTransport {
     }
   }
 
-  transportMetrics(): Pick<PluginStatusMetrics, 'networkMode' | 'modeReason' | 'lastAcknowledgedAt' | 'acknowledgementLatencyMs' | 'reconnectCount' | 'publishedBytes' | 'courseSyncError'> {
+  transportMetrics(): Pick<PluginStatusMetrics, 'networkMode' | 'modeReason' | 'lastAcknowledgedAt' | 'acknowledgementLatencyMs' | 'reconnectCount' | 'publishedBytes' | 'courseSyncError' | 'racePackError'> {
     const health = this.monitor.current()
-    return { courseSyncError: this.courseSubscriptionError, networkMode: health.mode, modeReason: health.reason, lastAcknowledgedAt: this.lastAcknowledgedAt,
+    return { courseSyncError: this.courseSubscriptionError, racePackError: this.racePackSubscriptionError, networkMode: health.mode, modeReason: health.reason, lastAcknowledgedAt: this.lastAcknowledgedAt,
       acknowledgementLatencyMs: this.acknowledgementLatencyMs, reconnectCount: health.reconnectCount, publishedBytes: this.publishedBytes }
   }
 
@@ -177,6 +203,13 @@ export class WakeLoggerTransport {
     try { await subscribe(client, [this.topics.course]) }
     catch (error) { this.courseSubscriptionError = `Course sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}` }
     if (client !== this.client || this.stopped) return
+    // Race Pack downlink is likewise optional; a broker role that predates the
+    // race-pack topics must not stop telemetry from draining. It is subscribed
+    // without blocking the acknowledged-telemetry drain.
+    this.racePackSubscriptionError = undefined
+    void subscribe(client, [this.topics.racePackManifest, `${this.topics.racePackChunkPrefix}+`]).catch((error) => {
+      this.racePackSubscriptionError = `Race pack sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}`
+    })
     this.monitor.connected()
     this.syncMode()
     this.backlogTokenAt = this.now()
@@ -185,7 +218,8 @@ export class WakeLoggerTransport {
     this.statePublishPending = this.current !== undefined
     await this.drainCurrentState()
     await this.publishCourseAcknowledgement()
-    this.options.onState('online', this.courseSubscriptionError)
+    void this.publishRacePackAcknowledgement()
+    this.options.onState('online', this.courseSubscriptionError ?? this.racePackSubscriptionError)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
     this.pumpTimer = setInterval(() => void this.pump(), 1000)
     void this.pump()
@@ -247,6 +281,14 @@ export class WakeLoggerTransport {
     else if (topic === this.topics.course && this.options.onCourse) {
       await this.options.onCourse(payload)
       await this.publishCourseAcknowledgement()
+    } else if (topic === this.topics.racePackManifest && this.options.onRacePackManifest) {
+      const ack = await this.options.onRacePackManifest(payload)
+      if (ack) await this.publishRacePackAck(ack)
+    } else if (this.options.onRacePackChunk && topic.startsWith(this.topics.racePackChunkPrefix)) {
+      const suffix = topic.slice(this.topics.racePackChunkPrefix.length)
+      const topicIndex = /^\d+$/.test(suffix) ? Number(suffix) : Number.NaN
+      const ack = await this.options.onRacePackChunk(payload, topicIndex)
+      if (ack) await this.publishRacePackAck(ack)
     }
   }
 
@@ -352,7 +394,7 @@ export class WakeLoggerTransport {
 
 function statusPayload(state: string, metrics?: PluginStatusMetrics): object {
   return { v: 1, state, at: Date.now(), ...(metrics ? {
-    historicalUpload: metrics.historicalUpload, courseSyncError: metrics.courseSyncError,
+    historicalUpload: metrics.historicalUpload, courseSyncError: metrics.courseSyncError, racePackError: metrics.racePackError,
     uploadMode: metrics.uploadMode, recordings: metrics.recordings,
     pluginVersion: metrics.pluginVersion, queueMessageCount: metrics.queueMessageCount, queueDiskBytes: metrics.queueDiskBytes,
     queueOldestCapturedAt: metrics.queueOldestCapturedAt, queueDroppedCount: metrics.queueDroppedCount,
