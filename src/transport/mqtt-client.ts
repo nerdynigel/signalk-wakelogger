@@ -80,7 +80,13 @@ export class WakeLoggerTransport {
     }).catch((error) => this.options.onState('degraded', sanitizeError(String(error))))
   }
 
-  async stop(publishOffline = true): Promise<void> {
+  // Shutdown is an explicit pair of decisions. A graceful end sends an MQTT
+  // DISCONNECT (suppressing the Last Will); force closes the socket without a
+  // DISCONNECT so the retained Last Will fires. They are independent of whether
+  // an ordinary retained offline status is published first.
+  async stop(options: { publishOffline?: boolean; force?: boolean } = {}): Promise<void> {
+    const publishOffline = options.publishOffline ?? true
+    const force = options.force ?? false
     this.stopped = true
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
@@ -90,8 +96,8 @@ export class WakeLoggerTransport {
     this.monitor.disconnected('plugin_stopped')
     this.syncMode()
     if (!client) return
-    if (publishOffline && client.connected) await publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
-    await new Promise<void>((resolve) => client.end(!publishOffline, {}, () => resolve()))
+    if (publishOffline && !force && client.connected) await publish(client, this.topics.status, JSON.stringify(statusPayload('offline', this.effectiveStatusMetrics())), { qos: 1, retain: true }).catch(() => undefined)
+    await new Promise<void>((resolve) => client.end(force, {}, () => resolve()))
   }
 
   updateCurrent(sample: TelemetrySample): void {

@@ -135,6 +135,22 @@ function endClient(client) {
   return new Promise((resolve) => client.end(false, {}, () => resolve()))
 }
 
+// Read the broker's currently retained payload for a topic using a brand-new
+// client, proving broker-side retained state rather than a live delivery.
+function readRetained(client, topic, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const onMessage = (incoming, payload) => {
+      if (incoming !== topic) return
+      clearTimeout(timer)
+      client.removeListener('message', onMessage)
+      resolve(payload.toString('utf8'))
+    }
+    const timer = setTimeout(() => { client.removeListener('message', onMessage); resolve(null) }, timeoutMs)
+    client.on('message', onMessage)
+    client.subscribe(topic, { qos: 1 }, () => undefined)
+  })
+}
+
 function buildPack(revision, packId = `pack-777-${revision}`) {
   const now = Date.now()
   const samples = (hour) => ({ time: new Date(now + hour * 3600000).toISOString(), twd_deg: 350, tws_knots: 12, gust_knots: 15, current_velocity_kn: 0.4, current_direction_deg: 200 })
@@ -157,6 +173,25 @@ function buildPack(revision, packId = `pack-777-${revision}`) {
     forecast: { snapshot: { provider: 'e2e' }, coverage: { from: new Date(now - 3600000).toISOString(), until: new Date(now + 6 * 3600000).toISOString() }, legs },
     polarSummary: { eligible: false }
   }
+}
+
+// Generate the canonical manifest/chunks using Wake Logger's ACTUAL Python Race
+// Pack framing so the bytes accepted by the real plugin originate from the cloud
+// implementation, not a duplicate Node encoder.
+function runPythonBundle() {
+  const apiDirectory = process.env.WAKELOGGER_API_DIR || path.join(root, '..', 'wakelogger', 'api')
+  const script = [
+    'import json',
+    'from types import SimpleNamespace',
+    'from app.services.signalk_race_packs import build_transport, build_clear_manifest',
+    "pack = json.load(open('/fixtures/race_pack_canonical.json'))",
+    "manifest, chunks = build_transport({'pack': pack, 'revision': pack['revision'], 'packId': pack['packId']})",
+    "clear = build_clear_manifest(SimpleNamespace(desired_race_pack_json={'clearRevision': pack['revision'] + 1, 'clearReason': 'deselected'}))",
+    "print(json.dumps({'manifest': manifest, 'chunks': chunks, 'clear': clear}))"
+  ].join('\n')
+  const result = docker(['run', '--rm', '-v', `${apiDirectory}/app:/app/app:ro`, '-v', `${apiDirectory}/tests/fixtures/race_pack:/fixtures:ro`, '-w', '/app', 'wakelogger-api', 'python', '-c', script])
+  if (result.status !== 0) throw new Error(`python framing failed: ${result.stderr}`)
+  return JSON.parse(result.stdout.trim().split('\n').at(-1))
 }
 
 function buildSnapshot(id, trackingSessionId) {
@@ -262,7 +297,7 @@ async function main() {
 
     // --- Reconnect re-advertises the applied ACK. ---
     cloudMessages.length = 0
-    await transport.stop(false)
+    await transport.stop({ publishOffline: false, force: true })
     transport = makeTransport()
     transport.start()
     await waitFor('re-advertised ACK', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-a/race-pack-ack'))))
@@ -302,6 +337,42 @@ async function main() {
     await waitFor('new pack applied after clear', () => Promise.resolve(store.applied()?.revision === 7))
     check('new pack after clear applies normally', true)
 
+    // --- Cross-language gate: bytes produced by Wake Logger's Python framing ---
+    const pythonBundle = runPythonBundle()
+    const storeBDirectory = mkdtempSync(path.join(os.tmpdir(), 'wakelogger-packs-b-'))
+    outboxDirectories.push(storeBDirectory)
+    const storeB = new RacePackStore(storeBDirectory)
+    await storeB.open()
+    const receiverB = new RacePackReceiver({ store: storeB })
+    const outboxBPythonDirectory = mkdtempSync(path.join(os.tmpdir(), 'wakelogger-outbox-b-py-'))
+    outboxDirectories.push(outboxBPythonDirectory)
+    const outboxBPython = new FileOutbox(outboxBPythonDirectory, { maxBytes: 1_000_000, maxAgeMs: 3_600_000, segmentBytes: 4096 })
+    await outboxBPython.open()
+    const credentialsBPython = { version: 1, deviceId: 'device-b', clientId: 'device-b', username: 'device-b', password: PASSWORD, mqttHost: '127.0.0.1', mqttPort: port, tls: false, pairedAt: Date.now() }
+    const transportBPython = new WakeLoggerTransport(credentialsBPython, outboxBPython, {
+      profile: DEFAULT_TELEMETRY_PROFILE,
+      onState: () => undefined,
+      onRacePackManifest: async (payload) => receiverB.acceptManifest(payload),
+      onRacePackChunk: async (payload, topicIndex) => receiverB.acceptChunk(payload, topicIndex),
+      getRacePackAck: () => receiverB.currentAck()
+    })
+    transportBPython.start()
+    await waitFor('device-b online for python framing', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-b/status') && entry.payload.includes('online'))))
+    cloudMessages.length = 0
+    for (const chunk of [...pythonBundle.chunks].reverse()) await publish(cloud, `${deviceTopics('device-b')}/race-pack/chunk/${chunk.index}`, JSON.stringify(chunk), { qos: 1, retain: true })
+    await publish(cloud, `${deviceTopics('device-b')}/race-pack/manifest`, JSON.stringify(pythonBundle.manifest), { qos: 1, retain: true })
+    await waitFor('python-framed pack applied', () => Promise.resolve(storeB.applied()?.packId === pythonBundle.manifest.packId))
+    check('actual Python build_transport pack applies in the real plugin receiver', storeB.applied()?.revision === pythonBundle.manifest.revision)
+    await waitFor('python-framed pack ACK', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-b/race-pack-ack') && JSON.parse(entry.payload).status === 'applied')))
+    check('plugin ACKs the Python-framed pack', true)
+    cloudMessages.length = 0
+    await publish(cloud, `${deviceTopics('device-b')}/race-pack/manifest`, JSON.stringify(pythonBundle.clear), { qos: 1, retain: true })
+    await waitFor('python clear applied', () => Promise.resolve(storeB.clearedRevision() === pythonBundle.clear.revision))
+    check('actual Python clear manifest clears the real plugin store', storeB.applied() === null)
+    await waitFor('python clear ACK', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-b/race-pack-ack') && JSON.parse(entry.payload).action === 'clear')))
+    check('plugin ACKs the Python clear manifest', true)
+    await transportBPython.stop({ publishOffline: false, force: true })
+
     // --- Delayed onboard snapshot + application ACK. ---
     const snapshotId = `pack-777-4:${Date.now()}`
     const snapshot = buildSnapshot(snapshotId, 'session-broker-e2e')
@@ -312,7 +383,7 @@ async function main() {
     check('delayed onboard snapshot publishes over real broker', true)
     // Disconnect/restart before the application ACK: the snapshot stays durable.
     cloudMessages.length = 0
-    await transport.stop(false)
+    await transport.stop({ publishOffline: false, force: true })
     transport = makeTransport()
     transport.start()
     await waitFor('device-a reconnected after restart', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-a/status') && entry.payload.includes('online'))))
@@ -331,21 +402,60 @@ async function main() {
     await waitFor('telemetry drained', async () => (await outbox.stats()).acknowledgedSequence === 3)
     check('ordinary telemetry still drains/ACKs during the same environment', true)
 
-    // --- Local-only final status + silence. ---
+    // --- Deliberate local_only: graceful DISCONNECT must suppress the Will. ---
     cloudMessages.length = 0
     await transport.publishFinalLocalOnlyStatus()
-    await transport.stop(false)
-    await waitFor('local_only retained status', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-a/status') && entry.payload.includes('local_only'))))
-    const localOnly = cloudMessages.find((entry) => entry.topic.endsWith('device-a/status') && entry.payload.includes('local_only'))
-    check('local_only final retained status is visible before disconnect', JSON.parse(localOnly.payload).uploadMode === 'local_only')
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await transport.stop({ publishOffline: false, force: false })
+    await waitFor('local_only retained status seen live', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-a/status') && entry.payload.includes('local_only'))))
+    check('local_only final retained status is visible before disconnect', true)
+    // Wait beyond the Will/keepalive grace so an ungraceful close would have
+    // published the retained Will after the plugin was gone.
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    const observer = await connect(url, CLOUD_USER, PASSWORD, `observer-a-${process.pid}-${Date.now()}`)
+    const retainedLocalOnly = await readRetained(observer, `${deviceTopics('device-a')}/status`)
+    await endClient(observer)
+    let retainedBody = null
+    try { retainedBody = retainedLocalOnly ? JSON.parse(retainedLocalOnly) : null } catch { retainedBody = null }
+    check('fresh observer reads retained local_only after plugin disconnect', retainedBody?.uploadMode === 'local_only')
+    check('retained local_only is onboard authority and not the offline Will', retainedBody?.calculationAuthority === 'onboard' && retainedBody?.state !== 'offline')
     const leaked = cloudMessages.filter((entry) => /(telemetry|state|events|race-pack-ack)$/.test(entry.topic))
     check('no plugin Wake Logger traffic while local_only', leaked.length === 0)
+
+    // --- Accidental/ungraceful disconnect while automatic: the Will still fires. ---
+    const outboxBDirectory = mkdtempSync(path.join(os.tmpdir(), 'wakelogger-outbox-b-'))
+    outboxDirectories.push(outboxBDirectory)
+    const outboxB = new FileOutbox(outboxBDirectory, { maxBytes: 1_000_000, maxAgeMs: 3_600_000, segmentBytes: 4096 })
+    await outboxB.open()
+    const credentialsB = { version: 1, deviceId: 'device-b', clientId: 'device-b', username: 'device-b', password: PASSWORD, mqttHost: '127.0.0.1', mqttPort: port, tls: false, pairedAt: Date.now() }
+    const transportB = new WakeLoggerTransport(credentialsB, outboxB, { profile: DEFAULT_TELEMETRY_PROFILE, onState: () => undefined })
+    transportB.start()
+    await waitFor('device-b online', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-b/status') && entry.payload.includes('online'))))
+    await transportB.stop({ publishOffline: false, force: true })
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const observerB = await connect(url, CLOUD_USER, PASSWORD, `observer-b-${process.pid}-${Date.now()}`)
+    const retainedOffline = await readRetained(observerB, `${deviceTopics('device-b')}/status`)
+    await endClient(observerB)
+    let offlineBody = null
+    try { offlineBody = retainedOffline ? JSON.parse(retainedOffline) : null } catch { offlineBody = null }
+    check('accidental/ungraceful disconnect still publishes the retained offline Will', offlineBody?.state === 'offline')
+
+    // --- Automatic restore replaces the retained local_only state. ---
+    cloudMessages.length = 0
+    transport = makeTransport()
+    transport.start()
+    await waitFor('device-a automatic reconnect online', () => Promise.resolve(cloudMessages.some((entry) => entry.topic.endsWith('device-a/status') && entry.payload.includes('online'))))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const observerRestore = await connect(url, CLOUD_USER, PASSWORD, `observer-r-${process.pid}-${Date.now()}`)
+    const retainedRestore = await readRetained(observerRestore, `${deviceTopics('device-a')}/status`)
+    await endClient(observerRestore)
+    let restoreBody = null
+    try { restoreBody = retainedRestore ? JSON.parse(retainedRestore) : null } catch { restoreBody = null }
+    check('automatic reconnect replaces retained local_only with an online status', restoreBody?.state === 'online' && restoreBody?.uploadMode !== 'local_only')
   } catch (error) {
     failures += 1
     results.push(`FAIL  unexpected error — ${error instanceof Error ? error.message : String(error)}`)
   } finally {
-    try { await transport?.stop(false) } catch { /* ignore */ }
+    try { await transport?.stop({ publishOffline: false, force: true }) } catch { /* ignore */ }
     try { await endClient(cloud) } catch { /* ignore */ }
     docker(['rm', '-f', container], { stdio: 'ignore' })
     try { rmSync(directory, { recursive: true, force: true }) } catch { /* ignore */ }

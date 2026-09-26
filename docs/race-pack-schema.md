@@ -296,8 +296,20 @@ cannot resurrect a cleared pack.
 
 ## Mode transition
 
-When the user switches `automatic -> local_only`, the plugin sends one bounded
-retained status (`state: "local_only"`, `uploadMode: "local_only"`,
-`calculationAuthority: "onboard"`) before transport shutdown, then blocks
-transmission immediately. A failure or timeout of that final status cannot
-prevent the fail-closed local-only transition, and no retry is attempted.
+When the user switches `automatic -> local_only`, the plugin blocks ordinary
+outbound traffic immediately, sends one bounded retained status
+(`state: "local_only"`, `uploadMode: "local_only"`,
+`calculationAuthority: "onboard"`) waiting for the QoS 1 publish to complete
+within the short timeout, then issues a **graceful MQTT DISCONNECT** so the
+retained Last Will does not overwrite the retained local-only state. A failure
+or timeout of the final status cannot prevent the fail-closed transition, and no
+retry is attempted. The MQTT Last Will remains enabled and still fires on an
+accidental/ungraceful close while automatic (retained `offline`).
+
+Transport shutdown separates the two decisions:
+`stop({ publishOffline, force })`. `force: true` closes without a DISCONNECT
+(Will fires); `force: false` sends a DISCONNECT (Will suppressed);
+`publishOffline` independently controls whether a retained `offline` status is
+published first. The real-broker E2E proves a brand-new observer still reads
+`local_only` after the plugin is gone, and that an ungraceful automatic close
+still publishes the retained `offline` Will.

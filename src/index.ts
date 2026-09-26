@@ -80,7 +80,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       pairingAbortController?.abort()
       associationAbortController?.abort()
       // Stop all transmission immediately when a saved configuration restarts us.
-      const stopping = transport?.stop(false)
+      const stopping = transport?.stop({ publishOffline: false, force: true })
       const previous = initialization
       const thisGeneration = ++generation
       initialization = (async () => {
@@ -164,7 +164,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
             await onboard?.setAuthority(mode)
             if (mode === 'automatic' && !wasAutomatic) {
               if (outbox) await updateHistory(await outbox.stats(), true)
-              await transport?.stop(false)
+              await transport?.stop({ publishOffline: false, force: true })
               connectTransport?.()
             }
             await updateStatus()
@@ -728,7 +728,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     // Its failure cannot prevent the fail-closed local-only transition.
     const stopping = (async () => {
       await transport?.publishFinalLocalOnlyStatus().catch(() => undefined)
-      await transport?.stop(false)
+      // Graceful end: a DISCONNECT suppresses the retained Last Will so it cannot
+      // overwrite the retained local_only status after the plugin is gone.
+      await transport?.stop({ publishOffline: false, force: false })
     })()
     currentSampler?.updateMode('NORMAL')
     connectionState = 'recording_locally'
