@@ -19,23 +19,46 @@ deterministic rules run in two places: Wake Logger cloud (Live tracking ON) and
 the Signal K vessel (Live tracking OFF). The cloud implementation must
 implement the identical rules and advertise this exact identifier.
 
-`race_plan_dynamic_v1` temporal rule:
+`race_plan_dynamic_v1` rule (identical in
+`src/race/dynamic.ts` and the cloud `api/app/services/race_plan_dynamic.py`
+mirror):
 
-1. The current/next leg uses the local five-minute observed window once it is
-   ready. Until then, it is planned from that leg's downloaded forecast at the
-   calculated time (source `forecast`), with a warning.
-2. For each later leg, compute the leg's recalculated midpoint ETA and select,
-   from **that leg's own** `forecast.legs[].samples[]`, the sample with the
-   timestamp nearest that midpoint.
-3. Never substitute another leg's forecast. Never reuse the current
-   observation for a future leg.
-4. Never extrapolate beyond the coverage bound: if the nearest sample for a leg
-   is more than `maxForecastExtrapolationMs` (6 h) from the recalculated time,
-   that leg is reported `out_of_range` with no wind and no recommendation.
+1. **Active leg geometry.** The current/next leg starts at the latest valid
+   vessel position (`current vessel position -> active point`), not the previous
+   mark. Future legs stay `mark -> mark`; completed legs are historical. If no
+   valid position is available the active-race calculation reports
+   `no_current_position` and never fabricates one.
+2. **Initial speed estimate.** Per remaining leg, choose a deterministic initial
+   boat-speed estimate: usable polar first, then `vesselPerformance`, then the
+   documented generic hull-speed fallback. Derive a provisional duration and
+   midpoint ETA from it.
+3. **Bounded midpoint refinement (max 3 iterations).** Select, from **that
+   leg's own** `forecast.legs[].samples[]`, the sample nearest the provisional
+   midpoint (ties break to the earlier sample). Recompute wind geometry, boat
+   speed and estimated SOG, then the duration and midpoint. Stop as soon as the
+   selected sample is stable; the loop is bounded at
+   `MAX_MIDPOINT_ITERATIONS = 3` and never borrows another leg's series.
+4. **Current in SOG.** For forecast-driven legs, add the along-leg component of
+   the sample's `current_velocity_kn` / `current_direction_deg` (direction of
+   set, degrees true) to the boat speed and clamp to
+   `MIN_ESTIMATED_SOG_KNOTS = 0.5`. SOG drives duration and ETA; TWA is not
+   adjusted for current.
+5. **Observed current leg.** Once the five-minute observation window is ready
+   the active leg uses observed wind but retains the forecast current/wave at
+   the calculated time. Future legs are always forecast-driven.
+6. **Coverage / out of range.** If the nearest sample for a leg is more than
+   `maxForecastExtrapolationMs` (6 h) from the calculated time, that leg is
+   reported `out_of_range` with no wind and no recommendation.
+7. **Reverse courses.** Reversed native course order is not supported by v1:
+   onboard calculation fails closed with `reverse_course_unsupported` rather
+   than calculating the course forwards.
 
-Parity with the cloud `race_plan_preview_v1` algorithm is not claimed. The
-onboard temporal selection is frozen as `race_plan_dynamic_v1`. Cross-repo
-parity awaits an authoritative cloud golden fixture.
+The earlier one-pass midpoint/assumed-speed timing is removed. Cross-repo parity
+is proven by the shared golden scenario in
+`test/fixtures/dynamic_golden.json` (byte-identical with the cloud
+`api/tests/fixtures/race_pack/dynamic_golden.json`) and the harness
+`wakelogger/scripts/race-plan-parity.py`. The cloud publishes the same
+authoritative remaining timing from a prepared Race Pack.
 
 ## Forecast coverage contract
 

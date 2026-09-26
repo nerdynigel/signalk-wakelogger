@@ -5,6 +5,7 @@ export interface ActiveCourseDocument {
   revision: number
   courseId: string
   racePlanId?: number
+  courseDefinitionDigest?: string
   name: string
   updatedAt: string
   start: CoursePoint
@@ -45,13 +46,17 @@ export function parseCourse(payload: Buffer): CourseDocument {
   if (new Set(points.map((point) => point.id)).size !== points.length) throw new CourseError('course_duplicate_point_id')
   if (doc.activeWaypointIndex !== undefined && (!Number.isSafeInteger(doc.activeWaypointIndex)
     || doc.activeWaypointIndex < 0 || doc.activeWaypointIndex >= points.length)) throw new CourseError('course_invalid_point_index')
+  if (doc.courseDefinitionDigest !== undefined && !isDigest(doc.courseDefinitionDigest)) throw new CourseError('course_invalid_digest')
   return {
     v: 1, action: 'activate', revision: doc.revision!, courseId: doc.courseId!, name: doc.name!, updatedAt: doc.updatedAt,
     start: point(doc.start!), marks: doc.marks.map(point), finish: point(doc.finish!),
     ...(Number.isSafeInteger(doc.racePlanId) ? { racePlanId: doc.racePlanId } : {}),
+    ...(isDigest(doc.courseDefinitionDigest) ? { courseDefinitionDigest: doc.courseDefinitionDigest.toLowerCase() } : {}),
     ...(doc.activeWaypointIndex !== undefined ? { activeWaypointIndex: doc.activeWaypointIndex } : {})
   }
 }
+const COURSE_DIGEST = /^[0-9a-fA-F]{64}$/
+function isDigest(value: unknown): value is string { return typeof value === 'string' && COURSE_DIGEST.test(value) }
 function point(value: CoursePoint): CoursePoint { return { id: value.id, name: value.name, latitude: value.latitude, longitude: value.longitude, ...(value.notes !== undefined ? { notes: value.notes } : {}) } }
 function validText(value: unknown, maximum: number): value is string { return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum }
 function validPoint(value: unknown): value is CoursePoint {

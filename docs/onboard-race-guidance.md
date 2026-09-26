@@ -189,11 +189,29 @@ fabricated):
   `environment.wind.directionApparent` as fallback inputs
 
 Values older than 30 seconds are treated as stale. A five-minute rolling window
-keeps circular averages for angles and scalar averages for speeds. When direct
-true wind is missing the plugin derives it deterministically from apparent wind
-plus heading and speed through water (or course and speed over ground), using
-the same vector convention as the ported sail physics. Derivation is skipped
-with clean nulls when there is not enough credible data.
+keeps circular averages for angles and scalar averages for speeds. Apparent wind
+is converted to true wind with the same vector convention as the ported sail
+physics and the cloud; derivation is skipped with clean nulls when there is not
+enough credible data.
+
+### Readiness contract (shared with the cloud)
+
+A current leg only uses observations once the window genuinely covers five
+minutes, not merely a burst of samples:
+
+- rolling window 300 s;
+- minimum covered span 240 s;
+- at least 30 complete qualifying wind/navigation samples;
+- newest qualifying sample no older than 30 s;
+- valid true wind speed/direction and a valid vessel position;
+- circular handling of directions, with invalid/stale samples excluded.
+
+Three fresh samples, or 30 samples compressed into 30 seconds, are **not** ready.
+Until ready the current leg uses its downloaded forecast (`source=forecast`) and
+warns `Fresh onboard observations not yet available`; afterwards it uses
+`source=observed`. The shared observation fixture
+(`test/fixtures/observation_golden.json`, byte-identical with the cloud) and the
+cloud `_observed_wind` ingestion apply the same contract.
 
 ## Scheduler and forecast lookup
 
@@ -201,39 +219,45 @@ The onboard service recalculates when all of the following are true:
 
 - `uploadMode === "local_only"` (authority `onboard`)
 - a fully validated Race Pack is stored
-- the pack's course identity matches the selected/native course
+- the pack's course identity matches the selected/native course, including the
+  `courseDefinitionDigest` (course id + compatible race plan + matching digest)
+- the native course is not reversed (reversed order fails closed as
+  `reverse_course_unsupported`)
 - the pack is not outside its validity window
 - the race/trip is under way (native course point advanced past the start, or
   the trip state is `MOVING`)
-- a position exists and either observed wind or a forecast timeline is available
+- a valid current vessel position exists, and either a ready observation window
+  or a forecast timeline is available
 - at least 15 minutes have elapsed since the last routine calculation, unless
   an explicit recalculation is requested
 
 Failure reasons are exposed verbatim (`no_race_pack`, `no_active_course`,
-`pack_not_applicable`, `pack_expired`, `not_racing`,
-`insufficient_observations`, `recent_calculation`, `cloud_authority`). Partial
-forecast coverage and observation fallback are exposed separately as
-`warning` / `forecastCoverage` / `observationsReady` on the same status.
+`pack_not_applicable`, `pack_expired`, `not_racing`, `no_current_position`,
+`reverse_course_unsupported`, `insufficient_observations`, `recent_calculation`,
+`cloud_authority`). Partial forecast coverage and observation fallback are
+exposed separately as `warning` / `forecastCoverage` / `observationsReady` /
+`observationReadiness` on the same status.
 
-Current/next leg: once the rolling window holds a complete, fresh wind
-observation set (at least three fresh samples with credible true wind, direct
-or derived) the plan uses the observed true wind plus the live position and
-active course point. Until then it falls back to the current leg's downloaded
-forecast at the calculated time, is labelled `source: "forecast"`, and warns
-`Fresh onboard observations not yet available`. Partial or bad data is never
-treated as a complete five-minute window, and observations are never
-fabricated. Once the window is ready the next recalculation switches the
-current leg to `source: "observed"`.
+Active/current leg: the leg starts at the latest valid vessel position, not the
+previous mark, so remaining distance, bearing, TWA and ETA reflect actual
+progress (`fromVesselPosition: true`). Once the rolling window is ready the
+leg uses observed true wind plus the forecast current/wave for the calculated
+time; until then it uses that leg's downloaded forecast, is labelled
+`source: "forecast"`, and warns `Fresh onboard observations not yet available`.
+Values are never fabricated.
 
-Future legs: the planner walks the remaining course, accumulates ETA, and for
-each future leg selects, from **that leg's own** forecast time series, the
-sample nearest that leg's recalculated midpoint time. The forecast lookup
-therefore moves as ETA changes: if actual progress pushes Leg 5 from 13:40 to
-14:20, the 14:20 sample from Leg 5's series is used. A leg never borrows another
-leg's forecast because its timestamp happens to be closer, and the current
-observation is never applied unchanged to future legs. This temporal rule is
-frozen as `race_plan_dynamic_v1`; it is tested against a slow/fast progress
-scenario that moves a leg from a 13:00 forecast to a 15:00 forecast.
+Future legs: mark-to-mark. The planner chooses a deterministic initial boat
+speed (polar, then vessel performance, then the generic hull-speed fallback),
+then refines the leg midpoint at most three times. At each step it selects, from
+**that leg's own** forecast time series, the sample nearest the provisional
+midpoint (ties break to the earlier sample), recomputes wind geometry, boat
+speed, estimated SOG and duration, and stops when the selected sample is stable.
+The forecast lookup therefore moves as ETA changes. A leg never borrows another
+leg's forecast, and the current observation is never applied unchanged to future
+legs. Estimated SOG adds the along-leg current component (direction of set) and
+clamps to 0.5 kn. This rule is frozen as `race_plan_dynamic_v1` and proven
+against the cloud by the shared golden scenario (`dynamic_golden.json`) and the
+`scripts/race-plan-parity.py` harness.
 
 Forecast coverage: every remaining leg must carry a real time series (at least
 two samples, gaps no larger than 6 h) covering the declared window
@@ -323,14 +347,17 @@ The ported physics and selection functions are checked against frozen cloud
 outputs (`test/fixtures/sail-physics.json`, 216 cases) and the planner is
 deterministic for identical inputs (`test/unit/onboard-plan.test.ts`).
 
-Parity with the cloud `race_plan_preview_v1` temporal algorithm is **not
-claimed**. The onboard temporal rule (nearest own-leg forecast sample to the
-recalculated leg midpoint ETA) is frozen separately as
-`race_plan_dynamic_v1`. Cross-repo golden-fixture parity between the cloud
-implementation and `race_plan_dynamic_v1` is pending an authoritative fixture
-produced by the Wake Logger `wakelogger` repository. Snapshot publication lets
-Wake Logger compare onboard and cloud calculations for the same window and tune
-the shared rule set.
+Cross-repo deterministic parity for `race_plan_dynamic_v1` is now **proven**: the
+plugin `src/race/dynamic.ts` and the cloud
+`api/app/services/race_plan_dynamic.py` are mirrors, and both consume the
+byte-identical shared golden scenario
+(`test/fixtures/dynamic_golden.json` with
+`test/fixtures/dynamic_golden.expected.json`). The harness
+`wakelogger/scripts/race-plan-parity.py` runs both engines on the scenario and
+compares every field within narrow tolerances. The cloud live recalculation
+overlays the shared engine result from the prepared Race Pack, so cloud and
+onboard publish the same authoritative remaining timing. The cloud's richer
+display preview remains `race_plan_preview_v1`.
 
 ## Racing constraint
 

@@ -194,4 +194,22 @@ describe('onboard sail plan', () => {
     expect(first.remainingDurationSeconds).toBeGreaterThan(0)
     expect(first.packId).toBe('pack-42-1')
   })
+
+  it('starts the active leg from the actual vessel position when one is supplied', () => {
+    const target = pack()
+    const start = target.course.points[0]!
+    const mark = target.course.points[1]!
+    // ~75% of the way from the start mark to the next mark.
+    const position = { latitude: start.latitude + (mark.latitude - start.latitude) * 0.75, longitude: start.longitude + (mark.longitude - start.longitude) * 0.75 }
+    const fromMark = buildOnboardPlan({ pack: target, activeIndex: 1, averages: null, now: NOW })
+    const fromVessel = buildOnboardPlan({ pack: target, activeIndex: 1, averages: null, now: NOW, position })
+    expect(fromVessel.legs[0]!.fromVesselPosition).toBe(true)
+    expect(fromVessel.legs[0]!.from.name).toBe('Current position')
+    expect(fromVessel.legs[0]!.markToMarkDistanceNm).toBeCloseTo(fromMark.legs[0]!.distanceNm, 6)
+    // Remaining distance is substantially shorter than the full original leg.
+    expect(fromVessel.legs[0]!.distanceNm).toBeLessThan(fromMark.legs[0]!.distanceNm * 0.35)
+    // Future legs remain mark-to-mark.
+    expect(fromVessel.legs[1]!.fromVesselPosition).toBe(false)
+    expect(fromVessel.legs[1]!.distanceNm).toBeCloseTo(fromMark.legs[1]!.distanceNm, 6)
+  })
 })

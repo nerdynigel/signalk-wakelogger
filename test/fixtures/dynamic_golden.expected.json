@@ -1,0 +1,299 @@
+{
+  "activeLegSequence": 2,
+  "completedLegCount": 1,
+  "courseDefinitionDigest": "1f2e3d4c5b6a798807162534435261708f9e0d1c2b3a4958677685940321fedc",
+  "courseId": "race-plan-777",
+  "estimatedFinishAt": "2026-06-14T04:08:25.894Z",
+  "forecastCoverage": "complete",
+  "generatedAt": "2026-06-14T01:30:00.000Z",
+  "legs": [
+    {
+      "bearingDeg": 0,
+      "conditions": {
+        "currentDirectionDeg": 180,
+        "currentVelocityKn": 1.4,
+        "forecastCoverage": "within",
+        "gustKnots": 17.2,
+        "sampleTime": "2026-06-14T02:00:00Z",
+        "source": "observed",
+        "twdDeg": 356,
+        "twsKnots": 13.4,
+        "waveDirectionDeg": 356,
+        "waveHeightM": 0.6
+      },
+      "currentComponentKnots": -1.4,
+      "distanceNm": 0.72,
+      "estimatedBoatSpeedKnots": 4.44,
+      "estimatedSogKnots": 3.0400000000000005,
+      "estimatedSpeedKnots": 4.44,
+      "from": {
+        "latitude": -27.372,
+        "longitude": 153.22,
+        "name": "Current position"
+      },
+      "fromVesselPosition": true,
+      "legDurationSeconds": 853,
+      "markToMarkDistanceNm": 2.402,
+      "midpointEta": "2026-06-14T01:37:06.315Z",
+      "plan": {
+        "confidence": "low",
+        "conservative_alternative": {
+          "crew_required": 2,
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib"
+        },
+        "crew_required_max": 2,
+        "headsail_or_downwind_sail": {
+          "crew_required": 2,
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib"
+        },
+        "jib_changes_allowed": true,
+        "mainsail": {
+          "configuration": "full_main",
+          "crew_required": 2,
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail"
+        },
+        "mainsail_configuration": "full_main",
+        "optional_performance_sail": {
+          "crew_required": 3,
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric",
+          "warning": "Review sail warnings before selecting this performance option."
+        },
+        "race_headsail": {
+          "crew_required": null,
+          "sail_category": null,
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": null
+        },
+        "reasons": [
+          "Mainsail selected as base sail.",
+          "No. 3 jib selected for this leg.",
+          "Non-mainsail selected using apparent wind and configured sail ranges."
+        ],
+        "summary": "Full main + No. 3 jib",
+        "warnings": [
+          "AWA range is not set.",
+          "AWS range is not set.",
+          "AWA is 15.0 below the sail range.",
+          "TWA is 24.0 below the sail range.",
+          "TWS is 1.6 below the sail range.",
+          "AWA is 57.0 below the sail range.",
+          "TWA is 71.0 below the sail range.",
+          "Recommendation uses generic sail type assumptions.",
+          "Estimated apparent gust is close to sail limit."
+        ]
+      },
+      "pointOfSail": "close-hauled",
+      "polarSpeedKnots": null,
+      "selectedForecastSampleTime": "2026-06-14T02:00:00Z",
+      "sequence": 2,
+      "to": {
+        "latitude": -27.36,
+        "longitude": 153.22,
+        "name": "Bay mark"
+      },
+      "twaDeg": 4,
+      "windSide": "port"
+    },
+    {
+      "bearingDeg": 90,
+      "conditions": {
+        "currentDirectionDeg": 270,
+        "currentVelocityKn": 1.1,
+        "forecastCoverage": "within",
+        "gustKnots": 19,
+        "sampleTime": "2026-06-14T03:00:00Z",
+        "source": "forecast",
+        "twdDeg": 4,
+        "twsKnots": 14,
+        "waveDirectionDeg": 4,
+        "waveHeightM": 0.8
+      },
+      "currentComponentKnots": -1.1,
+      "distanceNm": 9.598,
+      "estimatedBoatSpeedKnots": 6.9,
+      "estimatedSogKnots": 5.800000000000001,
+      "estimatedSpeedKnots": 6.9,
+      "from": {
+        "latitude": -27.36,
+        "longitude": 153.22,
+        "name": "Bay mark"
+      },
+      "fromVesselPosition": false,
+      "legDurationSeconds": 5957,
+      "markToMarkDistanceNm": 9.598,
+      "midpointEta": "2026-06-14T02:33:51.321Z",
+      "plan": {
+        "confidence": "medium",
+        "conservative_alternative": {
+          "crew_required": 2,
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib"
+        },
+        "crew_required_max": 3,
+        "headsail_or_downwind_sail": {
+          "crew_required": 3,
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric"
+        },
+        "jib_changes_allowed": true,
+        "mainsail": {
+          "configuration": "full_main",
+          "crew_required": 2,
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail"
+        },
+        "mainsail_configuration": "full_main",
+        "optional_performance_sail": null,
+        "race_headsail": {
+          "crew_required": null,
+          "sail_category": null,
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": null
+        },
+        "reasons": [
+          "Mainsail selected as base sail.",
+          "No. 3 jib selected for this leg.",
+          "Non-mainsail selected using apparent wind and configured sail ranges."
+        ],
+        "summary": "Full main + A2 asymmetric",
+        "warnings": [
+          "AWA range is not set.",
+          "AWS range is not set.",
+          "Recommendation uses generic sail type assumptions.",
+          "AWA is 18.6 above the sail range.",
+          "TWA is 21.0 above the sail range.",
+          "TWS is 1.0 below the recorded range, inside planning tolerance."
+        ]
+      },
+      "pointOfSail": "close reach",
+      "polarSpeedKnots": 6.9,
+      "selectedForecastSampleTime": "2026-06-14T03:00:00Z",
+      "sequence": 3,
+      "to": {
+        "latitude": -27.36,
+        "longitude": 153.4,
+        "name": "East gate"
+      },
+      "twaDeg": 86,
+      "windSide": "port"
+    },
+    {
+      "bearingDeg": 180,
+      "conditions": {
+        "currentDirectionDeg": 90,
+        "currentVelocityKn": 0.9,
+        "forecastCoverage": "within",
+        "gustKnots": 21,
+        "sampleTime": "2026-06-14T04:00:00Z",
+        "source": "forecast",
+        "twdDeg": 357,
+        "twsKnots": 17,
+        "waveDirectionDeg": 357,
+        "waveHeightM": 0.7
+      },
+      "currentComponentKnots": 0,
+      "distanceNm": 3.602,
+      "estimatedBoatSpeedKnots": 4.81,
+      "estimatedSogKnots": 4.81,
+      "estimatedSpeedKnots": 4.81,
+      "from": {
+        "latitude": -27.36,
+        "longitude": 153.4,
+        "name": "East gate"
+      },
+      "fromVesselPosition": false,
+      "legDurationSeconds": 2696,
+      "markToMarkDistanceNm": 3.602,
+      "midpointEta": "2026-06-14T03:45:57.952Z",
+      "plan": {
+        "confidence": "low",
+        "conservative_alternative": {
+          "crew_required": 2,
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib"
+        },
+        "crew_required_max": 3,
+        "headsail_or_downwind_sail": {
+          "crew_required": 3,
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric"
+        },
+        "jib_changes_allowed": true,
+        "mainsail": {
+          "configuration": "reef_1",
+          "crew_required": 2,
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail"
+        },
+        "mainsail_configuration": "reef_1",
+        "optional_performance_sail": null,
+        "race_headsail": {
+          "crew_required": null,
+          "sail_category": null,
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": null
+        },
+        "reasons": [
+          "Mainsail selected as base sail.",
+          "No. 3 jib selected for this leg."
+        ],
+        "summary": "Reef 1 main + A2 asymmetric",
+        "warnings": [
+          "AWA range is not set.",
+          "AWS range is not set.",
+          "AWA is 25.8 above the sail range.",
+          "TWA is 12.0 above the recorded range, inside planning tolerance.",
+          "Recommendation uses generic sail type assumptions.",
+          "AWA is 133.8 above the sail range.",
+          "TWA is 112.0 above the sail range.",
+          "Headsail may be conservative for running angles."
+        ]
+      },
+      "pointOfSail": "running",
+      "polarSpeedKnots": null,
+      "selectedForecastSampleTime": "2026-06-14T04:00:00Z",
+      "sequence": 4,
+      "to": {
+        "latitude": -27.42,
+        "longitude": 153.4,
+        "name": "Finish"
+      },
+      "twaDeg": 177,
+      "windSide": "starboard"
+    }
+  ],
+  "packId": "pack-777-5",
+  "packRevision": 5,
+  "racePlanId": 777,
+  "remainingDurationSeconds": 9506,
+  "ruleSetVersion": "race_plan_dynamic_v1",
+  "v": 1,
+  "warnings": []
+}

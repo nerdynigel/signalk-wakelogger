@@ -7,7 +7,7 @@ import { OnboardRaceService } from '../../src/race/onboard-service'
 import { OnboardSnapshotStore } from '../../src/race/onboard-store'
 import { RacePackReceiver } from '../../src/race/race-pack-protocol'
 import { RacePackStore } from '../../src/race/race-pack-store'
-import { encodeFixturePack, makeFixturePack, type FixturePack } from '../helpers/race-pack'
+import { encodeFixturePack, makeFixturePack, FIXTURE_COURSE_DIGEST, type FixturePack } from '../helpers/race-pack'
 
 const NOW = Date.parse('2026-09-17T02:05:00Z')
 const KNOTS = 1.9438444924406
@@ -48,11 +48,11 @@ function observedWindDelta(): never {
   ])
 }
 
-async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number } = {}) {
+async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number; reverse?: boolean; position?: boolean } = {}) {
   const directory = await temporaryDirectory('onboard-service-')
   const clock = { value: NOW }
   const observations = new ObservationCollector(5 * 60 * 1000, () => clock.value)
-  primeObservations(observations, clock, 3)
+  primeObservations(observations, clock, 30)
   const packs = new RacePackStore(path.join(directory, 'race-packs'))
   await seedPack(packs, options.pack ?? makeFixturePack())
   const snapshots = new OnboardSnapshotStore(path.join(directory, 'onboard-plans', 'state.json'))
@@ -61,7 +61,7 @@ async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 
     packs,
     snapshots,
     observations,
-    course: () => ({ courseId: 'race-42', racePlanId: 42, activeIndex: 1, totalPoints: 3, reverse: false }),
+    course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: options.reverse ?? false }),
     racing: () => options.racing ?? true,
     now: () => clock.value,
     cadenceMs: options.cadenceMs
@@ -71,10 +71,11 @@ async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 
 }
 
 // Ingests `count` fresh wind deltas at spaced times so the collector's 5 s
-// throttle does not collapse them into one sample.
-function primeObservations(observations: ObservationCollector, clock: { value: number }, count: number, base = NOW): void {
+// throttle does not collapse them into one sample. The default 9 s spacing
+// spans a genuine five-minute window rather than a burst.
+function primeObservations(observations: ObservationCollector, clock: { value: number }, count: number, base = NOW, intervalMs = 9_000): void {
   for (let index = count - 1; index >= 0; index -= 1) {
-    clock.value = base - index * 6_000
+    clock.value = base - index * intervalMs
     observations.ingest(observedWindDelta())
   }
   clock.value = base
@@ -135,6 +136,37 @@ describe('onboard calculation authority', () => {
     expect(status.pack.available).toBe(true)
     expect(status.pack.applicable).toBe(true)
     expect(status.reason).toBe('not_racing')
+    service.close()
+  })
+
+  it('fails closed for a reversed native course instead of calculating it forwards', async () => {
+    const { service, snapshots } = await fixture({ reverse: true })
+    expect((service.availability() as { reason: string }).reason).toBe('reverse_course_unsupported')
+    expect(await service.refresh(true)).toBeNull()
+    expect(snapshots.latest()).toBeNull()
+    expect(service.status()).toMatchObject({ reason: 'reverse_course_unsupported' })
+    service.close()
+  })
+
+  it('does not plan without a valid current position', async () => {
+    const directory = await temporaryDirectory('onboard-noposition-')
+    const clock = { value: NOW }
+    const observations = new ObservationCollector(5 * 60 * 1000, () => clock.value)
+    // Wind history without any position: readiness cannot be established and no
+    // position may be fabricated.
+    const packs = new RacePackStore(path.join(directory, 'race-packs'))
+    await seedPack(packs)
+    const snapshots = new OnboardSnapshotStore(path.join(directory, 'onboard-plans', 'state.json'))
+    await snapshots.open()
+    const service = new OnboardRaceService({
+      packs, snapshots, observations,
+      course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: false }),
+      racing: () => true,
+      now: () => clock.value
+    })
+    await service.setAuthority('local_only')
+    expect((service.availability() as { reason: string }).reason).toBe('no_current_position')
+    expect(snapshots.latest()).toBeNull()
     service.close()
   })
 })
@@ -199,7 +231,7 @@ describe('onboard observations and calculations', () => {
     await snapshots.open()
     const service = new OnboardRaceService({
       packs, snapshots, observations,
-      course: () => ({ courseId: 'race-42', racePlanId: 42, activeIndex: 1, totalPoints: 3, reverse: false }),
+      course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: false }),
       racing: () => true,
       now: () => clock.value
     })
@@ -211,8 +243,8 @@ describe('onboard observations and calculations', () => {
     expect(fallback.observations.twsKnots).toBeNull()
 
     // The rolling window now accumulates a complete wind observation set.
-    clock.value += 60_000
-    primeObservations(observations, clock, 3, clock.value)
+    clock.value = NOW + 300_000
+    primeObservations(observations, clock, 30, clock.value)
     await service.refresh(true)
     const observed = snapshots.latest()!
     expect(observed.plan.legs[0]!.conditions.source).toBe('observed')
@@ -240,7 +272,7 @@ describe('onboard observations and calculations', () => {
       packs: reopened,
       snapshots,
       observations,
-      course: () => ({ courseId: 'race-42', racePlanId: 42, activeIndex: 1, totalPoints: 3, reverse: false }),
+      course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: false }),
       racing: () => true,
       now: () => NOW
     })

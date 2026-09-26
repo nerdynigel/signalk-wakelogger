@@ -9,7 +9,7 @@ import { CredentialStore } from '../../src/pairing/credentials'
 import { nativeRouteHref } from '../../src/courses/native-course'
 import { RacePackReceiver, type RacePackAck } from '../../src/race/race-pack-protocol'
 import { RacePackStore } from '../../src/race/race-pack-store'
-import { encodeFixturePack, makeFixturePack } from '../helpers/race-pack'
+import { encodeFixturePack, makeFixturePack, FIXTURE_COURSE_DIGEST } from '../helpers/race-pack'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -20,6 +20,7 @@ afterEach(async () => {
 
 const COURSE = {
   v: 1, action: 'activate', revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race',
+  courseDefinitionDigest: FIXTURE_COURSE_DIGEST,
   updatedAt: '2026-09-13T01:00:00Z',
   start: { id: 'start', name: 'Race start', latitude: -27.4, longitude: 153.17 },
   marks: [{ id: 'mark-1', name: 'Eastern mark', latitude: -27.39, longitude: 153.17 }],

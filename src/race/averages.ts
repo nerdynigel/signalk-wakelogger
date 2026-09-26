@@ -26,9 +26,24 @@ export interface SailingAverages {
   sampleCount: number
   windowSeconds: number
   windSource: 'true' | 'derived' | null
+  /** Number of samples carrying a usable wind + navigation reading. */
+  qualifyingSampleCount: number
+  /** Actual timespan covered by the retained samples. */
+  coveredSeconds: number
+  /** Age of the newest retained sample at evaluation time. */
+  latestSampleAgeSeconds: number | null
 }
 
-const DEFAULT_WINDOW_MS = 5 * 60 * 1000
+// Shared observation-readiness contract. Both the cloud ingestion path and the
+// onboard collector apply the same thresholds so the current leg switches to
+// observed wind at the same point.
+export const OBSERVATION_WINDOW_SECONDS = 300
+export const OBSERVATION_WINDOW_MS = OBSERVATION_WINDOW_SECONDS * 1000
+export const OBSERVATION_MIN_SPAN_SECONDS = 240
+export const OBSERVATION_MIN_SAMPLES = 30
+export const OBSERVATION_MAX_AGE_SECONDS = 30
+
+const DEFAULT_WINDOW_MS = OBSERVATION_WINDOW_MS
 
 export class RollingAverages {
   private samples: SailingAverageSample[] = []
@@ -52,6 +67,9 @@ export class RollingAverages {
     const heel = average(this.samples.map((sample) => sample.heelDeg))
     const aws = average(this.samples.map((sample) => sample.awsKnots))
     const awa = average(this.samples.map((sample) => sample.awaDeg))
+    const qualifying = this.samples.filter(qualifies)
+    const firstQualifying = qualifying[0]
+    const lastQualifying = qualifying[qualifying.length - 1]
     return {
       twsKnots: tws,
       twdDeg: twd,
@@ -64,7 +82,10 @@ export class RollingAverages {
       awaDeg: awa,
       sampleCount: this.samples.length,
       windowSeconds: Math.round(this.windowMs / 1000),
-      windSource: tws !== null ? 'true' : null
+      windSource: tws !== null ? 'true' : null,
+      qualifyingSampleCount: qualifying.length,
+      coveredSeconds: firstQualifying && lastQualifying ? Math.max(0, Math.round((lastQualifying.at - firstQualifying.at) / 1000)) : 0,
+      latestSampleAgeSeconds: lastQualifying ? Math.max(0, Math.round((now - lastQualifying.at) / 1000)) : null
     }
   }
 
@@ -72,6 +93,18 @@ export class RollingAverages {
     const cutoff = now - this.windowMs
     while (this.samples.length && this.samples[0]!.at < cutoff) this.samples.shift()
   }
+}
+
+// A "complete qualifying" sample carries a usable true wind speed/direction and
+// a navigation reference (position handled separately). Invalid/stale samples
+// are excluded by the collector before they reach the rolling window.
+function qualifies(sample: SailingAverageSample): boolean {
+  const speed = typeof sample.twsKnots === 'number' && Number.isFinite(sample.twsKnots)
+  const direction = typeof sample.twdDeg === 'number' && Number.isFinite(sample.twdDeg)
+  const navigation = (typeof sample.sogKnots === 'number' && Number.isFinite(sample.sogKnots))
+    || (typeof sample.cogDeg === 'number' && Number.isFinite(sample.cogDeg))
+    || (typeof sample.headingDeg === 'number' && Number.isFinite(sample.headingDeg))
+  return speed && direction && navigation
 }
 
 function average(values: Array<number | null | undefined>): number | null {

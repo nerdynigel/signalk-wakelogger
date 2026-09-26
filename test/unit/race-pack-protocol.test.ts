@@ -209,7 +209,7 @@ describe('Race Pack protocol and storage', () => {
     let release: (() => void) | undefined
     const applied = vi.fn()
     const store = {
-      applied: () => (applied.mock.calls.length ? { packId: 'pack-deferred', revision: 1, sha256: 'a'.repeat(64), ruleSetVersion: 'race_plan_dynamic_v1', courseId: 'race', racePlanId: null, generatedAt: '2026-09-17T01:00:00Z', validFrom: null, validUntil: null, appliedAt: 1 } : null),
+      applied: () => (applied.mock.calls.length ? { packId: 'pack-deferred', revision: 1, sha256: 'a'.repeat(64), ruleSetVersion: 'race_plan_dynamic_v1', courseId: 'race', racePlanId: null, courseDefinitionDigest: 'b'.repeat(64), generatedAt: '2026-09-17T01:00:00Z', validFrom: null, validUntil: null, appliedAt: 1 } : null),
       apply: vi.fn(async () => { await new Promise<void>((resolve) => { release = resolve }); applied(); return true })
     }
     const receiver = new RacePackReceiver({ store })

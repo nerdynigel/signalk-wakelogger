@@ -1,21 +1,49 @@
 import type { Delta } from '@signalk/server-api'
 import { normalizeDegrees } from './sailing/physics'
-import { RollingAverages, type SailingAverageSample, type SailingAverages } from './averages'
+import {
+  OBSERVATION_MAX_AGE_SECONDS,
+  OBSERVATION_MIN_SAMPLES,
+  OBSERVATION_MIN_SPAN_SECONDS,
+  OBSERVATION_WINDOW_MS,
+  RollingAverages,
+  type SailingAverageSample,
+  type SailingAverages
+} from './averages'
 
 const MPS_TO_KNOTS = 1.9438444924406
 const RADIANS_TO_DEGREES = 180 / Math.PI
 const STALE_MS = 30_000
-const DEFAULT_WINDOW_MS = 5 * 60 * 1000
 const MIN_SAMPLE_INTERVAL_MS = 5_000
 const MAX_SAMPLES_PER_DELTA = 32
 
-// A current leg is only planned from observations once the rolling window holds
-// at least this many fresh samples and a credible true wind. Otherwise the
-// planner falls back to the leg's downloaded forecast.
-export const MIN_OBSERVATION_SAMPLES = 3
+// Shared with the cloud ingestion path: a current leg is only planned from
+// observations once the rolling window covers a genuine five-minute interval,
+// not merely a burst of samples.
+export { OBSERVATION_WINDOW_SECONDS, OBSERVATION_MIN_SPAN_SECONDS, OBSERVATION_MIN_SAMPLES, OBSERVATION_MAX_AGE_SECONDS } from './averages'
 
-export function observationsSufficient(averages: SailingAverages | null | undefined): boolean {
-  return !!averages && averages.sampleCount >= MIN_OBSERVATION_SAMPLES && averages.twsKnots !== null && averages.twdDeg !== null
+export interface ObservationReadiness {
+  ready: boolean
+  reason: 'ready' | 'no_samples' | 'span_too_short' | 'too_few_samples' | 'stale' | 'no_wind' | 'no_position'
+  sampleCount: number
+  qualifyingSampleCount: number
+  coveredSeconds: number
+  latestSampleAgeSeconds: number | null
+}
+
+export function observationReadiness(averages: SailingAverages | null | undefined, position: { latitude: number; longitude: number } | null = null): ObservationReadiness {
+  const empty: ObservationReadiness = { ready: false, reason: 'no_samples', sampleCount: 0, qualifyingSampleCount: 0, coveredSeconds: 0, latestSampleAgeSeconds: null }
+  if (!averages || averages.sampleCount === 0) return empty
+  const base = { sampleCount: averages.sampleCount, qualifyingSampleCount: averages.qualifyingSampleCount, coveredSeconds: averages.coveredSeconds, latestSampleAgeSeconds: averages.latestSampleAgeSeconds }
+  if (averages.twsKnots === null || averages.twdDeg === null) return { ...empty, ...base, reason: 'no_wind' }
+  if (position === null) return { ...empty, ...base, reason: 'no_position' }
+  if (averages.qualifyingSampleCount < OBSERVATION_MIN_SAMPLES) return { ...empty, ...base, reason: 'too_few_samples' }
+  if (averages.coveredSeconds < OBSERVATION_MIN_SPAN_SECONDS) return { ...empty, ...base, reason: 'span_too_short' }
+  if (averages.latestSampleAgeSeconds === null || averages.latestSampleAgeSeconds > OBSERVATION_MAX_AGE_SECONDS) return { ...empty, ...base, reason: 'stale' }
+  return { ready: true, reason: 'ready', ...base }
+}
+
+export function observationsSufficient(averages: SailingAverages | null | undefined, position: { latitude: number; longitude: number } | null = null): boolean {
+  return observationReadiness(averages, position).ready
 }
 
 // Paths the onboard planner reads locally. These are separate from the cloud
@@ -50,6 +78,7 @@ export interface SailingObservations {
   averages: SailingAverages
   position: VesselObservation | null
   lastUpdateAt: number | null
+  readiness: ObservationReadiness
 }
 
 export interface DerivedTrueWind {
@@ -128,7 +157,7 @@ export class ObservationCollector {
   private lastSampleAt = 0
   private lastUpdateAt: number | null = null
 
-  constructor(windowMs = DEFAULT_WINDOW_MS, private readonly now: () => number = Date.now) {
+  constructor(windowMs = OBSERVATION_WINDOW_MS, private readonly now: () => number = Date.now) {
     this.windowMs = windowMs
     this.rolling = new RollingAverages(windowMs)
   }
@@ -159,9 +188,9 @@ export class ObservationCollector {
   }
 
   observations(now = this.now()): SailingObservations {
-    const averages = this.rolling.value(now) ?? emptyAverages(Math.round(this.windowMs / 1000))
+    const averages = this.derive(this.rolling.value(now) ?? emptyAverages(Math.round(this.windowMs / 1000)))
     const position = this.position(now)
-    return { averages: this.derive(averages), position, lastUpdateAt: this.lastUpdateAt }
+    return { averages, position, lastUpdateAt: this.lastUpdateAt, readiness: observationReadiness(averages, position) }
   }
 
   position(now = this.now()): VesselObservation | null {
@@ -259,6 +288,7 @@ function emptyAverages(windowSeconds: number): SailingAverages {
   return {
     twsKnots: null, twdDeg: null, headingDeg: null, cogDeg: null, sogKnots: null,
     stwKnots: null, heelDeg: null, awsKnots: null, awaDeg: null,
-    sampleCount: 0, windowSeconds, windSource: null
+    sampleCount: 0, windowSeconds, windSource: null,
+    qualifyingSampleCount: 0, coveredSeconds: 0, latestSampleAgeSeconds: null
   }
 }

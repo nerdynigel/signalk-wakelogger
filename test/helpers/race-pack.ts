@@ -33,6 +33,7 @@ export interface FixturePack {
   validUntil?: string | null
   ruleSetVersion: string
   course: { courseId: string; racePlanId?: number | null; name: string; points: FixturePoint[] }
+  courseDefinitionDigest?: string | null
   sails: Array<Record<string, unknown>>
   raceHeadsail?: { sail_id: number; sail_name?: string | null } | null
   payload: Record<string, unknown>
@@ -41,8 +42,11 @@ export interface FixturePack {
   polarSummary?: Record<string, unknown> | null
 }
 
-export const RACE_PACK_POINTS: FixturePoint[] = [
-  { id: 'start', name: 'Race start', latitude: -27.4, longitude: 153.17, kind: 'start', rounding: 'either' },
+// Matches the canonical representative fixture's course-definition digest so a
+// course state built from this helper is applicable to the fixture pack.
+export const FIXTURE_COURSE_DIGEST = '3c1f6c0b9c0d4b5e8f2a5d1c7b3e9a4f6d2c8b1e5a9f3d7c0b4e8a2f6d1c5b9e'
+
+export const RACE_PACK_POINTS: FixturePoint[] = [  { id: 'start', name: 'Race start', latitude: -27.4, longitude: 153.17, kind: 'start', rounding: 'either' },
   { id: 'mark-1', name: 'Eastern mark', latitude: -27.39, longitude: 153.17, kind: 'mark', rounding: 'starboard' },
   { id: 'finish', name: 'Race finish', latitude: -27.39, longitude: 153.19, kind: 'finish', rounding: 'either' }
 ]
@@ -76,6 +80,7 @@ export function makeFixturePack(overrides: Partial<FixturePack> = {}): FixturePa
     validUntil: '2035-01-01T00:00:00Z',
     ruleSetVersion: 'race_plan_dynamic_v1',
     course: { courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', points: RACE_PACK_POINTS.map((point) => ({ ...point })) },
+    courseDefinitionDigest: FIXTURE_COURSE_DIGEST,
     sails: [
       sailFixture(1, 'Doyle main', 'Mainsail', { min_twa_deg: 0, max_twa_deg: 180, min_tws_knots: 0, max_tws_knots: 25, crew_required: 1 }),
       sailFixture(3, 'No. 3 jib', 'No. 3 jib', { min_awa_deg: 0, max_awa_deg: 90, min_twa_deg: 0, max_twa_deg: 110, min_tws_knots: 8, max_tws_knots: 25, crew_required: 1 }),

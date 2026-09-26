@@ -105,6 +105,11 @@ export interface RacePack {
   validUntil?: string | null
   ruleSetVersion: string
   course: { courseId: string; racePlanId?: number | null; name: string; points: PackCoursePoint[] }
+  // Stable identity of the course definition only (identity, ordered point
+  // ids/names/coordinates, kind, rounding, gate/line metadata). It is
+  // independent of active-waypoint progress/revision, so advancing a waypoint
+  // never invalidates an otherwise identical pack, but editing marks does.
+  courseDefinitionDigest?: string | null
   sails: SailInventoryItem[]
   raceHeadsail?: RacePackRaceHeadsail | null
   payload: RacePackPayload
@@ -241,6 +246,8 @@ function validVesselPerformance(value: unknown): boolean {
   return true
 }
 
+const DIGEST = /^[0-9a-f]{64}$/
+
 export function isSupportedRuleSet(value: unknown): value is SupportedRuleSet {
   return typeof value === 'string' && (SUPPORTED_RULE_SETS as readonly string[]).includes(value)
 }
@@ -268,6 +275,8 @@ export function parseRacePack(payload: Buffer): RacePack {
   if (!Array.isArray(document.sails) || document.sails.length > MAX_SAILS || !document.sails.every(validSail)) throw new RacePackError('pack_invalid_sails')
   if (!validRaceHeadsail(document.raceHeadsail)) throw new RacePackError('pack_invalid_race_headsail')
   if (!validVesselPerformance(document.vesselPerformance)) throw new RacePackError('pack_invalid_vessel_performance')
+  if (document.courseDefinitionDigest != null && (typeof document.courseDefinitionDigest !== 'string' || !DIGEST.test(document.courseDefinitionDigest.toLowerCase()))) throw new RacePackError('pack_invalid_course_digest')
+  if (typeof document.courseDefinitionDigest === 'string') document.courseDefinitionDigest = document.courseDefinitionDigest.toLowerCase()
   const forecast = document.forecast
   if (!forecast || typeof forecast !== 'object' || !Array.isArray(forecast.legs)) throw new RacePackError('pack_invalid_forecast')
   if (forecast.snapshot != null && typeof forecast.snapshot !== 'object') throw new RacePackError('pack_invalid_forecast')
@@ -308,6 +317,7 @@ export interface RacePackIdentity {
   revision: number
   racePlanId: number | null
   courseId: string
+  courseDefinitionDigest: string | null
   ruleSetVersion: string
   generatedAt: string
   validFrom: string | null
@@ -320,6 +330,7 @@ export function racePackIdentity(pack: RacePack): RacePackIdentity {
     revision: pack.revision,
     racePlanId: pack.racePlanId ?? pack.course.racePlanId ?? null,
     courseId: pack.course.courseId,
+    courseDefinitionDigest: pack.courseDefinitionDigest ?? null,
     ruleSetVersion: pack.ruleSetVersion,
     generatedAt: pack.generatedAt,
     validFrom: pack.validFrom ?? null,
@@ -327,10 +338,21 @@ export function racePackIdentity(pack: RacePack): RacePackIdentity {
   }
 }
 
-export function racePackAppliesToCourse(pack: RacePack, course: { courseId?: string | null; racePlanId?: number | null } | null | undefined): boolean {
+// A pack only applies to a course when the id matches, the race plan is
+// compatible and the course-definition digest matches. The digest covers the
+// course definition, never active-waypoint progress, so advancing a waypoint
+// keeps a pack applicable while editing a mark invalidates it.
+export function racePackAppliesToCourse(
+  pack: RacePack,
+  course: { courseId?: string | null; racePlanId?: number | null; courseDefinitionDigest?: string | null } | null | undefined
+): boolean {
   if (!course || !course.courseId || course.courseId !== pack.course.courseId) return false
   const packPlan = pack.racePlanId ?? pack.course.racePlanId ?? null
   if (course.racePlanId != null && packPlan != null && course.racePlanId !== packPlan) return false
+  const packDigest = pack.courseDefinitionDigest ?? null
+  const courseDigest = course.courseDefinitionDigest ?? null
+  if (!packDigest || !courseDigest) return false
+  if (packDigest.toLowerCase() !== courseDigest.toLowerCase()) return false
   return true
 }
 

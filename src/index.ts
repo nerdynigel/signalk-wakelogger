@@ -329,7 +329,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     try {
       const status = await courses.status() as {
-        cachedCourse?: { revision?: number; courseId?: string; racePlanId?: number } | null
+        cachedCourse?: { revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
         routePoints?: Array<{ latitude: number; longitude: number; name?: string; kind?: 'start' | 'mark' | 'gate' | 'finish'; rounding?: 'port' | 'starboard' | 'either' }>
         native?: { course?: { activeRoute?: { pointIndex?: number; reverse?: boolean } | null } | null; activeMatchesDesired?: boolean }
       }
@@ -345,6 +345,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         ? {
             courseId: status.cachedCourse.courseId,
             racePlanId: status.cachedCourse.racePlanId ?? null,
+            courseDefinitionDigest: status.cachedCourse.courseDefinitionDigest ?? null,
             activeIndex: status.native?.course?.activeRoute?.pointIndex ?? 0,
             totalPoints: points.length,
             reverse: status.native?.course?.activeRoute?.reverse === true

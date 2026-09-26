@@ -2,7 +2,7 @@ import type { VesselPerformance } from './sailing/physics'
 import { buildOnboardPlan, type OnboardPlan } from './plan'
 import { packValidityAt, racePackAppliesToCourse, type RacePack } from './pack'
 import type { RacePackStore } from './race-pack-store'
-import { observationsSufficient, type ObservationCollector } from './observations'
+import { type ObservationCollector } from './observations'
 import type { OnboardPlanSnapshot, OnboardSnapshotStore } from './onboard-store'
 
 export type CalculationAuthority = 'cloud' | 'onboard'
@@ -15,11 +15,14 @@ export type OnboardAvailabilityReason =
   | 'pack_expired'
   | 'not_racing'
   | 'insufficient_observations'
+  | 'no_current_position'
+  | 'reverse_course_unsupported'
   | 'recent_calculation'
 
 export interface OnboardCourseState {
   courseId: string
   racePlanId: number | null
+  courseDefinitionDigest: string | null
   activeIndex: number
   totalPoints: number
   reverse: boolean
@@ -109,7 +112,8 @@ export class OnboardRaceService {
         activeIndex: course.activeIndex,
         // Only a complete, fresh observation window may drive the current leg;
         // otherwise the planner falls back to that leg's downloaded forecast.
-        averages: observationsSufficient(observations.averages) ? observations.averages : null,
+        averages: observations.readiness.ready ? observations.averages : null,
+        position: observations.position ? { latitude: observations.position.latitude, longitude: observations.position.longitude } : null,
         now,
         vessel: vesselPerformanceFromPack(pack) ?? this.options.vessel?.() ?? null
       })
@@ -161,15 +165,21 @@ export class OnboardRaceService {
     if (!pack) return { ok: false, reason: 'no_race_pack' }
     const course = this.options.course()
     if (!course) return { ok: false, reason: 'no_active_course' }
+    // Reverse-order courses are not supported by the v1 onboard rule set. Fail
+    // closed rather than silently calculating the course forwards.
+    if (course.reverse) return { ok: false, reason: 'reverse_course_unsupported' }
     if (!racePackAppliesToCourse(pack, course)) return { ok: false, reason: 'pack_not_applicable' }
     if (packValidityAt(pack, this.now()) === 'expired') return { ok: false, reason: 'pack_expired' }
     if (!this.options.racing()) return { ok: false, reason: 'not_racing' }
     const observations = this.options.observations.observations(this.now())
+    // An active-race calculation requires a real current position; the planner
+    // never fabricates one.
+    if (!observations.position) return { ok: false, reason: 'no_current_position' }
     // Forecast-only planning is allowed: a valid pack should not simply
     // disappear because observations are not ready yet. A pack with no usable
     // forecast still needs a complete observation window.
     const hasForecast = pack.forecast.legs.some((leg) => leg.samples.length > 0)
-    if (!observationsSufficient(observations.averages) && !hasForecast) return { ok: false, reason: 'insufficient_observations' }
+    if (!observations.readiness.ready && !hasForecast) return { ok: false, reason: 'insufficient_observations' }
     if (!force && this.lastCalculationAt !== null && this.now() - this.lastCalculationAt < this.cadenceMs) return { ok: false, reason: 'recent_calculation' }
     return { ok: true, pack, course }
   }
@@ -189,7 +199,8 @@ export class OnboardRaceService {
       warning: this.lastWarning,
       forecastCoverage: this.lastPlan?.forecastCoverage ?? null,
       warnings: this.lastPlan?.warnings ?? [],
-      observationsReady: observationsSufficient(observations.averages),
+      observationsReady: observations.readiness.ready,
+      observationReadiness: observations.readiness,
       cadenceSeconds: Math.round(this.cadenceMs / 1000),
       pack: applied ? {
         available: true,
@@ -199,13 +210,14 @@ export class OnboardRaceService {
         ruleSetVersion: applied.ruleSetVersion,
         courseId: applied.courseId,
         racePlanId: applied.racePlanId,
+        courseDefinitionDigest: applied.courseDefinitionDigest,
         generatedAt: applied.generatedAt,
         validFrom: applied.validFrom,
         validUntil: applied.validUntil,
         appliedAt: applied.appliedAt,
         applicable: pack ? racePackAppliesToCourse(pack, course) : false,
         currentAt: pack ? packValidityAt(pack, this.now()) : 'unknown'
-      } : { available: false, packId: null, revision: null, sha256: null, ruleSetVersion: null, courseId: null, racePlanId: null, generatedAt: null, validFrom: null, validUntil: null, appliedAt: null, applicable: false, currentAt: 'unknown' },
+      } : { available: false, packId: null, revision: null, sha256: null, ruleSetVersion: null, courseId: null, racePlanId: null, courseDefinitionDigest: null, generatedAt: null, validFrom: null, validUntil: null, appliedAt: null, applicable: false, currentAt: 'unknown' },
       observations: {
         sampleCount: observations.averages.sampleCount,
         windowSeconds: observations.averages.windowSeconds,

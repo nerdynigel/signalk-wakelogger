@@ -1,0 +1,123 @@
+{
+  "apparentToTrue": [
+    {
+      "awaDeg": 31.9,
+      "awsKnots": 18.7,
+      "cogDeg": 0,
+      "expected": {
+        "twdDeg": 45.0,
+        "twsKnots": 13.97
+      },
+      "headingDeg": 0,
+      "name": "close-hauled-starboard",
+      "sogKnots": 6,
+      "stwKnots": 6
+    },
+    {
+      "awaDeg": -95,
+      "awsKnots": 10,
+      "cogDeg": 90,
+      "expected": {
+        "twdDeg": 329.5,
+        "twsKnots": 11.56
+      },
+      "headingDeg": 90,
+      "name": "beam-reach-port",
+      "sogKnots": 5,
+      "stwKnots": 5
+    },
+    {
+      "awaDeg": -10,
+      "awsKnots": 12,
+      "cogDeg": 0,
+      "expected": {
+        "twdDeg": 343.0,
+        "twsKnots": 7.13
+      },
+      "headingDeg": 0,
+      "name": "north-crossing-west",
+      "sogKnots": 5,
+      "stwKnots": 5
+    },
+    {
+      "awaDeg": 5,
+      "awsKnots": 12,
+      "cogDeg": 0,
+      "expected": {
+        "twdDeg": 8.6,
+        "twsKnots": 7.03
+      },
+      "headingDeg": 0,
+      "name": "north-crossing-east",
+      "sogKnots": 5,
+      "stwKnots": 5
+    }
+  ],
+  "description": "Shared cloud+plugin observation golden: apparent->true derivation cases around north and the shared five-minute readiness contract. Consumed byte-identically by both repositories.",
+  "readiness": {
+    "cases": [
+      {
+        "coveredSeconds": 120,
+        "expected": "too_few_samples",
+        "latestSampleAgeSeconds": 0,
+        "name": "three-fresh",
+        "position": true,
+        "qualifyingSampleCount": 3,
+        "wind": true
+      },
+      {
+        "coveredSeconds": 30,
+        "expected": "span_too_short",
+        "latestSampleAgeSeconds": 0,
+        "name": "compressed-30s",
+        "position": true,
+        "qualifyingSampleCount": 30,
+        "wind": true
+      },
+      {
+        "coveredSeconds": 261,
+        "expected": "ready",
+        "latestSampleAgeSeconds": 0,
+        "name": "five-minute-window",
+        "position": true,
+        "qualifyingSampleCount": 30,
+        "wind": true
+      },
+      {
+        "coveredSeconds": 261,
+        "expected": "stale",
+        "latestSampleAgeSeconds": 45,
+        "name": "stale-wind",
+        "position": true,
+        "qualifyingSampleCount": 30,
+        "wind": true
+      },
+      {
+        "coveredSeconds": 261,
+        "expected": "no_wind",
+        "latestSampleAgeSeconds": 0,
+        "name": "invalid-wind",
+        "position": true,
+        "qualifyingSampleCount": 30,
+        "wind": false
+      },
+      {
+        "coveredSeconds": 261,
+        "expected": "no_position",
+        "latestSampleAgeSeconds": 0,
+        "name": "no-position",
+        "position": false,
+        "qualifyingSampleCount": 30,
+        "wind": true
+      }
+    ],
+    "maxAgeSeconds": 30,
+    "minSamples": 30,
+    "minSpanSeconds": 240,
+    "windowSeconds": 300
+  },
+  "tolerances": {
+    "twdDeg": 0.2,
+    "twsKnots": 0.05
+  }
+}
