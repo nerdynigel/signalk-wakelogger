@@ -3,6 +3,7 @@ import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.
 import { coursePoints, raceProgress } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation } from './tracking-controls.mjs'
+import { racePlanPresentation } from './race-plan.mjs'
 
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
@@ -18,6 +19,7 @@ const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 })
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
 let raceProgression = null, applyingProgression = false
+let racePlan = null
 let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
@@ -129,14 +131,16 @@ async function poll() {
   if (polling) return
   polling = true
   try {
-    const [nextStatus, navigation, calculated, nextProgression] = await Promise.all([
+    const [nextStatus, navigation, calculated, nextProgression, nextRacePlan] = await Promise.all([
       client.request('/plugins/signalk-wakelogger/course'),
       client.request('/signalk/v1/api/vessels/self/navigation').catch(() => ({})),
       client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues').catch(() => ({})),
       client.request('/plugins/signalk-wakelogger/progression').catch(() => null),
+      client.request('/plugins/signalk-wakelogger/race-plan').catch(() => null),
     ])
     status = nextStatus
     raceProgression = nextProgression
+    racePlan = nextRacePlan
     const nativeRoute = status.native?.ownedRouteId
       ? await client.request(`/signalk/v2/api/resources/routes/${encodeURIComponent(status.native.ownedRouteId)}`).catch(() => null)
       : null
@@ -144,6 +148,7 @@ async function poll() {
     $('login').hidden = true
     renderCourse()
     renderProgression()
+    renderRacePlan()
     if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide) await applyProgression()
     if (Date.now() - lastChartsAt > 60_000) await discoverCharts()
   } catch (error) {
@@ -171,6 +176,75 @@ function renderProgression() {
   const detail = pending && !pending.wrongSide ? ` · ${pending.type} detected at point ${pending.pointIndex + 1}` : ''
   element.textContent = `Mark detection: ${labels[mode] ?? mode}${detail}`
   $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide)
+}
+
+function renderRacePlan() {
+  const list = $('race-plan-list')
+  if (!list) return
+  const view = racePlanPresentation(racePlan)
+  const authority = $('race-authority')
+  authority.textContent = `Race plan authority: ${view.authority}`
+  authority.dataset.authority = view.authority === 'Onboard' ? 'onboard' : 'cloud'
+  authority.dataset.pack = view.packAvailable ? 'ready' : 'missing'
+  authority.title = `${view.authorityDetail} · ${view.packStatus}`
+  const warning = $('race-plan-warning')
+  warning.textContent = view.warning || ''
+  warning.hidden = !view.warning
+  list.replaceChildren()
+  if (!view.packAvailable) {
+    const empty = document.createElement('p')
+    empty.className = 'muted'
+    empty.textContent = view.packStatus
+    list.append(empty)
+    return
+  }
+  const heading = document.createElement('p')
+  heading.className = 'race-plan-heading'
+  const pieces = [view.packStatus]
+  if (view.lastUpdated) pieces.push(view.historyOnly ? `Last onboard plan ${view.lastUpdated} (historical)` : `Updated ${view.lastUpdated}`)
+  heading.textContent = pieces.join(' · ')
+  list.append(heading)
+  if (view.currentLeg) {
+    const current = document.createElement('div')
+    current.className = 'race-plan-current'
+    current.dataset.leg = 'current'
+    current.append(racePlanLeg(view.currentLeg, 'Next leg'))
+    list.append(current)
+  }
+  for (const leg of view.remainingLegs.slice(1)) {
+    const row = document.createElement('div')
+    row.className = 'race-plan-leg'
+    row.dataset.leg = 'remaining'
+    row.append(racePlanLeg(leg))
+    list.append(row)
+  }
+}
+
+function racePlanLeg(leg, eyebrow) {
+  const fragment = document.createDocumentFragment()
+  if (eyebrow) {
+    const label = document.createElement('span')
+    label.className = 'eyebrow'
+    label.textContent = eyebrow
+    fragment.append(label)
+  }
+  const name = document.createElement('strong')
+  name.textContent = leg.name
+  fragment.append(name)
+  const detail = document.createElement('span')
+  if (leg.outOfRange) {
+    detail.textContent = 'Forecast unavailable for the recalculated time'
+  } else {
+    const parts = []
+    if (leg.summary) parts.push(leg.summary)
+    if (leg.wind) parts.push(leg.wind)
+    if (leg.pointOfSail) parts.push(leg.pointOfSail)
+    if (leg.usedObserved) parts.push('observed')
+    if (leg.confidence) parts.push(`${leg.confidence} confidence`)
+    detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
+  }
+  fragment.append(detail)
+  return fragment
 }
 
 async function applyProgression() {

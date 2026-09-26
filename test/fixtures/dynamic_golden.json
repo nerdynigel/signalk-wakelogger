@@ -1,0 +1,750 @@
+{
+  "activeIndex": 2,
+  "courseDefinitionDigest": "1f2e3d4c5b6a798807162534435261708f9e0d1c2b3a4958677685940321fedc",
+  "courseId": "race-plan-777",
+  "forecast": {
+    "coverage": {
+      "from": "2026-06-14T00:00:00Z",
+      "until": "2026-06-14T12:00:00Z"
+    },
+    "legs": [
+      {
+        "latitude": -27.4,
+        "longitude": 153.195,
+        "samples": [
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 14,
+            "time": "2026-06-14T00:00:00Z",
+            "twd_deg": 0,
+            "tws_knots": 10,
+            "wave_direction_deg": 0,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 14,
+            "time": "2026-06-14T01:00:00Z",
+            "twd_deg": 3,
+            "tws_knots": 10,
+            "wave_direction_deg": 3,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 15,
+            "time": "2026-06-14T02:00:00Z",
+            "twd_deg": 6,
+            "tws_knots": 11,
+            "wave_direction_deg": 6,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 15,
+            "time": "2026-06-14T03:00:00Z",
+            "twd_deg": 9,
+            "tws_knots": 11,
+            "wave_direction_deg": 9,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 16,
+            "time": "2026-06-14T04:00:00Z",
+            "twd_deg": 12,
+            "tws_knots": 12,
+            "wave_direction_deg": 12,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 16,
+            "time": "2026-06-14T05:00:00Z",
+            "twd_deg": 15,
+            "tws_knots": 12,
+            "wave_direction_deg": 15,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 15,
+            "time": "2026-06-14T06:00:00Z",
+            "twd_deg": 18,
+            "tws_knots": 11,
+            "wave_direction_deg": 18,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 14,
+            "time": "2026-06-14T07:00:00Z",
+            "twd_deg": 21,
+            "tws_knots": 10,
+            "wave_direction_deg": 21,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 13,
+            "time": "2026-06-14T08:00:00Z",
+            "twd_deg": 24,
+            "tws_knots": 9,
+            "wave_direction_deg": 24,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 13,
+            "time": "2026-06-14T09:00:00Z",
+            "twd_deg": 27,
+            "tws_knots": 9,
+            "wave_direction_deg": 27,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 14,
+            "time": "2026-06-14T10:00:00Z",
+            "twd_deg": 30,
+            "tws_knots": 10,
+            "wave_direction_deg": 30,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 15,
+            "time": "2026-06-14T11:00:00Z",
+            "twd_deg": 33,
+            "tws_knots": 11,
+            "wave_direction_deg": 33,
+            "wave_height_m": 0.5
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.2,
+            "gust_knots": 16,
+            "time": "2026-06-14T12:00:00Z",
+            "twd_deg": 36,
+            "tws_knots": 12,
+            "wave_direction_deg": 36,
+            "wave_height_m": 0.5
+          }
+        ],
+        "sequence": 1
+      },
+      {
+        "latitude": -27.38,
+        "longitude": 153.22,
+        "samples": [
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 14,
+            "time": "2026-06-14T00:00:00Z",
+            "twd_deg": 350,
+            "tws_knots": 10,
+            "wave_direction_deg": 350,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 15,
+            "time": "2026-06-14T01:00:00Z",
+            "twd_deg": 353,
+            "tws_knots": 11,
+            "wave_direction_deg": 353,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 16,
+            "time": "2026-06-14T02:00:00Z",
+            "twd_deg": 356,
+            "tws_knots": 12,
+            "wave_direction_deg": 356,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 18,
+            "time": "2026-06-14T03:00:00Z",
+            "twd_deg": 359,
+            "tws_knots": 14,
+            "wave_direction_deg": 359,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 22,
+            "time": "2026-06-14T04:00:00Z",
+            "twd_deg": 2,
+            "tws_knots": 18,
+            "wave_direction_deg": 2,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 24,
+            "time": "2026-06-14T05:00:00Z",
+            "twd_deg": 5,
+            "tws_knots": 20,
+            "wave_direction_deg": 5,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 22,
+            "time": "2026-06-14T06:00:00Z",
+            "twd_deg": 8,
+            "tws_knots": 18,
+            "wave_direction_deg": 8,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 20,
+            "time": "2026-06-14T07:00:00Z",
+            "twd_deg": 11,
+            "tws_knots": 16,
+            "wave_direction_deg": 11,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 18,
+            "time": "2026-06-14T08:00:00Z",
+            "twd_deg": 14,
+            "tws_knots": 14,
+            "wave_direction_deg": 14,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 16,
+            "time": "2026-06-14T09:00:00Z",
+            "twd_deg": 17,
+            "tws_knots": 12,
+            "wave_direction_deg": 17,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 15,
+            "time": "2026-06-14T10:00:00Z",
+            "twd_deg": 20,
+            "tws_knots": 11,
+            "wave_direction_deg": 20,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 14,
+            "time": "2026-06-14T11:00:00Z",
+            "twd_deg": 23,
+            "tws_knots": 10,
+            "wave_direction_deg": 23,
+            "wave_height_m": 0.6
+          },
+          {
+            "current_direction_deg": 180,
+            "current_velocity_kn": 1.4,
+            "gust_knots": 13,
+            "time": "2026-06-14T12:00:00Z",
+            "twd_deg": 26,
+            "tws_knots": 9,
+            "wave_direction_deg": 26,
+            "wave_height_m": 0.6
+          }
+        ],
+        "sequence": 2
+      },
+      {
+        "latitude": -27.36,
+        "longitude": 153.31,
+        "samples": [
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 13,
+            "time": "2026-06-14T00:00:00Z",
+            "twd_deg": 355,
+            "tws_knots": 8,
+            "wave_direction_deg": 355,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 13,
+            "time": "2026-06-14T01:00:00Z",
+            "twd_deg": 358,
+            "tws_knots": 8,
+            "wave_direction_deg": 358,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 13,
+            "time": "2026-06-14T02:00:00Z",
+            "twd_deg": 1,
+            "tws_knots": 8,
+            "wave_direction_deg": 1,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 19,
+            "time": "2026-06-14T03:00:00Z",
+            "twd_deg": 4,
+            "tws_knots": 14,
+            "wave_direction_deg": 4,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 27,
+            "time": "2026-06-14T04:00:00Z",
+            "twd_deg": 7,
+            "tws_knots": 22,
+            "wave_direction_deg": 7,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 27,
+            "time": "2026-06-14T05:00:00Z",
+            "twd_deg": 10,
+            "tws_knots": 22,
+            "wave_direction_deg": 10,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 25,
+            "time": "2026-06-14T06:00:00Z",
+            "twd_deg": 13,
+            "tws_knots": 20,
+            "wave_direction_deg": 13,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 23,
+            "time": "2026-06-14T07:00:00Z",
+            "twd_deg": 16,
+            "tws_knots": 18,
+            "wave_direction_deg": 16,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 21,
+            "time": "2026-06-14T08:00:00Z",
+            "twd_deg": 19,
+            "tws_knots": 16,
+            "wave_direction_deg": 19,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 19,
+            "time": "2026-06-14T09:00:00Z",
+            "twd_deg": 22,
+            "tws_knots": 14,
+            "wave_direction_deg": 22,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 17,
+            "time": "2026-06-14T10:00:00Z",
+            "twd_deg": 25,
+            "tws_knots": 12,
+            "wave_direction_deg": 25,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 15,
+            "time": "2026-06-14T11:00:00Z",
+            "twd_deg": 28,
+            "tws_knots": 10,
+            "wave_direction_deg": 28,
+            "wave_height_m": 0.8
+          },
+          {
+            "current_direction_deg": 270,
+            "current_velocity_kn": 1.1,
+            "gust_knots": 14,
+            "time": "2026-06-14T12:00:00Z",
+            "twd_deg": 31,
+            "tws_knots": 9,
+            "wave_direction_deg": 31,
+            "wave_height_m": 0.8
+          }
+        ],
+        "sequence": 3
+      },
+      {
+        "latitude": -27.39,
+        "longitude": 153.4,
+        "samples": [
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 16,
+            "time": "2026-06-14T00:00:00Z",
+            "twd_deg": 345,
+            "tws_knots": 12,
+            "wave_direction_deg": 345,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 16,
+            "time": "2026-06-14T01:00:00Z",
+            "twd_deg": 348,
+            "tws_knots": 12,
+            "wave_direction_deg": 348,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 17,
+            "time": "2026-06-14T02:00:00Z",
+            "twd_deg": 351,
+            "tws_knots": 13,
+            "wave_direction_deg": 351,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 19,
+            "time": "2026-06-14T03:00:00Z",
+            "twd_deg": 354,
+            "tws_knots": 15,
+            "wave_direction_deg": 354,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 21,
+            "time": "2026-06-14T04:00:00Z",
+            "twd_deg": 357,
+            "tws_knots": 17,
+            "wave_direction_deg": 357,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 23,
+            "time": "2026-06-14T05:00:00Z",
+            "twd_deg": 0,
+            "tws_knots": 19,
+            "wave_direction_deg": 0,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 25,
+            "time": "2026-06-14T06:00:00Z",
+            "twd_deg": 3,
+            "tws_knots": 21,
+            "wave_direction_deg": 3,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 26,
+            "time": "2026-06-14T07:00:00Z",
+            "twd_deg": 6,
+            "tws_knots": 22,
+            "wave_direction_deg": 6,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 24,
+            "time": "2026-06-14T08:00:00Z",
+            "twd_deg": 9,
+            "tws_knots": 20,
+            "wave_direction_deg": 9,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 22,
+            "time": "2026-06-14T09:00:00Z",
+            "twd_deg": 12,
+            "tws_knots": 18,
+            "wave_direction_deg": 12,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 20,
+            "time": "2026-06-14T10:00:00Z",
+            "twd_deg": 15,
+            "tws_knots": 16,
+            "wave_direction_deg": 15,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 18,
+            "time": "2026-06-14T11:00:00Z",
+            "twd_deg": 18,
+            "tws_knots": 14,
+            "wave_direction_deg": 18,
+            "wave_height_m": 0.7
+          },
+          {
+            "current_direction_deg": 90,
+            "current_velocity_kn": 0.9,
+            "gust_knots": 16,
+            "time": "2026-06-14T12:00:00Z",
+            "twd_deg": 21,
+            "tws_knots": 12,
+            "wave_direction_deg": 21,
+            "wave_height_m": 0.7
+          }
+        ],
+        "sequence": 4
+      }
+    ]
+  },
+  "now": 1781400600000,
+  "observed": {
+    "gustKnots": 17.2,
+    "sampleCount": 42,
+    "spanSeconds": 300,
+    "twdDeg": 356,
+    "twsKnots": 13.4,
+    "windSource": "true"
+  },
+  "packId": "pack-777-5",
+  "packRevision": 5,
+  "payload": {
+    "availableCrewCount": 5,
+    "jibChangesAllowed": true,
+    "startTime": "2026-06-14T00:00:00Z"
+  },
+  "points": [
+    {
+      "id": "route-point-1",
+      "kind": "start",
+      "latitude": -27.4,
+      "longitude": 153.17,
+      "name": "Start",
+      "rounding": "either"
+    },
+    {
+      "id": "route-point-2",
+      "kind": "mark",
+      "latitude": -27.4,
+      "longitude": 153.22,
+      "name": "North mark",
+      "rounding": "starboard"
+    },
+    {
+      "id": "route-point-3",
+      "kind": "mark",
+      "latitude": -27.36,
+      "longitude": 153.22,
+      "name": "Bay mark",
+      "rounding": "port"
+    },
+    {
+      "id": "route-point-4",
+      "kind": "mark",
+      "latitude": -27.36,
+      "longitude": 153.4,
+      "name": "East gate",
+      "rounding": "either"
+    },
+    {
+      "id": "route-point-5",
+      "kind": "finish",
+      "latitude": -27.42,
+      "longitude": 153.4,
+      "name": "Finish",
+      "rounding": "either"
+    }
+  ],
+  "polarSummary": {
+    "buckets": [
+      {
+        "abs_twa_deg": 40,
+        "average_speed_kn": 5.4,
+        "label": "upwind-12",
+        "sample_count": 34,
+        "side": "starboard",
+        "target_speed_kn": 5.6,
+        "twa_deg": 40,
+        "tws_kn": 12
+      },
+      {
+        "abs_twa_deg": 42,
+        "average_speed_kn": 5.9,
+        "label": "upwind-16",
+        "sample_count": 30,
+        "side": "starboard",
+        "target_speed_kn": 6.1,
+        "twa_deg": 42,
+        "tws_kn": 16
+      },
+      {
+        "abs_twa_deg": 95,
+        "average_speed_kn": 6.9,
+        "label": "reach-14",
+        "sample_count": 28,
+        "side": "port",
+        "target_speed_kn": 7.1,
+        "twa_deg": 95,
+        "tws_kn": 14
+      },
+      {
+        "abs_twa_deg": 150,
+        "average_speed_kn": 6.2,
+        "label": "downwind-16",
+        "sample_count": 22,
+        "side": "port",
+        "target_speed_kn": 6.4,
+        "twa_deg": 150,
+        "tws_kn": 16
+      }
+    ],
+    "eligible": true
+  },
+  "position": {
+    "latitude": -27.372,
+    "longitude": 153.22
+  },
+  "raceHeadsail": {
+    "sail_id": 3,
+    "sail_name": "No. 3 jib"
+  },
+  "racePlanId": 777,
+  "reverse": false,
+  "ruleSetVersion": "race_plan_dynamic_v1",
+  "sails": [
+    {
+      "archived_at": null,
+      "availability_status": "Available",
+      "crew_required": 2,
+      "id": 1,
+      "is_available": true,
+      "max_awa_deg": null,
+      "max_aws_knots": null,
+      "max_twa_deg": 180,
+      "max_tws_knots": 40,
+      "min_awa_deg": null,
+      "min_twa_deg": 0,
+      "min_tws_knots": 0,
+      "reef_1_tws_knots": 18,
+      "reef_2_tws_knots": 24,
+      "reef_3_tws_knots": 30,
+      "sail_name": "Mainsail",
+      "sail_type": "Mainsail"
+    },
+    {
+      "archived_at": null,
+      "availability_status": "Available",
+      "crew_required": 2,
+      "id": 3,
+      "is_available": true,
+      "max_awa_deg": 42,
+      "max_aws_knots": 32,
+      "max_twa_deg": 65,
+      "max_tws_knots": 28,
+      "min_awa_deg": 18,
+      "min_twa_deg": 28,
+      "min_tws_knots": 15,
+      "sail_name": "No. 3 jib",
+      "sail_type": "No. 3 jib"
+    },
+    {
+      "archived_at": null,
+      "availability_status": "Available",
+      "crew_required": 2,
+      "id": 4,
+      "is_available": true,
+      "max_awa_deg": 45,
+      "max_aws_knots": 22,
+      "max_twa_deg": 70,
+      "max_tws_knots": 18,
+      "min_awa_deg": 20,
+      "min_twa_deg": 30,
+      "min_tws_knots": 10,
+      "sail_name": "No. 1 jib",
+      "sail_type": "No. 1 jib"
+    },
+    {
+      "archived_at": null,
+      "availability_status": "Available",
+      "crew_required": 3,
+      "id": 7,
+      "is_available": true,
+      "max_awa_deg": 150,
+      "max_aws_knots": 24,
+      "max_twa_deg": 165,
+      "max_tws_knots": 20,
+      "min_awa_deg": 60,
+      "min_twa_deg": 75,
+      "min_tws_knots": 5,
+      "sail_name": "A2 asymmetric",
+      "sail_type": "Asymmetric"
+    }
+  ],
+  "v": 1,
+  "vesselPerformance": {
+    "hullSpeedKnots": 7.4,
+    "lengthM": 12.0,
+    "lengthWaterlineM": 10.5
+  }
+}

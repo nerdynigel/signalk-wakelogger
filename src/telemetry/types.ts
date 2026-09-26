@@ -66,6 +66,7 @@ export type RecordingAcknowledgement = Pick<RecordingManifest, 'id' | 'lastSeque
 
 export interface ApplicationAck {
   recordingAcks?: RecordingAcknowledgement[]
+  racePlanSnapshotAcks?: Array<{ id: string }>
   v: 1
   deviceId: string
   ackSequence: number
@@ -74,6 +75,7 @@ export interface ApplicationAck {
 
 export interface PluginStatusMetrics {
   courseSyncError?: string
+  racePackError?: string
   historicalUpload?: import('../tracking/history').HistoricalUpload
   uploadMode?: 'automatic' | 'local_only'
   recordings?: RecordingManifest[]

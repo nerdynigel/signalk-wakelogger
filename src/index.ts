@@ -6,6 +6,11 @@ import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/
 import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
 import { RaceProgressionService } from './race/progression-service'
 import { RaceProgressionStore } from './race/progression-store'
+import { ObservationCollector } from './race/observations'
+import { RacePackStore } from './race/race-pack-store'
+import { RacePackReceiver } from './race/race-pack-protocol'
+import { OnboardSnapshotStore, type OnboardPlanSnapshot } from './race/onboard-store'
+import { OnboardRaceService, type OnboardCourseState } from './race/onboard-service'
 import { UploadHistory, durableJson } from './tracking/history'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
@@ -35,6 +40,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let transport: WakeLoggerTransport | undefined
   let courses: CourseStore | undefined
   let progression: RaceProgressionService | undefined
+  let racePacks: RacePackStore | undefined
+  let racePackReceiver: RacePackReceiver | undefined
+  let observations: ObservationCollector | undefined
+  let onboardSnapshots: OnboardSnapshotStore | undefined
+  let onboard: OnboardRaceService | undefined
+  let onboardCourse: OnboardCourseState | null = null
   let courseInitializationError: string | undefined
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
@@ -69,7 +80,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       pairingAbortController?.abort()
       associationAbortController?.abort()
       // Stop all transmission immediately when a saved configuration restarts us.
-      const stopping = transport?.stop(false)
+      const stopping = transport?.stop({ publishOffline: false, force: true })
       const previous = initialization
       const thisGeneration = ++generation
       initialization = (async () => {
@@ -150,9 +161,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           await persistTrackingMode(mode, revision, thisGeneration)
           if (revision === trackingRevision && generation === thisGeneration) {
             activeUploadMode = mode
+            await onboard?.setAuthority(mode)
             if (mode === 'automatic' && !wasAutomatic) {
               if (outbox) await updateHistory(await outbox.stats(), true)
-              await transport?.stop(false)
+              await transport?.stop({ publishOffline: false, force: true })
               connectTransport?.()
             }
             await updateStatus()
@@ -234,6 +246,34 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           else response.status(409).json({ error: 'no_pending_detection', ...progression.status() })
         } catch (error) { next(error) }
       })
+      readRouter.get?.('/race-plan', async (_request, response, next) => {
+        try {
+          const status = onboard?.status() as { calculationAuthority?: string; lastLocalCalculationAt?: number | null } | undefined
+          response.status(200).json({
+            ...(status ?? { calculationAuthority: activeUploadMode === 'local_only' ? 'onboard' : 'cloud', lastLocalCalculationAt: null, reason: 'onboard_unavailable' }),
+            uploadMode: activeUploadMode,
+            connectionState,
+            latestSnapshot: onboardSnapshots?.latest() ?? null
+          })
+        } catch (error) { next(error) }
+      })
+      writeRouter.post('/race-plan/recalculate', async (_request, response, next) => {
+        try {
+          if (!onboard) {
+            response.status(409).json({ error: 'onboard_unavailable' })
+            return
+          }
+          // Explicit recalculation respects the product authority rule: while
+          // Live tracking is automatic the cloud is authoritative and an
+          // onboard recalculation must not run, even if MQTT is offline.
+          if (activeUploadMode !== 'local_only') {
+            response.status(409).json({ error: 'cloud_authority', uploadMode: activeUploadMode, ...onboard.status() })
+            return
+          }
+          const snapshot = await onboard.refresh(true)
+          response.status(200).json({ calculated: !!snapshot, snapshot, status: onboard.status() })
+        } catch (error) { next(error) }
+      })
       // Registered directly: unpairing keeps Signal K's admin-only default.
       pluginRouter.post('/forget-credentials', async (_request, response, next) => {
         try {
@@ -269,6 +309,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
         '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
+        '/race-plan': { get: { summary: 'Read onboard Race Plan calculation authority, Race Pack state and the latest onboard snapshot', responses: { '200': { description: 'Onboard race plan state' } } } },
+        '/race-plan/recalculate': { post: { summary: 'Request an explicit onboard Race Plan recalculation (local-only authority only)', responses: { '200': { description: 'Recalculation attempted' }, '409': { description: 'Onboard planner unavailable or cloud is authoritative' } } } },
         '/forget-credentials': {
           post: {
             summary: 'Forget Wake Logger credentials while preserving all device outboxes',
@@ -280,22 +322,44 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function syncProgressionCourse(): Promise<void> {
-    if (!progression) return
-    if (!courses) { progression.updateCourse(null); return }
+    if (!courses) {
+      progression?.updateCourse(null)
+      onboardCourse = null
+      return
+    }
     try {
       const status = await courses.status() as {
-        cachedCourse?: { revision?: number } | null
+        cachedCourse?: { revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
         routePoints?: Array<{ latitude: number; longitude: number; name?: string; kind?: 'start' | 'mark' | 'gate' | 'finish'; rounding?: 'port' | 'starboard' | 'either' }>
         native?: { course?: { activeRoute?: { pointIndex?: number; reverse?: boolean } | null } | null; activeMatchesDesired?: boolean }
       }
-      progression.updateCourse({
+      progression?.updateCourse({
         revision: status.cachedCourse?.revision ?? 0,
         points: status.routePoints ?? [],
         reverse: status.native?.course?.activeRoute?.reverse === true,
         activeIndex: status.native?.course?.activeRoute?.pointIndex ?? 0,
         matches: status.native?.activeMatchesDesired === true
       })
-    } catch { progression.updateCourse(null) }
+      const points = status.routePoints ?? []
+      onboardCourse = status.native?.activeMatchesDesired === true && status.cachedCourse?.courseId && points.length >= 2
+        ? {
+            courseId: status.cachedCourse.courseId,
+            racePlanId: status.cachedCourse.racePlanId ?? null,
+            courseDefinitionDigest: status.cachedCourse.courseDefinitionDigest ?? null,
+            activeIndex: status.native?.course?.activeRoute?.pointIndex ?? 0,
+            totalPoints: points.length,
+            reverse: status.native?.course?.activeRoute?.reverse === true
+          }
+        : null
+    } catch {
+      progression?.updateCourse(null)
+      onboardCourse = null
+    }
+  }
+
+  function racingUnderway(): boolean {
+    if (onboardCourse && onboardCourse.activeIndex > 0 && onboardCourse.activeIndex < onboardCourse.totalPoints) return true
+    return tripState?.currentState().state === 'MOVING'
   }
 
   async function flushProgressionEvidence(): Promise<void> {
@@ -309,6 +373,26 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       published.push(event.sequence)
     }
     if (published.length) await progression.markPublished(published)
+  }
+
+  // Onboard snapshots are historical evidence: they only leave the vessel once
+  // Live tracking is restored. A snapshot stays durable until Wake Logger
+  // application-ACKs it; published-but-unacknowledged snapshots are retried.
+  async function flushOnboardSnapshots(): Promise<void> {
+    if (!onboardSnapshots || !transport || activeUploadMode !== 'automatic') return
+    const queue = [...onboardSnapshots.pending(), ...onboardSnapshots.unacknowledged()].slice(0, 5)
+    if (!queue.length) return
+    const published: number[] = []
+    for (const event of queue) {
+      try { if (!await transport.publishRacePlanSnapshot(event.snapshot)) break }
+      catch { break }
+      published.push(event.sequence)
+    }
+    if (published.length) await onboardSnapshots.markPublished(published)
+  }
+
+  function publishOnboardSnapshot(_snapshot: OnboardPlanSnapshot): void {
+    if (activeUploadMode === 'automatic') void flushOnboardSnapshots()
   }
 
   async function cleanupResources(): Promise<void> {
@@ -327,6 +411,15 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     await sampleOperation
     await progression?.close()
     progression = undefined
+    onboard?.close()
+    onboard = undefined
+    await onboardSnapshots?.close()
+    onboardSnapshots = undefined
+    await racePacks?.close()
+    racePacks = undefined
+    racePackReceiver = undefined
+    observations = undefined
+    onboardCourse = null
     await courses?.close()
     courses = undefined
     courseInitializationError = undefined
@@ -424,6 +517,23 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       app.error(`Wake Logger mark detection unavailable: ${safeError(error)}`)
     }
     await syncProgressionCourse()
+    observations = new ObservationCollector()
+    const packs = new RacePackStore(path.join(dataDirectory, 'race-packs', credentials.deviceId))
+    try { await packs.open() } catch (error) { app.error(`Wake Logger race pack store unavailable: ${safeError(error)}`) }
+    racePacks = packs
+    racePackReceiver = new RacePackReceiver({ store: packs })
+    const snapshotStore = new OnboardSnapshotStore(path.join(dataDirectory, 'onboard-plans', credentials.deviceId, 'state.json'))
+    try { await snapshotStore.open() } catch (error) { app.error(`Wake Logger onboard plan history unavailable: ${safeError(error)}`) }
+    onboardSnapshots = snapshotStore
+    onboard = new OnboardRaceService({
+      packs,
+      snapshots: snapshotStore,
+      observations,
+      course: () => onboardCourse,
+      racing: racingUnderway,
+      trackingSessionId: () => tripState?.currentState().trackingSessionId ?? null,
+      onCalculated: publishOnboardSnapshot
+    })
     const normaliser = new TelemetryNormaliser()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
@@ -478,9 +588,15 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         return courseFailureAcknowledgement
       },
       getCourseAcknowledgement: () => courses?.acknowledgement() ?? courseFailureAcknowledgement,
+      onRacePackManifest: async (payload) => racePackReceiver?.acceptManifest(payload) ?? null,
+      onRacePackChunk: async (payload, topicIndex) => racePackReceiver?.acceptChunk(payload, topicIndex) ?? null,
+      getRacePackAck: () => racePackReceiver?.currentAck() ?? null,
       onRecordingAcks: async (acks) => {
         sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
         await sampleOperation
+      },
+      onRacePlanSnapshotAcks: async (ids) => {
+        await onboardSnapshots?.acknowledge(ids)
       },
       onMode: (mode) => { if (transport === instance) sampler.updateMode(activeUploadMode === 'local_only' ? 'NORMAL' : mode) },
       onProfile: async (replacement) => {
@@ -499,6 +615,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     stopSubscription = subscribeToTelemetry(app, (delta) => {
       normaliser.ingest(delta)
+      observations?.ingest(delta)
       if (!progression) return
       const fix = normaliser.latestFix()
       if (fix) progression.fix({ at: Date.now(), ...fix })
@@ -529,9 +646,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       }, sampler.samplePeriodMs())
     }
     scheduleSample()
-    statusTimer = setInterval(() => { void syncProgressionCourse(); void updateStatus() }, 10_000)
+    statusTimer = setInterval(() => { void syncProgressionCourse(); void onboard?.refresh(false); void updateStatus() }, 10_000)
     if (activeUploadMode === 'automatic') connectTransport()
     else connectionState = 'recording_locally'
+    await onboard?.setAuthority(activeUploadMode)
     await updateStatus()
   }
 
@@ -568,6 +686,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       ...transport?.transportMetrics()
     })
     void flushProgressionEvidence()
+    void flushOnboardSnapshots()
     if (connectionState === 'device_revoked') {
       app.setPluginStatus(`Wake Logger: Device revoked — enter a new pairing code; ${queue}${dropped}${sequence}`)
       return
@@ -605,9 +724,17 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     activeUploadMode = 'local_only'
     pairingAbortController?.abort()
     associationAbortController?.abort()
-    const stopping = transport?.stop(false)
+    // Send one bounded retained final status before shutting transmission down.
+    // Its failure cannot prevent the fail-closed local-only transition.
+    const stopping = (async () => {
+      await transport?.publishFinalLocalOnlyStatus().catch(() => undefined)
+      // Graceful end: a DISCONNECT suppresses the retained Last Will so it cannot
+      // overwrite the retained local_only status after the plugin is gone.
+      await transport?.stop({ publishOffline: false, force: false })
+    })()
     currentSampler?.updateMode('NORMAL')
     connectionState = 'recording_locally'
+    void onboard?.setAuthority('local_only')
     return stopping
   }
 

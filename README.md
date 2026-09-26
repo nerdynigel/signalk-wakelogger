@@ -55,6 +55,8 @@ Open the **Wake Logger webapp** from Signal K's Web Apps list, using a phone, ta
 
 The onboard map uses the same instrument styling as Wake Logger's live view, adapts to phone and tablet screens, and includes a full-screen view. It shows the complete course, your boat, the next mark and current leg. Distance, bearing, cross-track error, VMG and arrival estimates appear when Signal K can calculate them; unavailable readings are left clearly marked.
 
+Alongside the map, the webapp shows an **onboard race plan**. While **Live tracking** is on, Wake Logger cloud calculates the remaining race: it starts the current leg from your boat's actual position, samples the downloaded forecast at each leg's estimated time, and accounts for current, so the suggested heading, sail plan and arrival estimate keep up with how the race is actually going. When **Live tracking** is off, the vessel performs the same calculation on board from the Race Pack synchronised before departure, so the plan is still available with no internet access. If no Race Pack has synchronised yet, the map and course still work and the plan is clearly marked as unavailable.
+
 Use **Advance point** to move to the next course point, or select a point and choose **Set point** to correct your progress. Progression is manual in this release: it does not automatically judge start-line crossings, mark roundings, gates or finishes.
 
 Your course is also available as a standard Signal K route for other onboard applications. If another app selects a different active route, Wake Logger shows that state. Choose **Activate Wake Logger course** when you want to return to it.

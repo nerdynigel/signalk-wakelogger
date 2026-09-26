@@ -180,3 +180,49 @@ test('tracking controls honor runtime availability and revoked device access', a
   }
   assert.equal(trackingPresentation({ ...snapshot, available: true }).available, true)
 })
+
+test('onboard race plan presentation switches authority and warns without a pack', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const missing = racePlanPresentation({ uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: false } })
+  assert.equal(missing.authority, 'Onboard')
+  assert.match(missing.warning, /Race Pack/)
+  assert.equal(missing.currentLeg, null)
+  assert.match(missing.packStatus, /No Race Pack/)
+
+  const snapshot = { generatedAt: Date.now(), plan: { legs: [
+    { sequence: 1, to: { name: 'Eastern mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45, sampleTime: null }, pointOfSail: 'close reach', plan: { summary: 'Full main + No. 3 jib', confidence: 'high' } },
+    { sequence: 2, to: { name: 'Race finish' }, conditions: { source: 'forecast', twsKnots: 14, twdDeg: 60, sampleTime: '2026-09-17T03:00:00Z' }, pointOfSail: 'beam reach', plan: { summary: 'Full main + A2 kite', confidence: 'medium' } }
+  ] } }
+  const onboard = racePlanPresentation({ uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: true, revision: 4, applicable: true, ruleSetVersion: 'race_plan_dynamic_v1' }, latestSnapshot: snapshot })
+  assert.equal(onboard.authority, 'Onboard')
+  assert.equal(onboard.currentLeg.name, 'Eastern mark')
+  assert.equal(onboard.currentLeg.usedObserved, true)
+  assert.equal(onboard.currentLeg.summary, 'Full main + No. 3 jib')
+  assert.equal(onboard.remainingLegs.length, 2)
+  assert.equal(onboard.warning, null)
+  assert.equal(onboard.historyOnly, false)
+
+  const automatic = racePlanPresentation({ uploadMode: 'automatic', calculationAuthority: 'cloud', pack: { available: true, revision: 4 }, latestSnapshot: snapshot })
+  assert.equal(automatic.authority, 'Wake Logger')
+  assert.equal(automatic.historyOnly, true)
+  assert.equal(automatic.stale, true)
+})
+
+test('onboard race plan surfaces observation fallback and forecast expiry warnings', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const legs = [
+    { sequence: 1, to: { name: 'Mark' }, conditions: { source: 'forecast', twsKnots: 14, twdDeg: 45, forecastCoverage: 'within' }, plan: { summary: 'Full main', confidence: 'medium' } },
+    { sequence: 2, to: { name: 'Finish' }, conditions: { source: 'forecast', twsKnots: null, twdDeg: null, forecastCoverage: 'out_of_range' }, plan: null }
+  ]
+  const view = racePlanPresentation({
+    uploadMode: 'local_only', calculationAuthority: 'onboard', observationsReady: false,
+    pack: { available: true, revision: 4, applicable: true, ruleSetVersion: 'race_plan_dynamic_v1' },
+    latestSnapshot: { generatedAt: Date.now(), forecastCoverage: 'partial', warning: 'Fresh onboard observations not yet available', plan: { legs } }
+  })
+  assert.equal(view.warning, 'Fresh onboard observations not yet available')
+  assert.equal(view.stale, true)
+  assert.equal(view.forecastCoverage, 'partial')
+  assert.equal(view.observationsReady, false)
+  assert.equal(view.remainingLegs[1].outOfRange, true)
+  assert.equal(view.remainingLegs[1].summary, null)
+})

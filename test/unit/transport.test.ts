@@ -8,6 +8,7 @@ vi.mock('mqtt', () => ({ default: { connect: connectMock } }))
 
 import { WakeLoggerTransport } from '../../src/transport/mqtt-client'
 import { DEFAULT_TELEMETRY_PROFILE } from '../../src/telemetry/profile'
+import type { RacePackAck } from '../../src/race/race-pack-protocol'
 
 class FakeClient extends EventEmitter {
   connected = true
@@ -33,8 +34,10 @@ class FakeClient extends EventEmitter {
     if (this.denyCourseSubscription && this.subscriptions.at(-1)?.endsWith('/course')) callback?.(new Error('Subscribe error: Not authorized'))
     else callback?.()
   }
+  endForce?: boolean
+  endCount = 0
   end(_force?: boolean, _options?: object, callback?: (error?: Error) => void): void {
-    this.connected = false; callback?.()
+    this.endForce = _force; this.endCount += 1; this.connected = false; callback?.()
   }
   releasePublish(): void { this.delayedCallbacks.shift()?.() }
 }
@@ -85,7 +88,7 @@ describe('WakeLoggerTransport', () => {
     const courseAck = client.publications.find((entry) => entry.topic.endsWith('/course-ack'))!
     expect(JSON.parse(courseAck.payload)).toEqual(acknowledgement)
     expect(courseAck.options).toMatchObject({ qos: 1, retain: true })
-    await transport.stop(false)
+    await transport.stop({ publishOffline: false, force: true })
     const count = client.publications.length
     await transport.publishCourseAcknowledgement()
     expect(client.publications).toHaveLength(count)
@@ -104,7 +107,7 @@ describe('WakeLoggerTransport', () => {
     const client = clients[0]!
     client.emit('connect'); await tick(); await tick()
     expect(release).toBeTypeOf('function')
-    await transport.stop(false)
+    await transport.stop({ publishOffline: false, force: true })
     const count = client.publications.length
     release!([sample]); await tick(); await tick()
     expect(client.publications).toHaveLength(count)
@@ -124,7 +127,7 @@ describe('WakeLoggerTransport', () => {
     expect(onState).toHaveBeenCalledWith('online', expect.stringContaining('Course sync unavailable'))
     expect(transport.transportMetrics().courseSyncError).toContain('Not authorized')
     expect(client.publications.some((entry) => entry.topic.endsWith('/telemetry'))).toBe(true)
-    await transport.stop(false)
+    await transport.stop({ publishOffline: false, force: true })
   })
 
   it('accepts committed manifest receipts but ignores an acknowledgement beyond the local sequence', async () => {
@@ -325,6 +328,79 @@ describe('WakeLoggerTransport', () => {
     expect(pendingAfter.mock.calls.length).toBeGreaterThan(callsAtExhaustion)
     await transport.stop()
   })
+
+  it('subscribes to Race Pack topics and publishes ACKs and onboard snapshots', async () => {
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(undefined), pendingAfter: vi.fn().mockResolvedValue([]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 0, acknowledgedSequence: 0, messageCount: 0 })
+    }
+    const appliedAck: RacePackAck = { v: 1, packId: 'pack-42-1', revision: 4, sha256: 'a'.repeat(64), status: 'applied', appliedAt: '2026-09-17T02:00:00Z', errorCode: null }
+    const onRacePackManifest = vi.fn(async () => appliedAck)
+    const onRacePackChunk = vi.fn(async () => null)
+    const transport = new WakeLoggerTransport({
+      version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
+      mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onRacePackManifest, onRacePackChunk, getRacePackAck: () => appliedAck })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.emit('connect'); await tick(); await tick()
+    expect(client.subscriptions).toContain('wakelogger/v1/devices/dev_1/race-pack/manifest')
+    expect(client.subscriptions).toContain('wakelogger/v1/devices/dev_1/race-pack/chunk/+')
+    const retained = client.publications.find((entry) => entry.topic.endsWith('/race-pack-ack'))!
+    expect(JSON.parse(retained.payload)).toEqual(appliedAck)
+    expect(retained.options).toMatchObject({ qos: 1, retain: true })
+
+    client.emit('message', 'wakelogger/v1/devices/dev_1/race-pack/manifest', Buffer.from('{"v":1}'))
+    client.emit('message', 'wakelogger/v1/devices/dev_1/race-pack/chunk/0', Buffer.from('{"v":1}'))
+    await tick(); await tick()
+    expect(onRacePackManifest).toHaveBeenCalledTimes(1)
+    expect(onRacePackChunk).toHaveBeenCalledTimes(1)
+
+    expect(await transport.publishRacePlanSnapshot({ v: 1, kind: 'race_plan_snapshot', id: 'snap-1' })).toBe(true)
+    const event = client.publications.filter((entry) => entry.topic.endsWith('/events')).at(-1)!
+    expect(JSON.parse(event.payload)).toMatchObject({ kind: 'race_plan_snapshot', deviceId: 'dev_1', id: 'snap-1' })
+    await transport.stop({ publishOffline: false, force: true })
+  })
 })
 
 async function tick(): Promise<void> { await new Promise((resolve) => setTimeout(resolve, 0)) }
+
+describe('transport shutdown semantics', () => {
+  function makeTransport() {
+    const outbox = { latest: async () => undefined, stats: async () => ({ acknowledgedSequence: 0, currentSequence: 0, messageCount: 0, diskBytes: 0, droppedCount: 0 }), pendingAfter: async () => [], acknowledge: async () => undefined }
+    return new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'dev_1', username: 'u', password: 'p', mqttHost: 'h', mqttPort: 1, tls: false, pairedAt: 1 } as never, outbox as never, { profile: DEFAULT_TELEMETRY_PROFILE, onState: () => undefined })
+  }
+
+  it('graceful local-only stop suppresses the Will and does not publish offline', async () => {
+    const transport = makeTransport()
+    transport.start()
+    await tick()
+    const client = clients.at(-1)!
+    client.publications.length = 0
+    await transport.stop({ publishOffline: false, force: false })
+    expect(client.endForce).toBe(false)
+    expect(client.publications.some((entry) => entry.topic.endsWith('/status'))).toBe(false)
+  })
+
+  it('forced stop closes without a DISCONNECT so the Will fires', async () => {
+    const transport = makeTransport()
+    transport.start()
+    await tick()
+    const client = clients.at(-1)!
+    await transport.stop({ publishOffline: false, force: true })
+    expect(client.endForce).toBe(true)
+  })
+
+  it('default stop publishes a retained offline status then disconnects gracefully', async () => {
+    const transport = makeTransport()
+    transport.start()
+    await tick()
+    const client = clients.at(-1)!
+    client.publications.length = 0
+    await transport.stop()
+    const offline = client.publications.find((entry) => entry.topic.endsWith('/status'))!
+    expect(JSON.parse(offline.payload)).toMatchObject({ state: 'offline' })
+    expect(offline.options).toMatchObject({ qos: 1, retain: true })
+    expect(client.endForce).toBe(false)
+  })
+})
