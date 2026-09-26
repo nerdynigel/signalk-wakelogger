@@ -81,6 +81,12 @@ export interface RacePackRaceHeadsail {
   sail_name?: string | null
 }
 
+export interface RacePackVesselPerformance {
+  hullSpeedKnots?: number | null
+  lengthWaterlineM?: number | null
+  lengthM?: number | null
+}
+
 export interface RacePackPayload {
   startTime?: string | null
   availableCrewCount?: number | null
@@ -102,6 +108,7 @@ export interface RacePack {
   sails: SailInventoryItem[]
   raceHeadsail?: RacePackRaceHeadsail | null
   payload: RacePackPayload
+  vesselPerformance?: RacePackVesselPerformance | null
   forecast: PackForecast
   polarSummary?: PolarSummary | null
 }
@@ -223,6 +230,17 @@ function validRaceHeadsail(value: unknown): boolean {
   return true
 }
 
+function validVesselPerformance(value: unknown): boolean {
+  if (value == null) return true
+  if (typeof value !== 'object') return false
+  const performance = value as RacePackVesselPerformance
+  for (const field of ['hullSpeedKnots', 'lengthWaterlineM', 'lengthM'] as const) {
+    const candidate = performance[field]
+    if (candidate != null && !finiteBetween(candidate, 0, 1000)) return false
+  }
+  return true
+}
+
 export function isSupportedRuleSet(value: unknown): value is SupportedRuleSet {
   return typeof value === 'string' && (SUPPORTED_RULE_SETS as readonly string[]).includes(value)
 }
@@ -249,6 +267,7 @@ export function parseRacePack(payload: Buffer): RacePack {
   if (course.racePlanId != null && !Number.isSafeInteger(course.racePlanId)) throw new RacePackError('pack_invalid_course')
   if (!Array.isArray(document.sails) || document.sails.length > MAX_SAILS || !document.sails.every(validSail)) throw new RacePackError('pack_invalid_sails')
   if (!validRaceHeadsail(document.raceHeadsail)) throw new RacePackError('pack_invalid_race_headsail')
+  if (!validVesselPerformance(document.vesselPerformance)) throw new RacePackError('pack_invalid_vessel_performance')
   const forecast = document.forecast
   if (!forecast || typeof forecast !== 'object' || !Array.isArray(forecast.legs)) throw new RacePackError('pack_invalid_forecast')
   if (forecast.snapshot != null && typeof forecast.snapshot !== 'object') throw new RacePackError('pack_invalid_forecast')

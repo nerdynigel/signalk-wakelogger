@@ -85,7 +85,8 @@ export function buildOnboardPlan(options: { pack: RacePack; activeIndex: number;
     const twa = tws !== null && twd !== null ? angularDifferenceDegrees(bearing, twd) : null
     const pointOfSail = twa !== null ? classifyPointOfSail(twa) : null
     const windSide = twd !== null ? (signedAngleDegrees(twd, bearing) > 0 ? 'starboard' : 'port') : null
-    const [estimated, polarSpeed] = estimateLegSpeed(options.vessel ?? {}, pointOfSail, tws, gust, options.pack.polarSummary ?? null, twa, windSide)
+    const [estimated, polarSpeed, speedWarnings] = estimateLegSpeed(options.vessel ?? {}, pointOfSail, tws, gust, options.pack.polarSummary ?? null, twa, windSide)
+    for (const warning of speedWarnings) warnings.push(`Leg ${index}: ${warning}`)
 
     let plan: Record<string, unknown> | null = null
     if (pointOfSail !== null && tws !== null && twd !== null) {
@@ -212,9 +213,12 @@ function estimateLegSpeed(
   polarSummary: RacePack['polarSummary'],
   twa: number | null,
   windSide: 'port' | 'starboard' | null
-): [number | null, number | null] {
-  if (pointOfSail === null || tws === null) return [null, null]
-  const [estimated] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust ?? tws })
+): [number | null, number | null, string[]] {
+  if (pointOfSail === null || tws === null) return [null, null, []]
+  const [estimated, speedWarnings] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust ?? tws })
   const [polar] = polarSpeedForLeg(polarSummary, { twaDeg: twa ?? 0, forecastTwsKnots: tws, windSide })
-  return [polar ?? estimated, polar]
+  // Fallback order: usable polar, then vessel-specific performance, then the
+  // documented generic hull-speed fallback (which carries a warning).
+  if (polar !== null && polar !== undefined) return [polar, polar, []]
+  return [estimated, polar ?? null, speedWarnings]
 }

@@ -39,6 +39,19 @@ export interface OnboardRaceServiceOptions {
 
 const DEFAULT_CADENCE_MS = 15 * 60 * 1000
 
+// The pack carries camelCase vessel performance; the planner uses the internal
+// snake_case VesselPerformance shape. Prefer the pack's synchronised values over
+// any local config so cloud and onboard fall back identically.
+export function vesselPerformanceFromPack(pack: RacePack): VesselPerformance | null {
+  const performance = pack.vesselPerformance
+  if (!performance) return null
+  return {
+    hull_speed_knots: performance.hullSpeedKnots ?? null,
+    length_waterline_m: performance.lengthWaterlineM ?? null,
+    length_m: performance.lengthM ?? null
+  }
+}
+
 export class OnboardRaceService {
   private authority: CalculationAuthority = 'cloud'
   private timer?: NodeJS.Timeout
@@ -98,7 +111,7 @@ export class OnboardRaceService {
         // otherwise the planner falls back to that leg's downloaded forecast.
         averages: observationsSufficient(observations.averages) ? observations.averages : null,
         now,
-        vessel: this.options.vessel?.() ?? null
+        vessel: vesselPerformanceFromPack(pack) ?? this.options.vessel?.() ?? null
       })
     } catch {
       this.lastReason = 'insufficient_observations'

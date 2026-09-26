@@ -36,6 +36,7 @@ export interface FixturePack {
   sails: Array<Record<string, unknown>>
   raceHeadsail?: { sail_id: number; sail_name?: string | null } | null
   payload: Record<string, unknown>
+  vesselPerformance?: { hullSpeedKnots?: number | null; lengthWaterlineM?: number | null; lengthM?: number | null } | null
   forecast: { snapshot?: Record<string, unknown> | null; coverage?: { from: string; until: string } | null; legs: Array<{ sequence: number; latitude?: number | null; longitude?: number | null; samples: FixtureForecastSample[] }> }
   polarSummary?: Record<string, unknown> | null
 }
@@ -82,6 +83,7 @@ export function makeFixturePack(overrides: Partial<FixturePack> = {}): FixturePa
     ],
     raceHeadsail: null,
     payload: { startTime: '2026-09-17T02:00:00Z', availableCrewCount: 3, jibChangesAllowed: false },
+    vesselPerformance: { hullSpeedKnots: 7.2, lengthWaterlineM: 10.4, lengthM: 12.0 },
     forecast: {
       snapshot: { provider: 'example-model', runAt: '2026-09-16T18:00:00Z', fetchedAt: '2026-09-16T18:30:00Z' },
       coverage: { from: '2026-09-17T02:00:00Z', until: '2026-09-17T04:00:00Z' },
