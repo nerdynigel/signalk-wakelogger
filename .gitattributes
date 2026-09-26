@@ -1,0 +1,5 @@
+# Shared golden fixtures are asserted byte-for-byte (SHA-256) across both
+# repositories. Never apply line-ending conversion on checkout, or the Windows
+# working tree would differ from the Linux/committed bytes and the SHA tests
+# would fail.
+test/fixtures/*.json text eol=lf
