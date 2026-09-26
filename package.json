@@ -54,6 +54,7 @@
     "test:integration": "vitest run test/integration",
     "test:broker": "vitest run test/integration/mqtt-broker.test.ts",
     "test:docker": "node scripts/test-signalk-docker.mjs",
+    "test:broker:e2e": "node scripts/test-broker-e2e.mjs",
     "test:watch": "vitest",
     "lint": "eslint src test scripts --max-warnings=0",
     "check:public": "node scripts/check-public-repo.mjs",

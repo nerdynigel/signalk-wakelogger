@@ -66,6 +66,7 @@ export type RecordingAcknowledgement = Pick<RecordingManifest, 'id' | 'lastSeque
 
 export interface ApplicationAck {
   recordingAcks?: RecordingAcknowledgement[]
+  racePlanSnapshotAcks?: Array<{ id: string }>
   v: 1
   deviceId: string
   ackSequence: number

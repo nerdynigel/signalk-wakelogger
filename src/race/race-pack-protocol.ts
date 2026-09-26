@@ -60,7 +60,22 @@ export interface RacePackAck {
   status: RacePackAckStatus
   appliedAt: string
   errorCode: string | null
+  /** Absent/'apply' for a pack application; 'clear' for a cleared pack. */
+  action?: 'apply' | 'clear'
 }
+
+// Retained tombstone published on the manifest topic when a Race Plan is
+// deselected/archived. Monotonic revision; cannot be older than the applied
+// pack and cannot resurrect a newer pack.
+export interface RacePackClear {
+  v: 1
+  action: 'clear'
+  revision: number
+  generatedAt: string
+  reason?: string | null
+}
+
+export type RacePackControl = { kind: 'manifest'; manifest: RacePackManifest } | { kind: 'clear'; clear: RacePackClear }
 
 export interface AppliedRacePack extends RacePackIdentity {
   revision: number
@@ -71,6 +86,8 @@ export interface AppliedRacePack extends RacePackIdentity {
 export interface RacePackStoreLike {
   applied(): AppliedRacePack | null
   apply(entry: { bytes: Buffer; pack: RacePack; manifest: RacePackManifest; appliedAt: number }): Promise<boolean>
+  clear(entry: { clear: RacePackClear; clearedAt: number }): Promise<boolean>
+  clearedRevision(): number | null
 }
 
 export class RacePackProtocolError extends Error {
@@ -120,6 +137,21 @@ export function parseRacePackManifest(payload: Buffer): RacePackManifest {
     chunkCount: Number(value.chunkCount),
     sha256: value.sha256.toLowerCase()
   }
+}
+
+export function parseRacePackClear(payload: Buffer): RacePackClear {
+  const value = readObject(payload, RACE_PACK_LIMITS.maxManifestBytes, 'clear_invalid')
+  if (value.v !== 1 || value.action !== 'clear') throw new RacePackProtocolError('clear_invalid')
+  if (!isSafeRevision(value.revision)) throw new RacePackProtocolError('clear_invalid')
+  if (!isDateString(value.generatedAt)) throw new RacePackProtocolError('clear_invalid')
+  if (value.reason != null && (typeof value.reason !== 'string' || value.reason.length > 120)) throw new RacePackProtocolError('clear_invalid')
+  return { v: 1, action: 'clear', revision: Number(value.revision), generatedAt: value.generatedAt, reason: (value.reason as string | null | undefined) ?? null }
+}
+
+export function parseRacePackControl(payload: Buffer): RacePackControl {
+  let action: unknown
+  try { action = (JSON.parse(payload.toString('utf8')) as { action?: unknown })?.action } catch { action = undefined }
+  return action === 'clear' ? { kind: 'clear', clear: parseRacePackClear(payload) } : { kind: 'manifest', manifest: parseRacePackManifest(payload) }
 }
 
 export function parseRacePackChunk(payload: Buffer): RacePackChunk {
@@ -234,20 +266,63 @@ export class RacePackReceiver {
   }
 
   currentAck(): RacePackAck | null {
-    return this.appliedAck() ?? this.lastRejected ?? null
+    const applied = this.appliedAck()
+    if (applied) return applied
+    const clearedRevision = this.options.store.clearedRevision()
+    if (clearedRevision !== null) return this.clearAck('applied', clearedRevision, null)
+    return this.lastRejected ?? null
   }
 
   lastError(): RacePackAck | undefined { return this.lastRejected }
 
+  private clearAck(status: RacePackAckStatus, revision: number, errorCode: string | null): RacePackAck {
+    return { v: 1, action: 'clear', packId: '', revision, sha256: '', status, appliedAt: new Date(this.now()).toISOString(), errorCode }
+  }
+
+  private rejectClear(clear: RacePackClear, code: string): RacePackAck {
+    const ack = this.clearAck('rejected', clear.revision, code)
+    this.lastRejected = ack
+    return ack
+  }
+
+  private async acceptClear(clear: RacePackClear): Promise<RacePackAck> {
+    const applied = this.options.store.applied()
+    const clearedRevision = this.options.store.clearedRevision()
+    if (applied && clear.revision < applied.revision) return this.rejectClear(clear, 'stale_revision')
+    if (clearedRevision !== null && clear.revision < clearedRevision) return this.rejectClear(clear, 'stale_revision')
+    // Drop any partial packs: retained chunks/manifests must not resurrect the
+    // cleared pack.
+    this.pending.clear()
+    let durable = false
+    try {
+      durable = await this.options.store.clear({ clear, clearedAt: this.now() })
+    } catch {
+      durable = false
+    }
+    if (!durable) {
+      const ack = this.clearAck('rejected', clear.revision, 'clear_apply_failed')
+      this.lastRejected = ack
+      return ack
+    }
+    this.lastRejected = undefined
+    const ack = this.clearAck('applied', clear.revision, null)
+    return ack
+  }
+
   async acceptManifest(payload: Buffer): Promise<RacePackAck | null> {
-    let manifest: RacePackManifest
-    try { manifest = parseRacePackManifest(payload) } catch (error) {
+    let control: RacePackControl
+    try { control = parseRacePackControl(payload) } catch (error) {
       if (error instanceof RacePackProtocolError && error.code === 'manifest_unsupported_version') return this.reject(payload, 'manifest_unsupported_version')
       if (error instanceof RacePackProtocolError && error.code === 'encoding_unsupported') return this.reject(payload, 'encoding_unsupported')
       if (error instanceof RacePackProtocolError && error.code === 'unsupported_rule_set') return this.reject(payload, 'unsupported_rule_set')
+      if (error instanceof RacePackProtocolError && error.code === 'clear_invalid') return this.reject(payload, 'clear_invalid')
       return this.reject(payload, 'manifest_invalid')
     }
+    if (control.kind === 'clear') return this.acceptClear(control.clear)
+    const manifest = control.manifest
     const applied = this.options.store.applied()
+    const clearedRevision = this.options.store.clearedRevision()
+    if (clearedRevision !== null && manifest.revision <= clearedRevision) return this.reject(payload, 'stale_revision')
     if (applied) {
       if (manifest.revision < applied.revision) return this.reject(payload, 'stale_revision')
       if (manifest.revision === applied.revision) {
@@ -280,6 +355,8 @@ export class RacePackReceiver {
     }
     if (chunk.index !== topicIndex) return this.reject(payload, 'chunk_topic_index_mismatch')
     const applied = this.options.store.applied()
+    const clearedRevision = this.options.store.clearedRevision()
+    if (clearedRevision !== null && chunk.revision <= clearedRevision) return this.reject(payload, 'stale_revision')
     if (applied) {
       if (chunk.revision < applied.revision) return this.reject(payload, 'stale_revision')
       if (chunk.revision === applied.revision && chunk.packId !== applied.packId) return this.reject(payload, 'revision_conflict')

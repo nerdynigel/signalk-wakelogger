@@ -37,6 +37,7 @@ export interface OnboardRaceServiceOptions {
   now?: () => number
   cadenceMs?: number
   vessel?: () => VesselPerformance | null
+  trackingSessionId?: () => string | null
   onCalculated?: (snapshot: OnboardPlanSnapshot) => void
 }
 
@@ -131,7 +132,7 @@ export class OnboardRaceService {
       packRevision: pack.revision,
       packSha256: packApplied?.sha256 ?? '',
       ruleSetVersion: pack.ruleSetVersion,
-      tracking: { courseId: course.courseId, racePlanId: course.racePlanId, activeIndex: course.activeIndex, totalPoints: course.totalPoints, reverse: course.reverse },
+      tracking: { trackingSessionId: this.options.trackingSessionId?.() ?? null, courseId: course.courseId, racePlanId: course.racePlanId, activeIndex: course.activeIndex, totalPoints: course.totalPoints, reverse: course.reverse },
       observations: observations.averages,
       position: observations.position ? { latitude: observations.position.latitude, longitude: observations.position.longitude } : null,
       activeLegSequence: plan.activeLegSequence,

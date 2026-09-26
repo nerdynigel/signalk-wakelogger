@@ -11,6 +11,13 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - A downloaded course is only used when its course definition matches the Race Pack, so an edited course can't be planned against an old pack. Reversed courses are not planned rather than being calculated the wrong way round.
 - Wake Logger cloud now calculates the remaining race with exactly the same rules as the onboard planner, so the two agree. Raw instrument samples are aggregated with the same method on both sides, and the Live tracking ON and OFF views show the same plan and sail recommendation.
 
+### Reliable Race Pack and race-plan hand-over
+
+- A removed or archived course now clears the onboard Race Pack durably, so a stale copy can't reappear after a restart or reconnect.
+- Onboard race-plan updates are only removed once Wake Logger confirms it stored them; if the confirmation is missed they are sent again after reconnecting or restarting.
+- Onboard race-plan updates now carry the recording session they came from, so Wake Logger links them to the right outing even when they arrive late.
+- Switching Live tracking off sends one final onboard status and then stops transmitting immediately.
+
 ## [0.2.0-beta.5] - 2026-09-16
 
 ### Live tracking when you want it

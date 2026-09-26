@@ -210,7 +210,9 @@ describe('Race Pack protocol and storage', () => {
     const applied = vi.fn()
     const store = {
       applied: () => (applied.mock.calls.length ? { packId: 'pack-deferred', revision: 1, sha256: 'a'.repeat(64), ruleSetVersion: 'race_plan_dynamic_v1', courseId: 'race', racePlanId: null, courseDefinitionDigest: 'b'.repeat(64), generatedAt: '2026-09-17T01:00:00Z', validFrom: null, validUntil: null, appliedAt: 1 } : null),
-      apply: vi.fn(async () => { await new Promise<void>((resolve) => { release = resolve }); applied(); return true })
+      apply: vi.fn(async () => { await new Promise<void>((resolve) => { release = resolve }); applied(); return true }),
+      clear: vi.fn(async () => true),
+      clearedRevision: () => null
     }
     const receiver = new RacePackReceiver({ store })
     const encoded = encodeFixturePack(makeFixturePack({ packId: 'pack-deferred', revision: 1 }), { chunkCount: 1 })
@@ -249,5 +251,69 @@ describe('Race Pack protocol and storage', () => {
     const second = decodeRacePack(encoded.manifest as unknown as RacePackManifest, chunks)
     expect(first.bytes.equals(second.bytes)).toBe(true)
     expect(first.pack).toEqual(second.pack)
+  })
+})
+
+function clearPayload(revision: number, reason = 'deselected'): Buffer {
+  return Buffer.from(JSON.stringify({ v: 1, action: 'clear', revision, generatedAt: new Date().toISOString(), reason }))
+}
+
+describe('Race Pack clear / tombstone', () => {
+  it('clears durably, ACKs the clear and preserves the cleared state across restart', async () => {
+    const directory = await temporaryDirectory('race-pack-clear-')
+    const store = new RacePackStore(directory)
+    const receiver = new RacePackReceiver({ store })
+    await applyEncoded(receiver, encodeFixturePack(makeFixturePack({ revision: 4 }), { chunkCount: 1 }))
+    expect(store.applied()?.revision).toBe(4)
+
+    const ack = await receiver.acceptManifest(clearPayload(4))
+    expect(ack).toMatchObject({ action: 'clear', revision: 4, status: 'applied' })
+    expect(store.applied()).toBeNull()
+    expect(store.current()).toBeNull()
+    expect(store.clearedRevision()).toBe(4)
+
+    const reopened = new RacePackStore(directory)
+    await reopened.open()
+    expect(reopened.applied()).toBeNull()
+    expect(reopened.clearedRevision()).toBe(4)
+    expect(new RacePackReceiver({ store: reopened }).currentAck()).toMatchObject({ action: 'clear', revision: 4, status: 'applied' })
+  })
+
+  it('rejects a clear older than the applied pack and keeps the pack', async () => {
+    const directory = await temporaryDirectory('race-pack-clear-stale-')
+    const store = new RacePackStore(directory)
+    const receiver = new RacePackReceiver({ store })
+    await applyEncoded(receiver, encodeFixturePack(makeFixturePack({ revision: 4 }), { chunkCount: 1 }))
+    const ack = await receiver.acceptManifest(clearPayload(3))
+    expect(ack).toMatchObject({ status: 'rejected', errorCode: 'stale_revision' })
+    expect(store.applied()?.revision).toBe(4)
+    expect(store.clearedRevision()).toBeNull()
+  })
+
+  it('does not resurrect a cleared pack from stale retained chunks or manifests', async () => {
+    const directory = await temporaryDirectory('race-pack-clear-resurrect-')
+    const store = new RacePackStore(directory)
+    const receiver = new RacePackReceiver({ store })
+    const encoded = encodeFixturePack(makeFixturePack({ revision: 4 }), { chunkCount: 1 })
+    await applyEncoded(receiver, encoded)
+    expect((await receiver.acceptManifest(clearPayload(4)))?.status).toBe('applied')
+
+    // Retained chunks/manifest for the cleared revision cannot resurrect it.
+    expect(await receiver.acceptChunk(encoded.chunkPayloads[0]!, 0)).toMatchObject({ status: 'rejected', errorCode: 'stale_revision' })
+    expect(await receiver.acceptManifest(encoded.manifestPayload)).toMatchObject({ status: 'rejected', errorCode: 'stale_revision' })
+    expect(store.applied()).toBeNull()
+  })
+
+  it('applies a newer pack after a clear', async () => {
+    const directory = await temporaryDirectory('race-pack-clear-newpack-')
+    const store = new RacePackStore(directory)
+    const receiver = new RacePackReceiver({ store })
+    await applyEncoded(receiver, encodeFixturePack(makeFixturePack({ revision: 4 }), { chunkCount: 1 }))
+    await receiver.acceptManifest(clearPayload(4))
+    const newer = encodeFixturePack(makeFixturePack({ revision: 5, packId: 'pack-42-5' }), { chunkCount: 1, packId: 'pack-42-5', revision: 5 })
+    const ack = await applyEncoded(receiver, newer)
+    expect(ack).toMatchObject({ status: 'applied', revision: 5 })
+    expect(store.applied()?.revision).toBe(5)
+    expect(store.clearedRevision()).toBeNull()
   })
 })

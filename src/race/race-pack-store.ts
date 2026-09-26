@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { parseRacePack, racePackIdentity, type RacePack } from './pack'
-import type { AppliedRacePack, RacePackManifest, RacePackStoreLike } from './race-pack-protocol'
+import type { AppliedRacePack, RacePackClear, RacePackManifest, RacePackStoreLike } from './race-pack-protocol'
 
 interface StoredRacePackMeta {
   version: 1
+  cleared?: false
   file: string
   packId: string | null
   revision: number
@@ -19,9 +20,20 @@ interface StoredRacePackMeta {
   appliedAt: number
 }
 
+interface StoredClearMeta {
+  version: 1
+  cleared: true
+  revision: number
+  clearReason: string | null
+  clearedAt: number
+}
+
+type StoredMeta = StoredRacePackMeta | StoredClearMeta
+
 export interface RacePackStoreStatus {
   applied: AppliedRacePack | null
   storedAt: number | null
+  clearedRevision: number | null
 }
 
 function safeFileName(packId: string | null, revision: number): string {
@@ -32,18 +44,29 @@ function safeFileName(packId: string | null, revision: number): string {
 // Persists validated packs under the plugin data directory. Packs are written
 // to immutable, versioned files and only then referenced by an atomically
 // replaced metadata document, so a crash can never replace a known-good pack
-// with an incomplete one.
+// with an incomplete one. A retained clear/tombstone replaces the metadata with
+// a monotonically-revisioned cleared state and removes the pack file, so a
+// restart or a stale retained chunk cannot resurrect a cleared pack.
 export class RacePackStore implements RacePackStoreLike {
   private meta?: StoredRacePackMeta
   private pack?: RacePack
+  private cleared?: { revision: number; reason: string | null; at: number }
   private operation: Promise<void> = Promise.resolve()
 
   constructor(private readonly directory: string) {}
 
   async open(): Promise<void> {
     try {
-      const raw = JSON.parse(await fs.readFile(this.metaPath(), 'utf8')) as StoredRacePackMeta
-      if (raw.version !== 1 || typeof raw.file !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(raw.file)) throw new Error('race_pack_meta_invalid')
+      const raw = JSON.parse(await fs.readFile(this.metaPath(), 'utf8')) as StoredMeta
+      if (raw.version !== 1) throw new Error('race_pack_meta_invalid')
+      if (raw.cleared === true) {
+        if (!Number.isSafeInteger(raw.revision) || raw.revision < 1) throw new Error('race_pack_meta_invalid')
+        this.cleared = { revision: raw.revision, reason: raw.clearReason ?? null, at: raw.clearedAt ?? 0 }
+        this.meta = undefined
+        this.pack = undefined
+        return
+      }
+      if (typeof raw.file !== 'string' || !/^[A-Za-z0-9._-]{1,200}$/.test(raw.file)) throw new Error('race_pack_meta_invalid')
       if (!Number.isSafeInteger(raw.revision) || raw.revision < 1) throw new Error('race_pack_meta_invalid')
       const bytes = await fs.readFile(path.join(this.directory, raw.file))
       const digest = createHash('sha256').update(bytes).digest('hex')
@@ -53,6 +76,7 @@ export class RacePackStore implements RacePackStoreLike {
       if (identity.revision !== raw.revision) throw new Error('race_pack_identity_invalid')
       this.meta = raw
       this.pack = pack
+      this.cleared = undefined
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
       // A corrupt stored pack must not crash Signal K. Keep the files for
@@ -70,12 +94,15 @@ export class RacePackStore implements RacePackStoreLike {
 
   current(): RacePack | null { return this.pack ?? null }
 
+  clearedRevision(): number | null { return this.cleared?.revision ?? null }
+
   status(): RacePackStoreStatus {
-    return { applied: this.applied(), storedAt: this.meta?.appliedAt ?? null }
+    return { applied: this.applied(), storedAt: this.meta?.appliedAt ?? null, clearedRevision: this.cleared?.revision ?? null }
   }
 
   apply(entry: { bytes: Buffer; pack: RacePack; manifest: RacePackManifest; appliedAt: number }): Promise<boolean> {
     const operation = this.operation.then(async () => {
+      if (this.cleared && entry.manifest.revision <= this.cleared.revision) return false
       const currentMeta = this.meta
       if (currentMeta) {
         // Revision is the monotonic pack version. A lower revision is stale and
@@ -110,7 +137,32 @@ export class RacePackStore implements RacePackStoreLike {
       const previousFile = currentMeta?.file
       this.meta = next
       this.pack = entry.pack
+      this.cleared = undefined
       if (previousFile && previousFile !== file) await fs.rm(path.join(this.directory, previousFile), { force: true }).catch(() => undefined)
+      return true
+    })
+    this.operation = operation.then(() => undefined, () => undefined)
+    return operation
+  }
+
+  clear(entry: { clear: RacePackClear; clearedAt: number }): Promise<boolean> {
+    const operation = this.operation.then(async () => {
+      if (this.meta && entry.clear.revision < this.meta.revision) return false
+      if (this.cleared && entry.clear.revision < this.cleared.revision) return false
+      const next: StoredClearMeta = {
+        version: 1,
+        cleared: true,
+        revision: entry.clear.revision,
+        clearReason: entry.clear.reason ?? null,
+        clearedAt: entry.clearedAt
+      }
+      await fs.mkdir(this.directory, { recursive: true, mode: 0o700 })
+      await this.writeMeta(next)
+      const previousFile = this.meta?.file
+      this.meta = undefined
+      this.pack = undefined
+      this.cleared = { revision: entry.clear.revision, reason: entry.clear.reason ?? null, at: entry.clearedAt }
+      if (previousFile) await fs.rm(path.join(this.directory, previousFile), { force: true }).catch(() => undefined)
       return true
     })
     this.operation = operation.then(() => undefined, () => undefined)
@@ -121,7 +173,7 @@ export class RacePackStore implements RacePackStoreLike {
 
   private metaPath(): string { return path.join(this.directory, 'current.json') }
 
-  private async writeMeta(meta: StoredRacePackMeta): Promise<void> {
+  private async writeMeta(meta: StoredMeta): Promise<void> {
     await this.writeFileAtomic(this.metaPath(), Buffer.from(`${JSON.stringify(meta)}\n`, 'utf8'))
   }
 

@@ -63,6 +63,7 @@ async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 
     observations,
     course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: options.reverse ?? false }),
     racing: () => options.racing ?? true,
+    trackingSessionId: () => 'sess-1',
     now: () => clock.value,
     cadenceMs: options.cadenceMs
   })
@@ -98,7 +99,7 @@ describe('onboard calculation authority', () => {
     expect(latest).not.toBeNull()
     expect(latest).toMatchObject({ source: 'onboard', kind: 'race_plan_snapshot', packRevision: 4, ruleSetVersion: 'race_plan_dynamic_v1' })
     expect(latest!.plan.legs.length).toBeGreaterThan(0)
-    expect(latest!.tracking).toMatchObject({ courseId: 'race-42', activeIndex: 1 })
+    expect(latest!.tracking).toMatchObject({ courseId: 'race-42', activeIndex: 1, trackingSessionId: 'sess-1' })
     service.close()
   })
 

@@ -43,4 +43,50 @@ describe('onboard snapshot store', () => {
     expect(reopened.latest()?.id).toBe('c')
     expect(reopened.pending().map((entry) => entry.sequence)).toEqual([3])
   })
+
+  it('keeps published snapshots durable until application ACK', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'onboard-store-'))
+    directories.push(directory)
+    const target = path.join(directory, 'state.json')
+    const store = new OnboardSnapshotStore(target)
+    await store.open()
+    await store.append(snapshot('a'), 1)
+    await store.append(snapshot('b'), 2)
+    await store.markPublished([1, 2], 10)
+    expect(store.pending()).toEqual([])
+    expect(store.unacknowledged().map((entry) => entry.sequence)).toEqual([1, 2])
+    expect(store.unacknowledged()[0]).toMatchObject({ state: 'published', attempts: 1, lastAttemptAt: 10, firstPublishedAt: 10 })
+    await store.close()
+
+    // Restart before ACK: unacknowledged snapshots survive and retry.
+    const reopened = new OnboardSnapshotStore(target)
+    await reopened.open()
+    expect(reopened.unacknowledged().map((entry) => entry.sequence)).toEqual([1, 2])
+
+    await reopened.markPublished([1, 2], 20)
+    expect(reopened.unacknowledged()[0]).toMatchObject({ state: 'published', attempts: 2, lastAttemptAt: 20 })
+
+    // ACK by durable snapshot id; duplicate ACK is harmless.
+    expect(await reopened.acknowledge(['a'], 30)).toBe(1)
+    expect(await reopened.acknowledge(['a'], 31)).toBe(0)
+    expect(reopened.unacknowledged().map((entry) => entry.sequence)).toEqual([2])
+    await reopened.close()
+
+    const afterAck = new OnboardSnapshotStore(target)
+    await afterAck.open()
+    expect(afterAck.unacknowledged().map((entry) => entry.sequence)).toEqual([2])
+    expect(afterAck.latest()?.id).toBe('b')
+  })
+
+  it('migrates a v1 checkpoint into durable published state', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'onboard-store-'))
+    directories.push(directory)
+    const target = path.join(directory, 'state.json')
+    const value = snapshot('legacy')
+    await fs.writeFile(target, JSON.stringify({ version: 1, nextSequence: 2, latest: { sequence: 1, at: 5, snapshot: value, published: true }, events: [{ sequence: 1, at: 5, snapshot: value, published: true }] }))
+    const store = new OnboardSnapshotStore(target)
+    await store.open()
+    expect(store.pending()).toEqual([])
+    expect(store.unacknowledged().map((entry) => entry.sequence)).toEqual([1])
+  })
 })

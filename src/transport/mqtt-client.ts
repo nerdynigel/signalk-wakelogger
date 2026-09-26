@@ -20,6 +20,7 @@ interface TransportOptions {
   onRacePackChunk?: (payload: Buffer, topicIndex: number) => Promise<RacePackAck | null>
   getRacePackAck?: () => RacePackAck | null
   onRecordingAcks?: (acks: RecordingAcknowledgement[]) => Promise<void>
+  onRacePlanSnapshotAcks?: (ids: string[]) => Promise<void>
   onProfile?: (profile: TelemetryProfile) => Promise<void>
   debug?: (message: string) => void
   random?: () => number
@@ -125,6 +126,20 @@ export class WakeLoggerTransport {
   async publishRacePackAck(ack: RacePackAck): Promise<void> {
     if (!this.client?.connected || this.stopped) return
     await this.publish(this.client, this.topics.racePackAck, JSON.stringify(ack), { qos: 1, retain: true })
+  }
+
+  // Best-effort bounded final retained status before local-only shutdown.
+  // Transmission is blocked immediately (no subsequent sends) and no retry is
+  // attempted; a failure or timeout cannot prevent the fail-closed shutdown.
+  async publishFinalLocalOnlyStatus(timeoutMs = 1500): Promise<void> {
+    const client = this.client
+    this.stopped = true
+    if (!client?.connected) return
+    const payload = JSON.stringify({ v: 1, state: 'local_only', at: this.now(), uploadMode: 'local_only', calculationAuthority: 'onboard' })
+    await Promise.race([
+      publish(client, this.topics.status, payload, { qos: 1, retain: true }).catch(() => undefined),
+      new Promise<void>((resolve) => { const timer = setTimeout(resolve, timeoutMs); timer.unref?.() })
+    ])
   }
 
   private async publishRacePackAcknowledgement(): Promise<void> {
@@ -308,6 +323,10 @@ export class WakeLoggerTransport {
       const committed = await this.outbox.stats()
       if (Array.isArray(ack.recordingAcks) && ack.recordingAcks.length <= 25) {
         await this.options.onRecordingAcks?.(ack.recordingAcks.filter((entry) => entry && typeof entry.id === 'string' && Number.isSafeInteger(entry.lastSequence) && ['complete', 'cancelled', 'interrupted'].includes(entry.state)))
+      }
+      if (Array.isArray(ack.racePlanSnapshotAcks) && ack.racePlanSnapshotAcks.length <= 25) {
+        const ids = ack.racePlanSnapshotAcks.filter((entry) => entry && typeof entry.id === 'string' && entry.id.length > 0 && entry.id.length <= 200).map((entry) => entry.id)
+        if (ids.length) await this.options.onRacePlanSnapshotAcks?.(ids)
       }
       this.backlogMessageCount = committed.messageCount
       this.lastAcknowledgedAt = this.now()

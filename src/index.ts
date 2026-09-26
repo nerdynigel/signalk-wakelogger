@@ -376,14 +376,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   // Onboard snapshots are historical evidence: they only leave the vessel once
-  // Live tracking is restored. In local-only mode the transport is inert so no
-  // Wake Logger network traffic is produced, and the bounded queue is retained.
+  // Live tracking is restored. A snapshot stays durable until Wake Logger
+  // application-ACKs it; published-but-unacknowledged snapshots are retried.
   async function flushOnboardSnapshots(): Promise<void> {
     if (!onboardSnapshots || !transport || activeUploadMode !== 'automatic') return
-    const pending = onboardSnapshots.pending().slice(0, 5)
-    if (!pending.length) return
+    const queue = [...onboardSnapshots.pending(), ...onboardSnapshots.unacknowledged()].slice(0, 5)
+    if (!queue.length) return
     const published: number[] = []
-    for (const event of pending) {
+    for (const event of queue) {
       try { if (!await transport.publishRacePlanSnapshot(event.snapshot)) break }
       catch { break }
       published.push(event.sequence)
@@ -531,6 +531,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       observations,
       course: () => onboardCourse,
       racing: racingUnderway,
+      trackingSessionId: () => tripState?.currentState().trackingSessionId ?? null,
       onCalculated: publishOnboardSnapshot
     })
     const normaliser = new TelemetryNormaliser()
@@ -593,6 +594,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       onRecordingAcks: async (acks) => {
         sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
         await sampleOperation
+      },
+      onRacePlanSnapshotAcks: async (ids) => {
+        await onboardSnapshots?.acknowledge(ids)
       },
       onMode: (mode) => { if (transport === instance) sampler.updateMode(activeUploadMode === 'local_only' ? 'NORMAL' : mode) },
       onProfile: async (replacement) => {
@@ -720,7 +724,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     activeUploadMode = 'local_only'
     pairingAbortController?.abort()
     associationAbortController?.abort()
-    const stopping = transport?.stop(false)
+    // Send one bounded retained final status before shutting transmission down.
+    // Its failure cannot prevent the fail-closed local-only transition.
+    const stopping = (async () => {
+      await transport?.publishFinalLocalOnlyStatus().catch(() => undefined)
+      await transport?.stop(false)
+    })()
     currentSampler?.updateMode('NORMAL')
     connectionState = 'recording_locally'
     void onboard?.setAuthority('local_only')

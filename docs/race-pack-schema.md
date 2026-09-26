@@ -268,7 +268,36 @@ not retained) only when `uploadMode === "automatic"`. The transport adds
 }
 ```
 
-Idempotency: `id` is stable for a given `(packId, revision, generatedAt)` and
-the durable queue marks each snapshot published exactly once. Ordering follows
-the generation sequence. At most five snapshots are drained per status cycle,
-and nothing is published while authority is `onboard`/`local_only`.
+Idempotency: `id` is stable for a given `(packId, revision, generatedAt)`. Each
+snapshot is durably tracked as `pending` -> `published` (published but not
+application-ACKed) -> `acknowledged`; it is only removed once Wake Logger
+application-ACKs it on the device `ack` topic via
+`racePlanSnapshotAcks: [{ "id": "..." }]`. Published-but-unacknowledged
+snapshots are retried after reconnect/restart, duplicate ACKs are harmless, and
+the bounded queue evicts acknowledged snapshots older than 24 h first, then the
+oldest. Nothing is published while authority is `onboard`/`local_only`. The
+snapshot `tracking.trackingSessionId` is the local recording session that
+generated the calculation; the cloud associates it with its own voyage rather
+than inferring from the trip active at upload time.
+
+## Clear / tombstone
+
+A retained clear is published on the manifest topic and handled without
+changing the wire framing:
+
+```json
+{ "v": 1, "action": "clear", "revision": 12, "generatedAt": "...", "reason": "deselected" }
+```
+
+The plugin clears durably, ACKs `{ "v": 1, "action": "clear", "revision": 12,
+"status": "applied", "appliedAt": "..." }`, and re-advertises it on reconnect.
+A stale clear cannot remove a newer pack, and stale retained chunks/manifests
+cannot resurrect a cleared pack.
+
+## Mode transition
+
+When the user switches `automatic -> local_only`, the plugin sends one bounded
+retained status (`state: "local_only"`, `uploadMode: "local_only"`,
+`calculationAuthority: "onboard"`) before transport shutdown, then blocks
+transmission immediately. A failure or timeout of that final status cannot
+prevent the fail-closed local-only transition, and no retry is attempted.

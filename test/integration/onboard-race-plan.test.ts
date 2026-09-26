@@ -232,4 +232,37 @@ describe('onboard race plan integration', () => {
       expect(JSON.parse(event.payload)).toMatchObject({ kind: 'race_plan_snapshot', source: 'onboard', packRevision: 4 })
     } finally { await f.stop() }
   })
+
+  it('publishes a final retained local_only status before shutting down and then stays silent', async () => {
+    const clients: FakeMqttClient[] = []
+    vi.spyOn(mqtt, 'connect').mockImplementation(() => {
+      const client = new FakeMqttClient()
+      clients.push(client)
+      return client as unknown as ReturnType<typeof mqtt.connect>
+    })
+    vi.stubGlobal('fetch', vi.fn())
+    const f = await fixture()
+    try {
+      f.start({ uploadMode: 'automatic', samplePeriodMs: 250 })
+      await vi.waitFor(() => expect(clients).toHaveLength(1), { timeout: 10000 })
+      const client = clients[0]!
+      client.connected = true
+      client.emit('connect')
+      await vi.waitFor(() => {
+        expect(client.publications.some((entry) => entry.topic.endsWith('/status') && entry.payload.includes('online'))).toBe(true)
+      }, { timeout: 10000 })
+
+      const switched = await f.request('POST', '/tracking', { uploadMode: 'local_only' })
+      expect(switched.code).toBe(200)
+      const localOnly = client.publications.find((entry) => entry.topic.endsWith('/status') && entry.payload.includes('local_only'))
+      expect(localOnly).toBeTruthy()
+      expect(JSON.parse(localOnly!.payload)).toMatchObject({ state: 'local_only', uploadMode: 'local_only', calculationAuthority: 'onboard' })
+      expect(localOnly!.options).toMatchObject({ qos: 1, retain: true })
+
+      // Fail-closed: no further Wake Logger traffic after the transition.
+      const count = client.publications.length
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      expect(client.publications.length).toBe(count)
+    } finally { await f.stop() }
+  })
 })
