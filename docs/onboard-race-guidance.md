@@ -189,10 +189,19 @@ fabricated):
   `environment.wind.directionApparent` as fallback inputs
 
 Values older than 30 seconds are treated as stale. A five-minute rolling window
-keeps circular averages for angles and scalar averages for speeds. Apparent wind
-is converted to true wind with the same vector convention as the ported sail
-physics and the cloud; derivation is skipped with clean nulls when there is not
-enough credible data.
+runs **one** aggregation algorithm shared byte-for-byte with the cloud
+(`src/race/observation-window.ts` and
+`api/app/services/race_observation_aggregation.py`):
+
+- scalar speeds (TWS/SOG/STW/heel): arithmetic mean over qualifying samples;
+- directions (TWD/heading/COG): circular mean;
+- gust: maximum of `(gust, else TWS)` over qualifying samples;
+- true wind: direct true wind per sample when present, otherwise derived from
+  that sample's own apparent wind and its own motion/heading sample (never by
+  averaging apparent wind and motion separately);
+- apparent-to-true reference: course-over-ground plus speed-over-ground,
+  falling back to heading plus speed-through-water only when ground motion is
+  absent.
 
 ### Readiness contract (shared with the cloud)
 
@@ -209,9 +218,10 @@ minutes, not merely a burst of samples:
 Three fresh samples, or 30 samples compressed into 30 seconds, are **not** ready.
 Until ready the current leg uses its downloaded forecast (`source=forecast`) and
 warns `Fresh onboard observations not yet available`; afterwards it uses
-`source=observed`. The shared observation fixture
-(`test/fixtures/observation_golden.json`, byte-identical with the cloud) and the
-cloud `_observed_wind` ingestion apply the same contract.
+`source=observed`. The shared fixtures (`test/fixtures/observation_golden.json`
+and the raw `observation_raw_golden.json` / `.expected.json`, byte-identical
+with the cloud) and the cloud `_observed_wind` ingestion apply the same
+algorithm and thresholds.
 
 ## Scheduler and forecast lookup
 
@@ -347,17 +357,25 @@ The ported physics and selection functions are checked against frozen cloud
 outputs (`test/fixtures/sail-physics.json`, 216 cases) and the planner is
 deterministic for identical inputs (`test/unit/onboard-plan.test.ts`).
 
-Cross-repo deterministic parity for `race_plan_dynamic_v1` is now **proven**: the
-plugin `src/race/dynamic.ts` and the cloud
-`api/app/services/race_plan_dynamic.py` are mirrors, and both consume the
-byte-identical shared golden scenario
-(`test/fixtures/dynamic_golden.json` with
-`test/fixtures/dynamic_golden.expected.json`). The harness
-`wakelogger/scripts/race-plan-parity.py` runs both engines on the scenario and
-compares every field within narrow tolerances. The cloud live recalculation
-overlays the shared engine result from the prepared Race Pack, so cloud and
-onboard publish the same authoritative remaining timing. The cloud's richer
-display preview remains `race_plan_preview_v1`.
+Cross-repo deterministic parity for `race_plan_dynamic_v1` is now **proven** end
+to end:
+
+- `src/race/observation-window.ts` mirrors the cloud
+  `race_observation_aggregation.py`; the shared raw fixture
+  `test/fixtures/observation_raw_golden.json` produces identical TWS/TWD/gust,
+  counts, span and freshness on both.
+- `src/race/dynamic.ts` mirrors the cloud `race_plan_dynamic.py`; the shared
+  golden scenario (`test/fixtures/dynamic_golden.json` with
+  `dynamic_golden.expected.json`) produces identical plans.
+- The cloud live recalculation maps the dynamic result into the existing Race
+  Plan leg schema, so Live tracking ON and Live tracking OFF present the same
+  user-visible plan and sail recommendation.
+
+The harness `wakelogger/scripts/race-plan-parity.py` runs
+raw observations -> aggregation -> dynamic engine -> final plan across both
+repositories and reports an **Observation parity**, **Dynamic plan parity** and
+**Live ON vs Live OFF equivalence** result, each within narrow tolerances. The
+cloud's richer display preview remains `race_plan_preview_v1`.
 
 ## Racing constraint
 

@@ -8,7 +8,7 @@ import { computeDynamicPlan } from '../../src/race/dynamic'
 // api/tests/fixtures/race_pack/dynamic_golden.json. The cloud test suite asserts
 // the same SHA and runs the same scenario through its Python engine.
 export const DYNAMIC_GOLDEN_FIXTURE_SHA256 = '7c6ad12a67dd3f06d59448961c53dfbb45ac1f2abed6809b057830f363b436ad'
-export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = '3dcff1c3ae63d16ff584c9e3483a377322a1f83b42b14d36de044d7c352b5252'
+export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = '9fa4f341b4c81bca7c9f5ba1780044ddcb38b2b96eec0746c6a264dd48d09dd0'
 
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures')
 const fixture = JSON.parse(readFileSync(path.join(FIXTURE_DIR, 'dynamic_golden.json'), 'utf8'))

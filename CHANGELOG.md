@@ -9,7 +9,7 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - The onboard planner now starts the current leg from your boat's actual position, uses the real current in its speed and arrival estimates, and no longer assumes a fixed six-knot midpoint speed. Remaining distance and arrival times reflect where you actually are.
 - Onboard wind is only used for the current leg once a genuine five-minute observation window is ready (30 good samples across at least four minutes, newest within 30 seconds). Until then the downloaded forecast is used, with a clear note.
 - A downloaded course is only used when its course definition matches the Race Pack, so an edited course can't be planned against an old pack. Reversed courses are not planned rather than being calculated the wrong way round.
-- Wake Logger cloud now calculates the remaining race with exactly the same rules as the onboard planner, so the two agree.
+- Wake Logger cloud now calculates the remaining race with exactly the same rules as the onboard planner, so the two agree. Raw instrument samples are aggregated with the same method on both sides, and the Live tracking ON and OFF views show the same plan and sail recommendation.
 
 ## [0.2.0-beta.5] - 2026-09-16
 

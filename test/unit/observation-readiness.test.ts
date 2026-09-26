@@ -48,7 +48,7 @@ describe('shared observation readiness contract', () => {
     expect(result.readiness.coveredSeconds).toBeLessThan(240)
     // A synthetic window with enough samples but a short span fails on span.
     const synthetic = observationReadiness({
-      twsKnots: 14, twdDeg: 45, headingDeg: 10, cogDeg: 10, sogKnots: 6, stwKnots: null, heelDeg: null,
+      twsKnots: 14, twdDeg: 45, gustKnots: 17, headingDeg: 10, cogDeg: 10, sogKnots: 6, stwKnots: null, heelDeg: null,
       awsKnots: null, awaDeg: null, sampleCount: 30, windowSeconds: 300, windSource: 'true',
       qualifyingSampleCount: 30, coveredSeconds: 30, latestSampleAgeSeconds: 0
     }, { latitude: -27.4, longitude: 153.17 })

@@ -36,7 +36,7 @@ describe('shared observation golden', () => {
     expect(FIXTURE.readiness.maxAgeSeconds).toBe(30)
     for (const item of FIXTURE.readiness.cases) {
       const averages: SailingAverages = {
-        twsKnots: item.wind ? 14 : null, twdDeg: item.wind ? 45 : null,
+        twsKnots: item.wind ? 14 : null, twdDeg: item.wind ? 45 : null, gustKnots: item.wind ? 17 : null,
         headingDeg: 10, cogDeg: 10, sogKnots: 6, stwKnots: null, heelDeg: null, awsKnots: null, awaDeg: null,
         sampleCount: item.qualifyingSampleCount, windowSeconds: 300, windSource: item.wind ? 'true' : null,
         qualifyingSampleCount: item.qualifyingSampleCount, coveredSeconds: item.coveredSeconds, latestSampleAgeSeconds: item.latestSampleAgeSeconds

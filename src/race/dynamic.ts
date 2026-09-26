@@ -115,6 +115,12 @@ export interface DynamicPlanLeg {
   legDurationSeconds: number | null
   midpointEta: string | null
   selectedForecastSampleTime: string | null
+  apparentWindFromDeg: number | null
+  awaDeg: number | null
+  awsKnots: number | null
+  apparentGustSpeedKnots: number | null
+  apparentGustAngleDeg: number | null
+  candidateSails: Array<Record<string, unknown>>
   conditions: DynamicPlanConditions
   plan: Record<string, unknown> | null
 }
@@ -302,10 +308,21 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
     for (const warning of speed.warnings) warnings.push(`Leg ${index}: ${warning}`)
 
     let plan: Record<string, unknown> | null = null
+    let apparentWindFromDeg: number | null = null
+    let awaDeg: number | null = null
+    let awsKnots: number | null = null
+    let apparentGustSpeedKnots: number | null = null
+    let apparentGustAngleDeg: number | null = null
+    let candidateSails: Array<Record<string, unknown>> = []
     if (pointOfSail !== null && conditions.twsKnots !== null && conditions.twdDeg !== null) {
       const gust = conditions.gustKnots ?? conditions.twsKnots
       const apparent = apparentWind({ vesselCourseDeg: bearing, vesselSpeedKnots: speed.speed ?? 0, trueWindFromDeg: conditions.twdDeg, trueWindSpeedKnots: conditions.twsKnots })
       const apparentGust = apparentWind({ vesselCourseDeg: bearing, vesselSpeedKnots: speed.speed ?? 0, trueWindFromDeg: conditions.twdDeg, trueWindSpeedKnots: gust })
+      apparentWindFromDeg = apparent.apparentWindFromDeg
+      awaDeg = apparent.awaDeg
+      awsKnots = apparent.awsKnots
+      apparentGustSpeedKnots = apparentGust.awsKnots
+      apparentGustAngleDeg = apparentGust.awaDeg
       const [candidates] = recommendSails(input.sails, {
         point_of_sail: pointOfSail,
         twa_deg: twa ?? 0,
@@ -316,6 +333,7 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
         apparent_gust_knots: apparentGust.awsKnots,
         available_crew_count: availableCrewCount
       })
+      candidateSails = candidates as unknown as Array<Record<string, unknown>>
       const fixedHeadsailCandidate = raceHeadsailId !== null ? candidates.find((candidate) => candidate.sail_id === raceHeadsailId) ?? null : null
       plan = buildRecommendedSailPlan({
         candidates,
@@ -349,6 +367,12 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
       legDurationSeconds: Math.round(durationHours * 3600),
       midpointEta: new Date(midpoint).toISOString(),
       selectedForecastSampleTime: conditions.sampleTime,
+      apparentWindFromDeg,
+      awaDeg,
+      awsKnots,
+      apparentGustSpeedKnots,
+      apparentGustAngleDeg,
+      candidateSails,
       conditions,
       plan
     })

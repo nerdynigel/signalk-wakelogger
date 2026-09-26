@@ -14,7 +14,7 @@ function snapshot(id: string): OnboardPlanSnapshot {
     v: 1, kind: 'race_plan_snapshot', id, generatedAt: Date.parse('2026-09-17T02:00:00Z'), source: 'onboard',
     packId: 'pack-42-1', packRevision: 4, packSha256: 'a'.repeat(64), ruleSetVersion: 'race_plan_dynamic_v1',
     tracking: { courseId: 'race-42', racePlanId: 42, activeIndex: 1, totalPoints: 3, reverse: false },
-    observations: { twsKnots: 12, twdDeg: 45, headingDeg: 10, cogDeg: 10, sogKnots: 6, stwKnots: null, heelDeg: null, awsKnots: null, awaDeg: null, sampleCount: 1, windowSeconds: 300, windSource: 'true', qualifyingSampleCount: 1, coveredSeconds: 0, latestSampleAgeSeconds: 0 },
+    observations: { twsKnots: 12, twdDeg: 45, gustKnots: 15, headingDeg: 10, cogDeg: 10, sogKnots: 6, stwKnots: null, heelDeg: null, awsKnots: null, awaDeg: null, sampleCount: 1, windowSeconds: 300, windSource: 'true', qualifyingSampleCount: 1, coveredSeconds: 0, latestSampleAgeSeconds: 0 },
     position: { latitude: -27.4, longitude: 153.17 }, activeLegSequence: 1, completedLegCount: 0,
     estimatedFinishAt: null, remainingDurationSeconds: null, legCount: 1,
     forecastCoverage: 'complete', warning: null,

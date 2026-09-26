@@ -8,7 +8,100 @@
   "generatedAt": "2026-06-14T01:30:00.000Z",
   "legs": [
     {
+      "apparentGustAngleDeg": 3.2,
+      "apparentGustSpeedKnots": 21.63,
+      "apparentWindFromDeg": 357,
+      "awaDeg": 3,
+      "awsKnots": 17.83,
       "bearingDeg": 0,
+      "candidateSails": [
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 68,
+          "reasons": [
+            "TWA is within range.",
+            "TWS is within range.",
+            "Mainsail type is useful across most points of sail.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail",
+          "score": 68,
+          "warnings": [
+            "AWA range is not set.",
+            "AWS range is not set."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 28,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within range.",
+            "Sail type suits upwind and reaching work.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 4,
+          "sail_name": "No. 1 jib",
+          "sail_type": "No. 1 jib",
+          "score": 28,
+          "warnings": [
+            "AWA is 17.0 below the sail range.",
+            "TWA is 26.0 below the sail range.",
+            "Estimated apparent gust is close to sail limit."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 1.8,
+          "reasons": [
+            "AWS is within range.",
+            "Sail type suits upwind and reaching work.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib",
+          "score": 1.8,
+          "warnings": [
+            "AWA is 15.0 below the sail range.",
+            "TWA is 24.0 below the sail range.",
+            "TWS is 1.6 below the sail range."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 3,
+          "performance_score": -38,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within range.",
+            "Crew requirement is 3."
+          ],
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric",
+          "score": -38,
+          "warnings": [
+            "AWA is 57.0 below the sail range.",
+            "TWA is 71.0 below the sail range.",
+            "Recommendation uses generic sail type assumptions.",
+            "Estimated apparent gust is close to sail limit."
+          ]
+        }
+      ],
       "conditions": {
         "currentDirectionDeg": 180,
         "currentVelocityKn": 1.4,
@@ -108,7 +201,100 @@
       "windSide": "port"
     },
     {
+      "apparentGustAngleDeg": 66.5,
+      "apparentGustSpeedKnots": 20.66,
+      "apparentWindFromDeg": 29.4,
+      "awaDeg": 60.6,
+      "awsKnots": 16.03,
       "bearingDeg": 90,
+      "candidateSails": [
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 3,
+          "performance_score": 102,
+          "reasons": [
+            "AWA is within range.",
+            "AWS is within range.",
+            "TWA is within range.",
+            "TWS is within range.",
+            "Crew requirement is 3."
+          ],
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric",
+          "score": 102,
+          "warnings": [
+            "Recommendation uses generic sail type assumptions."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 68,
+          "reasons": [
+            "TWA is within range.",
+            "TWS is within range.",
+            "Mainsail type is useful across most points of sail.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail",
+          "score": 68,
+          "warnings": [
+            "AWA range is not set.",
+            "AWS range is not set."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 33.1,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within range.",
+            "Sail type suits upwind and reaching work.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 4,
+          "sail_name": "No. 1 jib",
+          "sail_type": "No. 1 jib",
+          "score": 33.1,
+          "warnings": [
+            "AWA is 15.6 above the sail range.",
+            "TWA is 16.0 above the sail range.",
+            "Estimated apparent gust is close to sail limit."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 23.7,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within 10% planning tolerance.",
+            "Sail type suits upwind and reaching work.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib",
+          "score": 23.7,
+          "warnings": [
+            "AWA is 18.6 above the sail range.",
+            "TWA is 21.0 above the sail range.",
+            "TWS is 1.0 below the recorded range, inside planning tolerance."
+          ]
+        }
+      ],
       "conditions": {
         "currentDirectionDeg": 270,
         "currentVelocityKn": 1.1,
@@ -198,7 +384,100 @@
       "windSide": "port"
     },
     {
+      "apparentGustAngleDeg": 176.1,
+      "apparentGustSpeedKnots": 16.2,
+      "apparentWindFromDeg": 355.8,
+      "awaDeg": 175.8,
+      "awsKnots": 12.2,
       "bearingDeg": 180,
+      "candidateSails": [
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": 68,
+          "reasons": [
+            "TWA is within range.",
+            "TWS is within range.",
+            "Mainsail type is useful across most points of sail.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "mainsail",
+          "sail_id": 1,
+          "sail_name": "Mainsail",
+          "sail_type": "Mainsail",
+          "score": 68,
+          "warnings": [
+            "AWA range is not set.",
+            "AWS range is not set."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 3,
+          "performance_score": 38.4,
+          "reasons": [
+            "AWS is within range.",
+            "TWA is within 10% planning tolerance.",
+            "TWS is within range.",
+            "Crew requirement is 3."
+          ],
+          "sail_category": "downwind",
+          "sail_id": 7,
+          "sail_name": "A2 asymmetric",
+          "sail_type": "Asymmetric",
+          "score": 38.4,
+          "warnings": [
+            "AWA is 25.8 above the sail range.",
+            "TWA is 12.0 above the recorded range, inside planning tolerance.",
+            "Recommendation uses generic sail type assumptions."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": -109.4,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within range.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 4,
+          "sail_name": "No. 1 jib",
+          "sail_type": "No. 1 jib",
+          "score": -109.4,
+          "warnings": [
+            "AWA is 130.8 above the sail range.",
+            "TWA is 107.0 above the sail range.",
+            "Headsail may be conservative for running angles.",
+            "Forecast true gust exceeds sail's configured true wind range."
+          ]
+        },
+        {
+          "availability_status": "Available",
+          "crew_compatible": true,
+          "crew_required": 2,
+          "performance_score": -113.8,
+          "reasons": [
+            "AWS is within range.",
+            "TWS is within range.",
+            "Crew requirement is 2."
+          ],
+          "sail_category": "headsail",
+          "sail_id": 3,
+          "sail_name": "No. 3 jib",
+          "sail_type": "No. 3 jib",
+          "score": -113.8,
+          "warnings": [
+            "AWA is 133.8 above the sail range.",
+            "TWA is 112.0 above the sail range.",
+            "Headsail may be conservative for running angles."
+          ]
+        }
+      ],
       "conditions": {
         "currentDirectionDeg": 90,
         "currentVelocityKn": 0.9,

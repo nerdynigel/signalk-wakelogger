@@ -24,7 +24,7 @@ export function buildOnboardPlan(options: OnboardPlanOptions): OnboardPlan {
     ? {
         twsKnots: options.averages.twsKnots,
         twdDeg: options.averages.twdDeg,
-        gustKnots: null,
+        gustKnots: options.averages.gustKnots ?? null,
         sampleCount: options.averages.sampleCount,
         spanSeconds: options.averages.windowSeconds,
         windSource: options.averages.windSource

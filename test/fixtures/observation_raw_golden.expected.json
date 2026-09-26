@@ -1,0 +1,30 @@
+{
+  "awaDeg": -1.4,
+  "awsKnots": 18.36,
+  "cogDeg": 37.8,
+  "coveredSeconds": 294,
+  "gustKnots": 34,
+  "headingDeg": 39.7,
+  "heelDeg": 7,
+  "latestSampleAgeSeconds": 0,
+  "position": {
+    "latitude": -27.3936,
+    "longitude": 153.181
+  },
+  "qualifyingSampleCount": 50,
+  "readiness": {
+    "coveredSeconds": 294,
+    "latestSampleAgeSeconds": 0,
+    "qualifyingSampleCount": 50,
+    "ready": true,
+    "reason": "ready",
+    "sampleCount": 54
+  },
+  "sampleCount": 54,
+  "sogKnots": 6.333,
+  "stwKnots": 6.24,
+  "twdDeg": 2.1,
+  "twsKnots": 13.93,
+  "windSource": "true",
+  "windowSeconds": 300
+}
