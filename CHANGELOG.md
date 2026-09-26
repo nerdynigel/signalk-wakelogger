@@ -17,6 +17,7 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - Onboard race-plan updates are only removed once Wake Logger confirms it stored them; if the confirmation is missed they are sent again after reconnecting or restarting.
 - Onboard race-plan updates now carry the recording session they came from, so Wake Logger links them to the right outing even when they arrive late.
 - Switching Live tracking off sends one final onboard status and then stops transmitting immediately. The final onboard status is kept by the server after the plugin disconnects, and an unexpected connection loss still reports the vessel offline.
+- Added a production-like broker test (`npm run test:broker:dynsec`) that runs against a real Mosquitto dynamic-security broker and the Wake Logger cloud provisioning/framing functions.
 
 ## [0.2.0-beta.5] - 2026-09-16
 
