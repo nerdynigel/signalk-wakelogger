@@ -89,6 +89,8 @@ export interface PluginStatusMetrics {
   lifetimeDroppedCount?: number
   /** Loss observed within the current historical-upload cohort, if any. */
   cohortDroppedSamples?: number | null
+  /** Coupled offline readiness contract as last evaluated onboard. */
+  offlineReadiness?: import('../race/readiness').OfflineReadiness
   acknowledgedSequence: number
   currentSequence: number
   trackingState?: string

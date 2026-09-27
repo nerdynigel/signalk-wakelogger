@@ -111,8 +111,13 @@ it('exposes one coupled offline readiness status and invalidation for the field 
     const ready = await f.request('GET', '/offline-readiness')
     expect(ready.code).toBe(200)
     expect(ready.data).toMatchObject({ ready: true, label: 'Offline race ready' })
-    expect(ready.data.checks).toMatchObject({ courseApplied: true, nativeActive: true, racePackReady: true, racePackMatches: true, forecastCoversRace: true, ruleSetSupported: true })
+    expect(ready.data.checks).toMatchObject({ courseApplied: true, nativeActive: true, racePackReady: true, racePackMatches: true, forecastValidNow: true, ruleSetSupported: true })
     expect(ready.data.missing).toEqual([])
+    // The fixture's declared forecast coverage ends before the nominal race
+    // window, so readiness reports valid-now-only uncertainty rather than
+    // claiming demonstrated coverage.
+    expect(ready.data.forecastCoverage).toBe('valid_now_only')
+    expect(ready.data.uncertainty.length).toBeGreaterThan(0)
     // The course endpoint carries the same single status.
     expect((await f.request('GET', '/course')).data.offlineReadiness.ready).toBe(true)
   } finally { await f.plugin.stop() }
@@ -212,18 +217,36 @@ it('separates consecutive recordings so A and B never merge', async () => {
 
 it('records bounded, credentialed-safe webapp diagnostics without leaking secrets', async () => {
   const f = await fixture()
-  try {
-    const response = await f.request('POST', '/diagnostics', {
-      operation: 'next-point', method: 'PUT', path: '/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint',
-      status: 409, errorCode: 'native_route_conflict', detail: 'Bearer super-secret token=abc123 rejected'
+  const body = {
+    operation: 'next-point', method: 'put',
+    path: '/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint?token=query-secret&x=1',
+    status: 409, errorCode: 'native_route_conflict',
+    detail: JSON.stringify({
+      token: 'abc123',
+      nested: { password: 'p@ss', ok: true },
+      message: 'Bearer super-secret\n<div>html error</div>\tmultiline secret=shh'
     })
+  }
+  try {
+    const response = await f.request('POST', '/diagnostics', body)
     expect(response.code).toBe(200)
     const logged = f.errors.find((message) => message.includes('onboard webapp next-point'))
     expect(logged).toBeTruthy()
     expect(logged).toContain('409')
     expect(logged).toContain('native_route_conflict')
-    expect(logged).not.toContain('super-secret')
-    expect(logged).not.toContain('abc123')
+    for (const secret of ['query-secret', 'abc123', 'p@ss', 'super-secret', 'shh']) expect(logged).not.toContain(secret)
+    // URL query values are never logged.
+    expect(logged).not.toContain('?')
+    expect(logged).not.toContain('&x=1')
+    // Identical diagnostics are de-duplicated to avoid flooding the log.
+    const before = f.errors.length
+    await f.request('POST', '/diagnostics', body)
+    expect(f.errors.length).toBe(before)
+    // Oversized detail is bounded.
+    await f.request('POST', '/diagnostics', { operation: 'oversized', method: 'GET', path: '/x', status: 500, detail: 'A'.repeat(200_000) })
+    const oversized = f.errors.find((message) => message.includes('onboard webapp oversized'))
+    expect(oversized).toBeTruthy()
+    expect(oversized!.length).toBeLessThanOrEqual(900)
   } finally { await f.plugin.stop() }
 })
 

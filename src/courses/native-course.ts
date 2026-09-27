@@ -95,6 +95,11 @@ export class NativeCourseService {
       const failure = error as { status?: number; statusCode?: number; code?: string; message?: string }
       if (/no provider for routes/i.test(failure.message ?? '')) throw new CourseError('native_routes_unavailable')
       if (failure.status === 404 || failure.statusCode === 404 || failure.code === 'ENOENT' || /not found/i.test(failure.message ?? '')) return undefined
+      // Signal K 2.31's file-backed resource provider can briefly expose a
+      // partial file while its write settles (an empty/incomplete JSON read).
+      // Treat that transient state as "not readable yet" so the ensureResource
+      // read-back loop retries instead of rejecting the whole course with a 409.
+      if (error instanceof SyntaxError || /unexpected end of json|unexpected token|invalid json|not readable|EBUSY|EAGAIN/i.test(failure.message ?? '')) return undefined
       throw error
     }
   }

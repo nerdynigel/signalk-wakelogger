@@ -32,6 +32,8 @@ import { type TripSnapshot } from './trips/state-machine'
 import { RecordingStore } from './trips/recording-store'
 
 const NAVIGATION_CONTROL_LEASE_MS = 30_000
+const DIAGNOSTIC_DEDUPE_MS = 60_000
+const SENSITIVE_DIAGNOSTIC_KEY = 'token|access[_-]?token|refresh[_-]?token|password|passwd|secret|client[_-]?secret|api[_-]?key|apikey|authorization|auth|signature|session[_-]?id|code|pin'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const pluginVersion = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version: string }).version
@@ -421,23 +423,24 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const courseStatus = courses ? await courses.status() as {
       desired?: { action?: string; revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
       acknowledgement?: { status?: string; revision?: number } | null
-      native?: { available?: boolean; activeMatchesDesired?: boolean; conflict?: boolean } | null
+      native?: { available?: boolean; activeMatchesDesired?: boolean; conflict?: boolean; course?: { activeRoute?: { reverse?: boolean } | null } | null } | null
     } : null
     const onboardStatus = onboard?.status() as { pack?: {
       available?: boolean; applicable?: boolean; revision?: number | null; ruleSetVersion?: string | null
       courseId?: string | null; racePlanId?: number | null; courseDefinitionDigest?: string | null
-      validUntil?: string | null; currentAt?: string
+      validFrom?: string | null; validUntil?: string | null; coverage?: { from: string | null; until: string | null } | null; currentAt?: string
     } } | undefined
     const meta = onboardStatus?.pack
     const pack: ReadinessPackState | null = meta ? {
       available: meta.available === true,
-      applicable: meta.applicable === true,
       revision: meta.revision ?? null,
       ruleSetVersion: meta.ruleSetVersion ?? null,
       courseId: meta.courseId ?? null,
       racePlanId: meta.racePlanId ?? null,
       courseDefinitionDigest: meta.courseDefinitionDigest ?? null,
+      validFrom: meta.validFrom ?? null,
       validUntil: meta.validUntil ?? null,
+      coverage: meta.coverage ?? null,
       currentAt: meta.currentAt ?? 'unknown'
     } : null
     return offlineReadiness({
@@ -446,7 +449,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       native: {
         available: courseStatus?.native?.available === true,
         activeMatchesDesired: courseStatus?.native?.activeMatchesDesired === true,
-        conflict: courseStatus?.native?.conflict === true
+        conflict: courseStatus?.native?.conflict === true,
+        reverse: courseStatus?.native?.course?.activeRoute?.reverse === true
       },
       pack,
       now: Date.now()
@@ -492,19 +496,62 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       : { clientId: null, active: false, expiresAt: null }
   }
 
+  // Structured, allow-listed diagnostic sanitisation. The onboard client
+  // sanitises before sending, but the server must defend independently: raw
+  // responses, quoted JSON credentials and URL query values are never logged.
+  const diagnosticSeen = new Map<string, number>()
+  function redactDiagnosticText(value: string): string {
+    let out = String(value)
+    const key = SENSITIVE_DIAGNOSTIC_KEY
+    // Quoted JSON/JS values under sensitive keys.
+    out = out.replace(new RegExp(`("(?:${key})"\\s*:\\s*)"[^"]*"`, 'gi'), '$1"[redacted]"')
+    out = out.replace(new RegExp(`('(?:${key})'\\s*:\\s*)'[^']*'`, 'gi'), "$1'[redacted]'")
+    // Bearer tokens before unquoted key/value matching.
+    out = out.replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    // Unquoted key=value / key: value, including URL query parameters.
+    out = out.replace(new RegExp(`((?:${key})\\s*[=:]\\s*)(?!\\[redacted\\])[^\\s"'&,}<>]+`, 'gi'), '$1[redacted]')
+    return out.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+  function sanitizeDiagnosticValue(value: unknown, depth = 0): unknown {
+    if (depth > 4) return '[truncated]'
+    if (typeof value === 'string') return redactDiagnosticText(value).slice(0, 1000)
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+    if (Array.isArray(value)) return value.slice(0, 20).map((item) => sanitizeDiagnosticValue(item, depth + 1))
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {}
+      for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 30)) {
+        result[key] = new RegExp(`^(?:${SENSITIVE_DIAGNOSTIC_KEY})$`, 'i').test(key) ? '[redacted]' : sanitizeDiagnosticValue(item, depth + 1)
+      }
+      return result
+    }
+    return undefined
+  }
+  function sanitizeDetail(raw: string): string {
+    const trimmed = raw.slice(0, 4000)
+    if (trimmed.length && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      try { return redactDiagnosticText(JSON.stringify(sanitizeDiagnosticValue(JSON.parse(trimmed)))).slice(0, 500) }
+      catch { /* Fall through to text sanitisation. */ }
+    }
+    return redactDiagnosticText(trimmed).slice(0, 500)
+  }
   function logWebappDiagnostic(request: unknown): void {
     const body = (request as { body?: Record<string, unknown> }).body
     const text = (value: unknown, maximum: number): string => typeof value === 'string' ? value.replace(/[\r\n\t]+/g, ' ').slice(0, maximum) : ''
-    const operation = text(body?.operation, 80) || 'unknown'
-    const method = text(body?.method, 10) || 'GET'
-    const path = text(body?.path, 200)
+    const operation = redactDiagnosticText(text(body?.operation, 80)) || 'unknown'
+    const method = text(body?.method, 10).toUpperCase() || 'GET'
+    // Never log URL query values.
+    const path = redactDiagnosticText(text(body?.path, 300).split('?')[0] ?? '').slice(0, 200)
     const status = typeof body?.status === 'number' && Number.isSafeInteger(body.status) ? String(body.status) : 'unknown'
-    const errorCode = text(body?.errorCode, 80)
-    const detail = text(body?.detail, 500)
+    const errorCode = redactDiagnosticText(text(body?.errorCode, 80))
+    const detail = sanitizeDetail(typeof body?.detail === 'string' ? body.detail : '')
+    const signature = `${operation}|${method}|${path}|${status}|${errorCode}|${detail.slice(0, 120)}`
+    const now = Date.now()
+    const previous = diagnosticSeen.get(signature)
+    if (previous !== undefined && now - previous < DIAGNOSTIC_DEDUPE_MS) return
+    if (diagnosticSeen.size > 500) diagnosticSeen.clear()
+    diagnosticSeen.set(signature, now)
     const message = `Wake Logger onboard webapp ${operation} ${method} ${path} -> ${status}${errorCode ? ` (${errorCode})` : ''}${detail ? `: ${detail}` : ''}`
-    // Redact any credential-like value even though the onboard client already
-    // sanitises before sending; diagnostics must never leak tokens to the log.
-    app.error(message.replace(/(bearer\s+[A-Za-z0-9._~+/=-]+|(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s"']+)/gi, '[redacted]').slice(0, 900))
+    app.error(redactDiagnosticText(message).slice(0, 900))
   }
 
   async function flushProgressionEvidence(): Promise<void> {
@@ -832,6 +879,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const sequence = `, seq ${stats.acknowledgedSequence}/${stats.currentSequence}`
     const trip = tripState ? `, trip ${tripState.currentState().state}` : ''
     const extra = detail ? ` — ${detail}` : ''
+    const readiness = await currentOfflineReadiness().catch(() => undefined)
     transport?.updateStatus({
       pluginVersion,
       historicalUpload: history?.current(),
@@ -844,6 +892,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       queueDroppedCount: stats.droppedCount,
       lifetimeDroppedCount: stats.droppedCount,
       cohortDroppedSamples: history?.current()?.droppedSamples ?? null,
+      offlineReadiness: readiness,
       acknowledgedSequence: stats.acknowledgedSequence,
       currentSequence: stats.currentSequence,
       trackingState: tripState?.currentState().state,

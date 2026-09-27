@@ -414,3 +414,18 @@ test('lifetime retention loss is never presented as current-trip loss', () => {
   assert.match(pressure.description, /not complete/)
   assert.equal(pressure.loss.progressKnown, false)
 })
+
+test('an available but inapplicable pack is stored, never shown as current', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const snapshot = { generatedAt: Date.now(), plan: { legs: [
+    { sequence: 1, to: { name: 'Old mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45 }, plan: { summary: 'Old recommendation' } }
+  ] } }
+  const view = racePlanPresentation({ uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: true, revision: 4, applicable: false, ruleSetVersion: 'race_plan_dynamic_v1' }, latestSnapshot: snapshot })
+  assert.equal(view.packAvailable, true)
+  assert.equal(view.packApplicable, false)
+  assert.match(view.packStatus, /stored/)
+  assert.match(view.packStatus, /does not match the selected course/)
+  assert.equal(view.currentLeg, null)
+  assert.deepEqual(view.remainingLegs, [])
+  assert.match(view.warning, /does not match the selected Wake Logger course/)
+})
