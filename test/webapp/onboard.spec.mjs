@@ -15,6 +15,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
+  let controlState = { clientId: null, active: false, expiresAt: null }
   const external = []
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
@@ -45,7 +46,14 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
     if (pathname === '/plugins/signalk-wakelogger/track') return json({ storageBackend: 'file', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null })
-    if (pathname === '/plugins/signalk-wakelogger/progression') return json(progressionState)
+    if (pathname === '/plugins/signalk-wakelogger/progression') return json({ ...(progressionState ?? {}), control: controlState })
+    if (pathname === '/plugins/signalk-wakelogger/progression/control') {
+      const body = request.postDataJSON()
+      if (body.release) controlState = { clientId: null, active: false, expiresAt: null }
+      else if (controlState.active && controlState.clientId !== body.clientId) return route.fulfill({ status: 409, json: { error: 'navigation_control_held', control: controlState } })
+      else controlState = { clientId: body.clientId, active: true, expiresAt: Date.now() + 30000 }
+      return json({ control: controlState })
+    }
     if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
       const body = request.postDataJSON()
@@ -217,14 +225,21 @@ test('failed mode save reads back the actual safely paused state', async ({ page
   await expect(page.locator('#tracking-description')).toContainText('Setting could not be saved')
 })
 
-test('auto-advances the active point from a detected rounding', async ({ page }) => {
+test('auto-advances the active point from a detected rounding only for the controlling device', async ({ page }) => {
   const { writes } = await mockBoat(page, {
     progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: false, revision: 7, at: 0 }, lastDetection: null }
   })
   await page.goto('/signalk-wakelogger/')
   await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
-  await expect.poll(() => writes.find((write) => write.path.endsWith('/nextPoint'))).toMatchObject({ method: 'PUT', body: { value: 1 } })
+  // A viewer with no navigation control must not advance.
+  await page.waitForTimeout(1000)
+  expect(writes).toEqual([])
+  await page.locator('#navigation-control').click()
+  await expect(page.locator('#navigation-control')).toHaveAttribute('aria-pressed', 'true')
+  // The advance is an idempotent absolute point index, not a relative nextPoint.
+  await expect.poll(() => writes.find((write) => write.path.endsWith('/pointIndex'))).toMatchObject({ method: 'PUT', body: { value: 2 } })
   await expect.poll(() => writes.find((write) => write.path.endsWith('/progression/resolve'))).toMatchObject({ body: { resolution: 'accepted', pointIndex: 1 } })
+  expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
 })
 
 test('holds a wrong-side detection for the crew instead of advancing', async ({ page }) => {
@@ -360,4 +375,19 @@ test('reload and a second client are read-only and resume instruments', async ({
   await expect(second.locator('#instruments-grid')).toContainText('Speed over ground')
   expect(writes).toEqual([])
   await context.close()
+})
+
+test('a hanging course request does not freeze the standalone instruments', async ({ page }) => {
+  const { external } = await mockBoat(page, { course: false, ...freshInstruments() })
+  // Register after mockBoat so this handler takes precedence (routes are LIFO)
+  // and never resolves: the course poll must be bounded and must not block the
+  // independent instrument loop.
+  await page.route('**/plugins/signalk-wakelogger/course', () => new Promise(() => {}))
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await page.waitForTimeout(6000)
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid .instrument[data-available=true]').first()).toBeVisible()
+  expect(external).toEqual([])
 })

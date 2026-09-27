@@ -74,11 +74,26 @@ export class SignalKClient {
   async request(path, options = {}) {
     const method = (options.method || 'GET').toUpperCase()
     const operation = options.operation || path
-    const response = await fetch(path, {
-      credentials: 'same-origin', ...options,
-      headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers }
-    })
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 5000
+    const { timeoutMs: _ignored, operation: _operation, ...init } = options
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+    let response
+    try {
+      response = await fetch(path, {
+        credentials: 'same-origin', ...init,
+        signal: controller ? controller.signal : undefined,
+        headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers }
+      })
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        throw new SignalKRequestError({ operation, method, path, status: 504, errorCode: 'timeout', detail: `Signal K request did not respond within ${timeoutMs} ms` })
+      }
+      throw error
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
     if (!response.ok) {
       let text = ''
       try { text = await response.text() } catch { /* A missing body still yields a status-only error. */ }

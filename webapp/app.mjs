@@ -7,7 +7,7 @@ import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
 import { instrumentReadings, formatReading } from './instruments.mjs'
-import { bootstrapTrack, appendTrackPoint, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
+import { bootstrapTrack, appendTrackPoint, needsRebootstrap, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
@@ -23,10 +23,19 @@ const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 })
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
 let raceProgression = null, applyingProgression = false
+const CLIENT_KEY = 'wakelogger-onboard-client'
+const CONTROL_KEY = 'wakelogger-navigation-control'
+let clientId = localStorage.getItem(CLIENT_KEY) || ''
+if (!clientId) {
+  clientId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  try { localStorage.setItem(CLIENT_KEY, clientId) } catch { /* storage may be unavailable */ }
+}
+let navigationControl = false
+try { navigationControl = localStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
-let trackBootstrapped = false, trackLoading = false
-let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false, defaultPanelChosen = false
+let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
+let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false, defaultPanelChosen = false, instrumentPolling = false, instrumentRequest = 0
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
 const safeText = text => { const node = document.createElement('span'); node.textContent = text; return node }
@@ -95,24 +104,34 @@ function renderCourse() {
       ? L.divIcon({ className: 'mark', html: '●', iconSize: [20, 20], iconAnchor: [10, 10] })
       : L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${progress.direction}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
     L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
-    if (trackBootstrapped) track = appendTrackPoint(track, point)
+    if (trackBootstrapped) {
+      const before = track.length
+      track = appendTrackPoint(track, point)
+      fixesSinceBootstrap += 1
+      if (track.length === before && before >= MAX_DISPLAY_TRACK_POINTS) trackNeedsRebootstrap = true
+    }
     trackLine.setLatLngs(track)
   }
   $('centre-vessel').disabled = !progress.position
   if (courseChanged) { fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
 }
 
-// The onboard map track comes from the durable current recording, not from
-// page-open time. Bootstrap once per page load from the bounded local API, then
-// append new fixes incrementally.
+// The onboard map track comes from a durable onboard archive, not from
+// page-open time and not from the delivery outbox. Bootstrap from the bounded
+// local API on load and again whenever the recording changes, the page resumes,
+// or enough new fixes have arrived that the whole-trip geometry should be
+// recomputed (which preserves the departure instead of dropping it).
 async function bootstrapTrackFromDurable() {
-  if (trackBootstrapped || trackLoading) return
+  if (trackLoading) return
   trackLoading = true
   try {
     const response = await client.request(`/plugins/signalk-wakelogger/track?maxPoints=${MAX_DISPLAY_TRACK_POINTS}`, { operation: 'read-track' })
     if (response && Array.isArray(response.points)) {
       track = bootstrapTrack(response)
       trackBootstrapped = true
+      trackRecordingId = response.trackingSessionId || response.recording?.id || null
+      fixesSinceBootstrap = 0
+      trackNeedsRebootstrap = false
       trackLine.setLatLngs(track)
     }
   } catch { /* Keep retrying on the next poll; never block instruments. */ }
@@ -134,8 +153,9 @@ function instrumentTile(reading) {
   const tile = document.createElement('div')
   tile.className = 'instrument'
   tile.dataset.available = String(reading.available)
-  tile.dataset.stale = String(reading.stale === true)
-  if (reading.stale && reading.ageSeconds !== null) tile.dataset.age = String(reading.ageSeconds)
+  tile.dataset.freshness = reading.freshness
+  tile.dataset.stale = String(reading.freshness === 'stale')
+  if (reading.freshness === 'stale' && reading.ageSeconds !== null) tile.dataset.age = String(reading.ageSeconds)
   const label = document.createElement('span')
   label.className = 'label'
   label.textContent = reading.label
@@ -147,8 +167,10 @@ function instrumentTile(reading) {
   const bits = []
   bits.push(reading.source === 'derived' ? 'derived' : 'measured')
   if (reading.reference) bits.push(reading.reference)
-  if (reading.ageSeconds === null) bits.push('no timestamp')
-  else if (!reading.stale) bits.push(`${reading.ageSeconds}s ago`)
+  if (reading.freshness === 'unknown') bits.push('timestamp unknown')
+  else if (reading.freshness === 'missing') bits.push('no data')
+  else if (reading.freshness === 'stale') bits.push('stale')
+  else if (reading.ageSeconds !== null) bits.push(`${reading.ageSeconds}s ago`)
   meta.textContent = bits.join(' · ')
   tile.append(label, value, meta)
   return tile
@@ -202,32 +224,45 @@ async function discoverCharts() {
   lastChartsAt = Date.now()
 }
 
+// Instruments are polled on their own bounded loop, independent of the course,
+// Race Pack, trip and track requests. A stalled or failed course/pack request
+// therefore never freezes instrument updates or their freshness.
+async function refreshInstruments() {
+  if (instrumentPolling) return
+  instrumentPolling = true
+  const thisRequest = ++instrumentRequest
+  try {
+    const [navigationResult, environmentResult] = await Promise.all([
+      attempt(client.request('/signalk/v1/api/vessels/self/navigation', { operation: 'read-navigation', timeoutMs: 2500 })),
+      attempt(client.request('/signalk/v1/api/vessels/self/environment', { operation: 'read-environment', timeoutMs: 2500 })),
+    ])
+    if (thisRequest !== instrumentRequest) return
+    if (!navigationResult.error) {
+      navigationData = navigationResult.value || {}
+      signalKAvailable = true
+    } else {
+      signalKAvailable = false
+      if ([401, 403].includes(navigationResult.error?.status)) $('login').hidden = false
+    }
+    if (!environmentResult.error) { environmentData = environmentResult.value || {}; environmentUnavailable = false }
+    else environmentUnavailable = true
+    renderInstruments()
+  } finally { instrumentPolling = false }
+}
+
 async function poll() {
   if (polling) return
   polling = true
   const thisPoll = ++pollSequence
   try {
-    const [statusResult, navigationResult, environmentResult, calcResult, progressionResult, racePlanResult, readinessResult] = await Promise.all([
-      attempt(client.request('/plugins/signalk-wakelogger/course', { operation: 'read-course' })),
-      attempt(client.request('/signalk/v1/api/vessels/self/navigation', { operation: 'read-navigation' })),
-      attempt(client.request('/signalk/v1/api/vessels/self/environment', { operation: 'read-environment' })),
-      attempt(client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues', { operation: 'read-calc-values' })),
-      attempt(client.request('/plugins/signalk-wakelogger/progression', { operation: 'read-progression' })),
-      attempt(client.request('/plugins/signalk-wakelogger/race-plan', { operation: 'read-race-plan' })),
-      attempt(client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' })),
+    const [statusResult, calcResult, progressionResult, racePlanResult, readinessResult] = await Promise.all([
+      attempt(client.request('/plugins/signalk-wakelogger/course', { operation: 'read-course', timeoutMs: 4000 })),
+      attempt(client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues', { operation: 'read-calc-values', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/progression', { operation: 'read-progression', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/race-plan', { operation: 'read-race-plan', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness', timeoutMs: 4000 })),
     ])
 
-    // Instrument acquisition is deliberately isolated: a failed course,
-    // race-plan or chart request never blocks local instrument updates.
-    if (!navigationResult.error && navigationResult.value) {
-      navigationData = navigationResult.value
-      signalKAvailable = true
-    } else if (navigationResult.error) {
-      signalKAvailable = [401, 403].includes(navigationResult.error.status) ? false : false
-      if ([401, 403].includes(navigationResult.error.status)) $('login').hidden = false
-    }
-    if (!environmentResult.error) { environmentData = environmentResult.value || {}; environmentUnavailable = false }
-    else environmentUnavailable = true
     if (readinessResult.value) offlineReadiness = readinessResult.value
     raceProgression = progressionResult.value ?? null
     racePlan = racePlanResult.value ?? null
@@ -250,12 +285,25 @@ async function poll() {
       reportDiagnostic(error)
     }
 
-    renderInstruments()
     renderOfflineReadiness()
     renderProgression()
     renderRacePlan()
-    if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide) await applyProgression()
-    await bootstrapTrackFromDurable()
+    if (navigationControl) {
+      const result = await claimControl(false)
+      if (result && !result.held) raceProgression = { ...(raceProgression ?? {}), control: result }
+      else if (result?.held) {
+        navigationControl = false
+        try { localStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
+        notice('Navigation control moved to another device; this page is now a viewer.')
+      }
+    }
+    if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide && navigationControl) await applyProgression()
+    const serverSessionId = trackingStatus?.trackingSessionId ?? null
+    if (trackBootstrapped && serverSessionId !== trackRecordingId) trackNeedsRebootstrap = true
+    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested })) {
+      trackResumeRequested = false
+      await bootstrapTrackFromDurable()
+    }
     if (Date.now() - lastChartsAt > 60_000) await discoverCharts()
   } finally { if (thisPoll === pollSequence) polling = false }
 }
@@ -271,13 +319,21 @@ async function command(action, context = {}) {
 function renderProgression() {
   const element = $('progression-status')
   if (!element) return
+  const control = $('navigation-control')
+  if (control) {
+    const heldByOther = raceProgression?.control?.active === true && raceProgression.control.clientId !== clientId
+    control.setAttribute('aria-pressed', String(navigationControl))
+    control.textContent = navigationControl ? 'Navigation control: this device' : 'Take navigation control'
+    control.disabled = heldByOther && !navigationControl
+    control.title = heldByOther ? 'Another onboard device is controlling navigation' : 'Only the controlling device advances the course automatically'
+  }
   const labels = { auto: 'Automatic', suggest: 'Suggest', off: 'Off' }
   const mode = raceProgression?.mode
   const pending = raceProgression?.pending
   if (!mode) { element.textContent = ''; $('progression-actions').hidden = true; return }
   const detail = pending && !pending.wrongSide ? ` · ${pending.type} detected at point ${pending.pointIndex + 1}` : ''
   element.textContent = `Mark detection: ${labels[mode] ?? mode}${detail}`
-  $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide)
+  $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide && navigationControl)
 }
 
 function renderRacePlan() {
@@ -349,26 +405,72 @@ function racePlanLeg(leg, eyebrow) {
   return fragment
 }
 
+// Only the leased navigation controller may auto-apply a detection, and the
+// advancement is an idempotent absolute point index bound to the selected
+// course revision and the still-current native point. A second client (or a
+// retry after a lost response) therefore cannot advance twice, and a viewer
+// never advances at all.
+async function claimControl(release = false) {
+  try {
+    const result = await client.request('/plugins/signalk-wakelogger/progression/control', { method: 'POST', operation: 'navigation-control', timeoutMs: 3000, body: JSON.stringify({ clientId, release }) })
+    return result?.control ?? null
+  } catch (error) {
+    if (error?.status === 409) return { held: true }
+    reportDiagnostic(error)
+    return null
+  }
+}
+
 async function applyProgression() {
-  if (applyingProgression) return
+  if (applyingProgression || !navigationControl) return
   const pending = raceProgression?.pending
   const href = status?.native?.course?.activeRoute?.href
+  const revision = status?.desired?.revision
   if (!pending || pending.wrongSide || !href) return
+  if (raceProgression.control?.clientId !== clientId) return
+  if (pending.revision !== revision || pending.pointIndex !== progress?.index) return
+  const target = pending.pointIndex + 1
+  if (!Number.isInteger(target) || target >= (progress?.points?.length ?? 0)) return
   applyingProgression = true
   try {
-    await progression.advance(href)
+    await progression.setPoint(target, progress.points.length, href)
     await raceProgressionClient.resolve('accepted', pending.pointIndex)
-    notice(`Mark detection advanced past point ${pending.pointIndex + 1}.`)
+    notice(`Mark ${pending.pointIndex + 1} rounding accepted.`)
   } catch (error) {
     notice(`${describeNavigationFailure(error, { markNumber: pending.pointIndex + 1 })} Set the point manually if the rounding was missed.`)
     reportDiagnostic(error)
   } finally { applyingProgression = false }
 }
 
-$('progression-accept').onclick = () => command(async () => {
-  await progression.advance(status.native.course.activeRoute.href)
-  await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex)
-}, { markNumber: (raceProgression?.pending?.pointIndex ?? 0) + 1 })
+$('navigation-control').onclick = async () => {
+  if (navigationControl) {
+    navigationControl = false
+    try { localStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
+    await claimControl(true)
+    notice('Navigation control released. This device is now a viewer.')
+  } else {
+    const control = await claimControl(false)
+    if (control?.clientId === clientId) {
+      navigationControl = true
+      try { localStorage.setItem(CONTROL_KEY, '1') } catch { /* ignore */ }
+      notice('Navigation control enabled on this device.')
+    } else {
+      navigationControl = false
+      notice('Another device is already controlling navigation for this course.')
+    }
+  }
+  renderProgression()
+}
+
+$('progression-accept').onclick = () => {
+  if (!navigationControl) { notice('Enable navigation control on this device before accepting a rounding.'); return }
+  const pending = raceProgression?.pending
+  if (!pending) return
+  return command(async () => {
+    await progression.setPoint(pending.pointIndex + 1, progress.points.length, status.native.course.activeRoute.href)
+    await raceProgressionClient.resolve('accepted', pending.pointIndex)
+  }, { markNumber: pending.pointIndex + 1 })
+}
 $('progression-dismiss').onclick = async () => {
   try {
     await raceProgressionClient.resolve('dismissed', raceProgression.pending.pointIndex)
@@ -548,11 +650,17 @@ $('fullscreen').onclick = async () => {
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) setFullscreen(false)
 })
+// A backgrounded mobile browser can suspend timers; on resume, re-request the
+// whole-trip geometry so a gap while suspended cannot leave the map short.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) trackResumeRequested = true })
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !document.fullscreenElement) setFullscreen(false)
 })
 
 let pollSequence = 0
-await Promise.all([poll(), refreshTracking()])
+await Promise.all([poll(), refreshInstruments(), refreshTracking()])
 setInterval(() => { if (!document.hidden) { poll(); refreshTracking() } }, 3000)
-window.addEventListener('online', () => { poll(); refreshTracking() })
+// Instruments refresh on their own cadence so a hanging course/pack request
+// cannot delay live readings or their freshness.
+setInterval(() => { if (!document.hidden) refreshInstruments() }, 2000)
+window.addEventListener('online', () => { poll(); refreshInstruments(); refreshTracking() })

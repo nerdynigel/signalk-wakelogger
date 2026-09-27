@@ -1,7 +1,6 @@
 import type { TelemetryDraft, TelemetrySample } from '../telemetry/types'
-import { buildTrackResult } from '../tracking/track'
 import type { PluginDatabase } from './database-types'
-import type { OutboxOptions, OutboxSeed, OutboxStats, OutboxStore, TrackQuery, TrackResult } from './interface'
+import type { OutboxOptions, OutboxSeed, OutboxStats, OutboxStore } from './interface'
 
 interface StateRow {
   next_sequence: number
@@ -161,19 +160,6 @@ export class DatabaseOutbox implements OutboxStore {
         droppedCount: Number(state.dropped_count),
         droppedThrough: Number(state.dropped_through)
       }
-    })
-  }
-
-  track(query: TrackQuery = {}): Promise<TrackResult> {
-    return this.exclusive(async () => {
-      this.assertOpen()
-      const fromSequence = Math.max(1, Math.floor(query.fromSequence ?? 1))
-      const rows = await this.database.query<PayloadRow>(
-        'SELECT payload FROM outbox_records WHERE device_id = ? AND sequence >= ? ORDER BY sequence ASC',
-        [this.deviceId, fromSequence]
-      )
-      const samples = rows.map((row) => JSON.parse(row.payload) as TelemetrySample)
-      return buildTrackResult(samples, { storageBackend: 'database', fromSequence, maxPoints: query.maxPoints })
     })
   }
 

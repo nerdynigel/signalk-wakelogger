@@ -13,6 +13,7 @@ import { OnboardSnapshotStore, type OnboardPlanSnapshot } from './race/onboard-s
 import { OnboardRaceService, type OnboardCourseState } from './race/onboard-service'
 import { offlineReadiness, type OfflineReadiness, type ReadinessPackState } from './race/readiness'
 import { UploadHistory, durableJson } from './tracking/history'
+import { TrackArchive } from './tracking/archive'
 import { DEFAULT_TRACK_POINTS, MAX_TRACK_POINTS } from './tracking/track'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
@@ -29,6 +30,8 @@ import { PathSampler } from './telemetry/sampler'
 import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-client'
 import { type TripSnapshot } from './trips/state-machine'
 import { RecordingStore } from './trips/recording-store'
+
+const NAVIGATION_CONTROL_LEASE_MS = 30_000
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const pluginVersion = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version: string }).version
@@ -51,6 +54,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let courseInitializationError: string | undefined
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
+  let trackArchive: TrackArchive | undefined
+  // Explicit, leased navigation-control ownership. Only the owning onboard
+  // client may auto-apply a detected rounding; other pages are viewers.
+  let navigationController: { clientId: string; expiresAt: number } | undefined
   let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistedUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistenceError: string | undefined
@@ -230,7 +237,29 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       })
       readRouter.get?.('/progression', async (_request, response, next) => {
         try {
-          response.status(200).json(progression?.status() ?? { mode: null, revision: 0, activeIndex: 0, pending: null, lastDetection: null })
+          response.status(200).json({ ...(progression?.status() ?? { mode: null, revision: 0, activeIndex: 0, pending: null, lastDetection: null }), control: controllerStatus() })
+        } catch (error) { next(error) }
+      })
+      writeRouter.post('/progression/control', async (request, response, next) => {
+        try {
+          const body = (request as { body?: { clientId?: unknown; release?: unknown } }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          if (!clientId || clientId.length > 80) {
+            response.status(400).json({ error: 'invalid_client' })
+            return
+          }
+          if (body?.release === true) {
+            if (navigationController?.clientId === clientId) navigationController = undefined
+            response.status(200).json({ control: controllerStatus() })
+            return
+          }
+          const now = Date.now()
+          if (navigationController && navigationController.expiresAt > now && navigationController.clientId !== clientId) {
+            response.status(409).json({ error: 'navigation_control_held', ...controllerStatus() })
+            return
+          }
+          navigationController = { clientId, expiresAt: now + NAVIGATION_CONTROL_LEASE_MS }
+          response.status(200).json({ control: controllerStatus() })
         } catch (error) { next(error) }
       })
       writeRouter.post('/progression/mode', async (request, response, next) => {
@@ -329,6 +358,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
+        '/progression/control': { post: { summary: 'Claim, renew or release leased onboard navigation control so only one client auto-advances', responses: { '200': { description: 'Control status' }, '400': { description: 'Invalid client' }, '409': { description: 'Control held by another client' } } } },
         '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
         '/race-plan': { get: { summary: 'Read onboard Race Plan calculation authority, Race Pack state and the latest onboard snapshot', responses: { '200': { description: 'Onboard race plan state' } } } },
         '/race-plan/recalculate': { post: { summary: 'Request an explicit onboard Race Plan recalculation (local-only authority only)', responses: { '200': { description: 'Recalculation attempted' }, '409': { description: 'Onboard planner unavailable or cloud is authoritative' } } } },
@@ -423,9 +453,11 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     })
   }
 
-  // Reconstruct the current recording's track from durable onboard data so the
-  // onboard map does not use page-open time or an in-memory pointer as the
-  // beginning of the trip. Independent of Wake Logger/cloud connectivity.
+  // Reconstruct the current recording's track from the durable onboard archive
+  // so the onboard map does not use page-open time or an in-memory pointer as
+  // the beginning of the trip. Never reads the delivery outbox, so an upload
+  // acknowledgement or segment reclaim cannot remove local map history.
+  let archivedRecordingId: string | null = null
   async function currentTrack(request: unknown): Promise<object> {
     const maxPointsValue = Number((request as { query?: { maxPoints?: string } }).query?.maxPoints)
     const maxPoints = Number.isFinite(maxPointsValue)
@@ -437,14 +469,27 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       .filter((manifest) => manifest.state !== 'recording')
       .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))[0]
     const recording = active ?? latestClosed ?? null
-    if (!recording || !outbox) {
+    if (!recording || !trackArchive) {
       return {
-        storageBackend, points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false },
+        storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false },
         recording: recording ?? null, trackingSessionId: null
       }
     }
-    const result = await outbox.track({ fromSequence: recording.firstSequence, maxPoints })
+    // Prune settled older recordings when the active recording changes, never
+    // on the sample path and never the active file.
+    if (recording.id !== archivedRecordingId) {
+      archivedRecordingId = recording.id
+      void trackArchive.prune(active?.id ?? null).catch(() => undefined)
+    }
+    const result = await trackArchive.read(recording.id, { maxPoints })
     return { ...result, recording, trackingSessionId: recording.id }
+  }
+
+  function controllerStatus(): { clientId: string | null; active: boolean; expiresAt: number | null } {
+    if (navigationController && navigationController.expiresAt <= Date.now()) navigationController = undefined
+    return navigationController
+      ? { clientId: navigationController.clientId, active: true, expiresAt: navigationController.expiresAt }
+      : { clientId: null, active: false, expiresAt: null }
   }
 
   function logWebappDiagnostic(request: unknown): void {
@@ -517,9 +562,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     onboardSnapshots = undefined
     await racePacks?.close()
     racePacks = undefined
+    trackArchive = undefined
+    archivedRecordingId = null
     racePackReceiver = undefined
     observations = undefined
     onboardCourse = null
+    navigationController = undefined
     await courses?.close()
     courses = undefined
     courseInitializationError = undefined
@@ -639,6 +687,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
     await trip.open(await readTripSnapshot(tripFile))
     tripState = trip
+    // Durable map history, independent of whether telemetry has been uploaded
+    // and acknowledged. Bounded by age/count/size and pruned off the sample path.
+    trackArchive = new TrackArchive(path.join(dataDirectory, 'track-archive', credentials.deviceId))
+    try { await trackArchive.open() } catch (error) {
+      app.error(`Wake Logger track archive unavailable; map history may be limited: ${safeError(error)}`)
+    }
+    void trackArchive.prune(trip.currentState().trackingSessionId ?? null).catch(() => undefined)
     // Each provisioned device owns an independent sequence space. A replacement
     // device must never replay the retired device's records under new credentials.
     const profileStore = new TelemetryProfileStore(path.join(dataDirectory, 'profiles', credentials.deviceId))
@@ -730,6 +785,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       try {
         queued = await outbox.append(credentials.deviceId, draft)
         nextSequence = queued.sequence + 1
+        // Small append off the outbox lock; a failure here must never break
+        // telemetry recording or delivery.
+        if (draft.trackingSessionId && trackArchive) {
+          void trackArchive.append(draft.trackingSessionId, {
+            sequence: queued.sequence, capturedAt: queued.capturedAt,
+            latitude: queued.values.lat, longitude: queued.values.lon
+          }).catch((error) => app.error(`Wake Logger track archive append failed: ${safeError(error)}`))
+        }
       } catch (error) {
         // Append may commit before a later maintenance error. Recover only on
         // failure; scanning the complete offline queue every sample is costly.
@@ -816,6 +879,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
       persistedUploadMode, persistenceError: persistenceError ?? null,
       paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,
+      trackingSessionId: tripState?.currentState().trackingSessionId ?? null,
+      trackingState: tripState?.currentState().state ?? null,
       available: ready && !!outbox && connectionState !== 'device_revoked',
       connectionState, historicalUpload: cohort,
       // Loss semantics are deliberately separated. `droppedCount` inside the

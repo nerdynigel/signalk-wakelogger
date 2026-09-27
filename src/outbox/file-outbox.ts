@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { TelemetryDraft, TelemetrySample } from '../telemetry/types'
-import { buildTrackResult } from '../tracking/track'
-import type { OutboxOptions, OutboxStats, OutboxStore, TrackQuery, TrackResult } from './interface'
+import type { OutboxOptions, OutboxStats, OutboxStore } from './interface'
 
 const HEADER_BYTES = 4
 const CHECKSUM_BYTES = 32
@@ -139,19 +138,6 @@ export class FileOutbox implements OutboxStore {
         droppedCount: this.metadata.droppedCount,
         droppedThrough: this.metadata.droppedThrough
       }
-    })
-  }
-
-  async track(query: TrackQuery = {}): Promise<TrackResult> {
-    return this.exclusive(async () => {
-      this.assertOpen()
-      const fromSequence = Math.max(1, Math.floor(query.fromSequence ?? 1))
-      const samples: TelemetrySample[] = []
-      for (const name of await this.segmentNames()) {
-        const segment = await this.readSegment(name, false)
-        for (const { sample } of segment.records) if (sample.sequence >= fromSequence) samples.push(sample)
-      }
-      return buildTrackResult(samples, { storageBackend: 'file', fromSequence, maxPoints: query.maxPoints })
     })
   }
 

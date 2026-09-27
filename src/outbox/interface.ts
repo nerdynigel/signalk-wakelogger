@@ -18,33 +18,6 @@ export interface OutboxSeed {
   droppedThrough: number
 }
 
-export interface TrackPoint {
-  sequence: number
-  capturedAt: number
-  latitude: number
-  longitude: number
-}
-
-export interface TrackQuery {
-  /** Inclusive lower sequence bound. Defaults to 1. */
-  fromSequence?: number
-  /** Display bound; the raw recording is never modified. Defaults to 2000. */
-  maxPoints?: number
-}
-
-export interface TrackSummary {
-  fromSequence: number | null
-  throughSequence: number | null
-  totalSamples: number
-  decimated: boolean
-}
-
-export interface TrackResult {
-  storageBackend: 'file' | 'database'
-  points: TrackPoint[]
-  summary: TrackSummary
-}
-
 export interface OutboxOptions {
   maxBytes: number
   maxAgeMs: number
@@ -60,7 +33,5 @@ export interface OutboxStore {
   latest(): Promise<TelemetrySample | undefined>
   acknowledge(sequence: number): Promise<void>
   stats(): Promise<OutboxStats>
-  /** Reconstruct captured-time-ordered track points from durable local records. */
-  track(query?: TrackQuery): Promise<TrackResult>
   close(): Promise<void>
 }
