@@ -11,7 +11,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -36,11 +36,15 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       return json({ uploadMode, paired: true, recording: true, connectionState: uploadMode === 'automatic' ? 'online' : 'recording_locally', queue: { messageCount: 123, currentSequence: 200, acknowledgedSequence: 77 } })
     }
     if (pathname === '/plugins/signalk-wakelogger/course') {
+      if (courseError) return route.fulfill({ status: courseError, json: { error: 'course_unavailable', detail: 'Signal K course provider rejected the request' } })
+      if (!course) return json({ desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } })
       return json({ desired, cachedCourse: desired, acknowledgement: { v: 1, revision: 7, status: 'applied' }, routePoints: points,
         native: { available: true, course: navigation, ownedRouteId, activeMatchesDesired: navigation.activeRoute.href === ownedHref, conflict: navigation.activeRoute.href !== ownedHref },
         credentials: { password: secret },
       })
     }
+    if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
+    if (pathname === '/plugins/signalk-wakelogger/track') return json({ storageBackend: 'file', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null })
     if (pathname === '/plugins/signalk-wakelogger/progression') return json(progressionState)
     if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
@@ -66,7 +70,11 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       navigation = { ...navigation, activeRoute: { ...navigation.activeRoute, pointIndex: index } }
       return json({ state: 'COMPLETED', statusCode: 200 })
     }
-    if (pathname === '/signalk/v1/api/vessels/self/navigation') return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
+    if (pathname === '/signalk/v1/api/vessels/self/navigation') {
+      if (navigationOverride) return json(navigationOverride)
+      return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
+    }
+    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
@@ -267,4 +275,89 @@ test('warns without a Race Pack but does not block local-only recording', async 
   await expect(page.locator('#race-plan-warning')).toContainText('Recording continues')
   await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeEnabled()
   expect(writes).toEqual([])
+})
+
+const freshInstruments = () => {
+  const now = Date.now()
+  return {
+    environment: {
+      depth: { belowTransducer: { value: 12.5, timestamp: now } },
+      wind: { speedTrue: { value: 7, timestamp: now }, directionTrue: { value: 0.8, timestamp: now }, speedApparent: { value: 9, timestamp: now }, angleApparent: { value: 0.5, timestamp: now } }
+    },
+    navigationOverride: {
+      position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: now },
+      speedOverGround: { value: 3, timestamp: now },
+      courseOverGroundTrue: { value: 1.1, timestamp: now },
+      headingTrue: { value: 1, timestamp: now },
+      speedThroughWater: { value: 2.8, timestamp: now }
+    }
+  }
+}
+
+test('standalone instruments are the default with no course and need no Race Pack', async ({ page }, testInfo) => {
+  const { writes, external } = await mockBoat(page, { course: false, ...freshInstruments() })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-tab')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('True wind speed')
+  await expect(page.locator('#instruments-grid')).toContainText('Depth')
+  await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
+  // Viewing instruments must not activate a course, advance a mark or change upload mode.
+  expect(writes).toEqual([])
+  expect(external).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('onboard-instruments.png'), fullPage: true })
+})
+
+test('instruments keep updating when the course API fails', async ({ page }) => {
+  await mockBoat(page, { courseError: 409, ...freshInstruments() })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#notice')).toContainText('409')
+})
+
+test('losing GPS does not blank independent wind and depth', async ({ page }) => {
+  const now = Date.now()
+  await mockBoat(page, {
+    course: false,
+    environment: { depth: { belowSurface: { value: 4, timestamp: now } }, wind: { speedTrue: { value: 8, timestamp: now }, directionTrue: { value: 0.5, timestamp: now } } },
+    navigationOverride: { speedOverGround: { value: 3, timestamp: now } }
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  await expect(grid).toContainText('True wind speed')
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'True wind speed' })).toHaveCount(1)
+  await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
+})
+
+test('a stale measurement is marked without ageing the others', async ({ page }) => {
+  const now = Date.now()
+  await mockBoat(page, {
+    course: false,
+    environment: { depth: { belowSurface: { value: 4, timestamp: now } }, wind: { speedTrue: { value: 8, timestamp: now - 120_000 }, directionTrue: { value: 0.5, timestamp: now - 120_000 } } }
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  await expect(grid.locator('.instrument[data-stale=true]').first()).toBeVisible()
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+})
+
+test('reload and a second client are read-only and resume instruments', async ({ browser }) => {
+  const context = await browser.newContext()
+  const first = await context.newPage()
+  const second = await context.newPage()
+  const writes = []
+  for (const page of [first, second]) {
+    await mockBoat(page, { course: false, ...freshInstruments() })
+    await page.goto('/signalk-wakelogger/')
+    await expect(page.locator('#instruments-panel')).toBeVisible()
+  }
+  await first.reload()
+  await expect(first.locator('#instruments-panel')).toBeVisible()
+  await expect(first.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(second.locator('#instruments-grid')).toContainText('Speed over ground')
+  expect(writes).toEqual([])
+  await context.close()
 })

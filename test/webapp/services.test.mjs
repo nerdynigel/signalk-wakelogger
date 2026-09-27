@@ -2,7 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chartSources, courseBounds, coversBounds } from '../../webapp/chart-sources.mjs'
 import { raceProgress } from '../../webapp/course-progress.mjs'
-import { CourseProgressionService } from '../../webapp/api-client.mjs'
+import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSignalKError } from '../../webapp/api-client.mjs'
+import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
+import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
+import { instrumentReadings, deriveTrueWind, formatReading } from '../../webapp/instruments.mjs'
+import { trackingPresentation } from '../../webapp/tracking-controls.mjs'
+import { trackCoordinates, appendTrackPoint, bootstrapTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
 const point = (latitude, longitude) => ({ latitude, longitude })
@@ -105,7 +110,7 @@ test('native route changed at another station prevents stale commands', async ()
   await assert.rejects(service.advance('/resources/routes/owned'), /Another course/)
   await assert.rejects(service.setPoint(1, 3, '/resources/routes/owned'), /Another course/)
   assert.equal(requests.length, 2)
-  assert.ok(requests.every(([url, options]) => url.endsWith('/navigation/course') && !options))
+  assert.ok(requests.every(([url, options]) => url.endsWith('/navigation/course') && options?.operation === 'read-active-course'))
 })
 
 test('proxied WMS and WMTS use the native XYZ endpoint', () => {
@@ -225,4 +230,133 @@ test('onboard race plan surfaces observation fallback and forecast expiry warnin
   assert.equal(view.observationsReady, false)
   assert.equal(view.remainingLegs[1].outOfRange, true)
   assert.equal(view.remainingLegs[1].summary, null)
+})
+
+test('Signal K failures preserve bounded, credentialed-safe diagnostics', () => {
+  assert.match(boundedDetail('Bearer abc.def.ghi token=secret-value\nsecond line'), /^\[redacted\] \[redacted\] second line$/)
+  assert.equal(boundedDetail('x'.repeat(5000)).length, 2000)
+  const parsed = parseSignalKError(409, JSON.stringify({ errorCode: 'course_conflict', message: 'Another application owns the active route' }))
+  assert.equal(parsed.errorCode, 'course_conflict')
+  assert.equal(parsed.detail, 'Another application owns the active route')
+  const codeOnly = parseSignalKError(409, JSON.stringify({ errorCode: 'native_route_conflict' }))
+  assert.equal(codeOnly.errorCode, 'native_route_conflict')
+  const error = new SignalKRequestError({ operation: 'next-point', method: 'PUT', path: '/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', status: 409, errorCode: 'native_route_conflict', detail: 'Bearer zzz token=abc rejected' })
+  assert.equal(error.status, 409)
+  assert.equal(error.operation, 'next-point')
+  const diagnostic = error.toDiagnostic()
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['detail', 'errorCode', 'method', 'operation', 'path', 'status'])
+  assert.ok(!JSON.stringify(diagnostic).includes('zzz'))
+  assert.ok(!JSON.stringify(diagnostic).includes('abc rejected'))
+  assert.match(new SignalKRequestError({ status: 403, operation: 'set-point' }).message, /Sign in to Signal K/)
+  assert.match(new SignalKRequestError({ status: 500, operation: 'set-point', detail: 'boom' }).message, /Signal K request failed \(500\): boom/)
+})
+
+test('navigation failures are human-readable and name the target mark', () => {
+  const advance = new SignalKRequestError({ operation: 'next-point', method: 'PUT', path: '/x', status: 409, detail: 'active route update rejected' })
+  assert.equal(describeNavigationFailure(advance, { markName: 'Eastern mark' }), 'Could not advance to the next course point to Eastern mark — Signal K rejected the active route update: active route update rejected.')
+  assert.match(describeNavigationFailure(new SignalKRequestError({ operation: 'set-point', status: 409 }), { markNumber: 3 }), /Could not set the active course point to Mark 3/)
+  assert.match(describeNavigationFailure(new SignalKRequestError({ operation: 'activate-course', status: 409, detail: 'conflict' })), /Could not activate the Wake Logger course — Signal K rejected the course activation: conflict\./)
+  assert.match(describeNavigationFailure(new SignalKRequestError({ status: 401, operation: 'next-point' })), /Sign in to Signal K/)
+})
+
+test('offline readiness presentation drives the pre-switch warning', () => {
+  const notReady = offlineReadinessPresentation({ ready: false, missing: ['the expected Wake Logger route is not active', 'the stored Race Pack does not match the selected course'], detail: 'Missing: ...' })
+  assert.equal(notReady.ready, false)
+  assert.equal(notReady.label, 'Offline race not ready')
+  const warning = localOnlyWarning({ ready: false, missing: notReady.missing })
+  assert.match(warning, /Offline race not ready/)
+  assert.match(warning, /Race Pack does not match/)
+  assert.equal(localOnlyWarning({ ready: true, missing: [] }), null)
+  assert.equal(offlineReadinessPresentation(null).known, false)
+})
+
+test('instruments present local Signal K measurements with references and units', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const stamped = (value) => ({ value, timestamp: now - 2000 })
+  const view = instrumentReadings({
+    now,
+    navigation: {
+      position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: now - 3000 },
+      speedOverGround: stamped(3.0),
+      courseOverGroundTrue: stamped(Math.PI / 2),
+      headingTrue: stamped(Math.PI),
+      speedThroughWater: stamped(2.8)
+    },
+    environment: {
+      depth: { belowTransducer: stamped(12.5) },
+      wind: { speedApparent: stamped(8), angleApparent: stamped(0.5) }
+    }
+  })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId.position.available, true)
+  assert.match(byId.position.formatted, /27\.4000° S, 153\.1700° E/)
+  assert.equal(byId.sog.value.toFixed(1), '5.8')
+  assert.equal(byId.cog.value.toFixed(0), '90')
+  assert.equal(byId.heading.reference, 'true')
+  assert.equal(byId.depth.reference, 'below transducer')
+  assert.equal(byId.depth.value, 12.5)
+  assert.equal(byId.awa.reference, 'apparent')
+  assert.equal(byId.tws.source, 'derived')
+  assert.equal(byId.twd.source, 'derived')
+  assert.equal(byId['vmg-wind'].reference, 'wind')
+  assert.equal(formatReading(byId.sog), '5.8 kn')
+})
+
+test('instrument freshness is tracked per measurement and independent sensors survive', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const view = instrumentReadings({
+    now,
+    staleSeconds: 30,
+    navigation: { position: { value: { latitude: -27, longitude: 153 }, timestamp: now - 400_000 } },
+    environment: { wind: { speedTrue: { value: 7, timestamp: now - 1000 }, directionTrue: { value: 1, timestamp: now - 1000 } }, depth: { belowKeel: { value: 9, timestamp: now - 1000 } } }
+  })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId.position.stale, true)
+  assert.equal(byId.position.available, false)
+  assert.equal(byId.position.ageSeconds, 400)
+  // Loss of GPS must not blank valid wind or depth.
+  assert.equal(byId.tws.available, true)
+  assert.equal(byId.twd.available, true)
+  assert.equal(byId.depth.available, true)
+  assert.equal(byId.depth.reference, 'below keel')
+  // Only the stale measurement is marked stale.
+  assert.equal(view.readings.filter((reading) => reading.stale).length, 1)
+})
+
+test('instruments never fabricate wind and mark unavailable readings', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const view = instrumentReadings({ now, environment: { depth: { belowSurface: { value: 4, timestamp: now } } } })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId.tws.value, null)
+  assert.equal(byId.tws.source, 'direct')
+  assert.equal(byId.twd.value, null)
+  assert.equal(byId.sog.value, null)
+  assert.equal(byId.vmg_wide, undefined)
+  assert.match(formatReading(byId.tws), /Unavailable/)
+  // Apparent wind without motion cannot be converted to a fabricated true wind.
+  assert.equal(deriveTrueWind({ awsKnots: 10, awaDeg: 0.5 }), null)
+  assert.equal(deriveTrueWind({ awsKnots: 10, awaDeg: 0.5, headingDeg: 0, sogKnots: 5 }).twdDeg >= 0, true)
+})
+
+test('durable track helpers order, dedupe and bound display points', () => {
+  const points = trackCoordinates([{ sequence: 3, latitude: -27.2, longitude: 153.2 }, { sequence: 1, latitude: -27.0, longitude: 153.0 }, { sequence: 2, latitude: NaN, longitude: 1 }])
+  assert.deepEqual(points, [[-27, 153], [-27.2, 153.2]])
+  let track = appendTrackPoint([[1, 2]], [1, 2])
+  assert.deepEqual(track, [[1, 2]])
+  track = appendTrackPoint(track, [3, 4])
+  assert.deepEqual(track, [[1, 2], [3, 4]])
+  assert.deepEqual(appendTrackPoint([[1, 2], [3, 4], [5, 6]], [7, 8], 3), [[3, 4], [5, 6], [7, 8]])
+  assert.deepEqual(bootstrapTrack({ points: [{ sequence: 2, latitude: 2, longitude: 2 }, { sequence: 1, latitude: 1, longitude: 1 }] }), [[1, 1], [2, 2]])
+  assert.deepEqual(bootstrapTrack(null), [])
+})
+
+test('lifetime retention loss is never presented as current-trip loss', () => {
+  const view = trackingPresentation({ paired: true, recording: true, uploadMode: 'automatic', connectionState: 'online', lifetimeDroppedCount: 9830, cohortDroppedSamples: 0, queue: { messageCount: 4 } })
+  assert.equal(view.loss, null)
+  assert.equal(view.lifetimeDroppedCount, 9830)
+  assert.doesNotMatch(view.description, /9830/)
+  const pressure = trackingPresentation({ paired: true, recording: true, uploadMode: 'automatic', lifetimeDroppedCount: 9830, cohortDroppedSamples: 12, cohortProgressKnown: false, queue: { messageCount: 4 } })
+  assert.match(pressure.description, /12 samples in this upload were discarded/)
+  assert.match(pressure.description, /not complete/)
+  assert.equal(pressure.loss.progressKnown, false)
 })

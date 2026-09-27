@@ -11,7 +11,9 @@ import { RacePackStore } from './race/race-pack-store'
 import { RacePackReceiver } from './race/race-pack-protocol'
 import { OnboardSnapshotStore, type OnboardPlanSnapshot } from './race/onboard-store'
 import { OnboardRaceService, type OnboardCourseState } from './race/onboard-service'
+import { offlineReadiness, type OfflineReadiness, type ReadinessPackState } from './race/readiness'
 import { UploadHistory, durableJson } from './tracking/history'
+import { DEFAULT_TRACK_POINTS, MAX_TRACK_POINTS } from './tracking/track'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
@@ -182,9 +184,25 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         try {
           response.status(200).json({
             ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
-            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError,
+            offlineReadiness: await currentOfflineReadiness()
           })
         } catch (error) { next(error) }
+      })
+      readRouter.get?.('/offline-readiness', async (_request, response, next) => {
+        try { response.status(200).json(await currentOfflineReadiness()) }
+        catch (error) { next(error) }
+      })
+      readRouter.get?.('/track', async (request, response, next) => {
+        try { response.status(200).json(await currentTrack(request)) }
+        catch (error) { next(error) }
+      })
+      // Bounded diagnostic capture for the onboard app. Read-only: it records
+      // why a local Signal K request failed and never changes any state. The
+      // client sends no credentials and every field is length-bounded.
+      readRouter.post?.('/diagnostics', async (request, response, next) => {
+        try { logWebappDiagnostic(request); response.status(200).json({ logged: true }) }
+        catch (error) { next(error) }
       })
       writeRouter.post('/course/activate', async (_request, response, next) => {
         try {
@@ -305,6 +323,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/tracking': { get: { summary: 'Read live upload mode and the local queue', responses: { '200': { description: 'Tracking status' } } }, post: { summary: 'Persist and apply live upload mode without restarting recording', responses: { '200': { description: 'Tracking mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Tracking unavailable' }, '503': { description: 'Persistence failed; see actual mode in response' } } } },
         '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
         '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
+        '/offline-readiness': { get: { summary: 'Coupled offline readiness (course, native route, Race Pack, forecast and rule set)', responses: { '200': { description: 'Offline readiness contract' } } } },
+        '/track': { get: { summary: 'Reconstruct the current recording track from durable onboard data, decimated for display', responses: { '200': { description: 'Track points and recording identity' } } } },
+        '/diagnostics': { post: { summary: 'Record a bounded onboard webapp Signal K request failure in the plugin log', responses: { '200': { description: 'Diagnostic recorded' } } } },
         '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
@@ -360,6 +381,85 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   function racingUnderway(): boolean {
     if (onboardCourse && onboardCourse.activeIndex > 0 && onboardCourse.activeIndex < onboardCourse.totalPoints) return true
     return tripState?.currentState().state === 'MOVING'
+  }
+
+  // One deterministic offline readiness contract, derived every time from the
+  // selected course, the expected native route and the applied Race Pack. It is
+  // never a stored toggle, so a course change immediately invalidates an older
+  // pack even though that immutable pack is retained for history/recovery.
+  async function currentOfflineReadiness(): Promise<OfflineReadiness> {
+    const courseStatus = courses ? await courses.status() as {
+      desired?: { action?: string; revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
+      acknowledgement?: { status?: string; revision?: number } | null
+      native?: { available?: boolean; activeMatchesDesired?: boolean; conflict?: boolean } | null
+    } : null
+    const onboardStatus = onboard?.status() as { pack?: {
+      available?: boolean; applicable?: boolean; revision?: number | null; ruleSetVersion?: string | null
+      courseId?: string | null; racePlanId?: number | null; courseDefinitionDigest?: string | null
+      validUntil?: string | null; currentAt?: string
+    } } | undefined
+    const meta = onboardStatus?.pack
+    const pack: ReadinessPackState | null = meta ? {
+      available: meta.available === true,
+      applicable: meta.applicable === true,
+      revision: meta.revision ?? null,
+      ruleSetVersion: meta.ruleSetVersion ?? null,
+      courseId: meta.courseId ?? null,
+      racePlanId: meta.racePlanId ?? null,
+      courseDefinitionDigest: meta.courseDefinitionDigest ?? null,
+      validUntil: meta.validUntil ?? null,
+      currentAt: meta.currentAt ?? 'unknown'
+    } : null
+    return offlineReadiness({
+      course: courseStatus?.desired ?? null,
+      acknowledgement: courseStatus?.acknowledgement ?? null,
+      native: {
+        available: courseStatus?.native?.available === true,
+        activeMatchesDesired: courseStatus?.native?.activeMatchesDesired === true,
+        conflict: courseStatus?.native?.conflict === true
+      },
+      pack,
+      now: Date.now()
+    })
+  }
+
+  // Reconstruct the current recording's track from durable onboard data so the
+  // onboard map does not use page-open time or an in-memory pointer as the
+  // beginning of the trip. Independent of Wake Logger/cloud connectivity.
+  async function currentTrack(request: unknown): Promise<object> {
+    const maxPointsValue = Number((request as { query?: { maxPoints?: string } }).query?.maxPoints)
+    const maxPoints = Number.isFinite(maxPointsValue)
+      ? Math.max(50, Math.min(MAX_TRACK_POINTS, Math.floor(maxPointsValue)))
+      : DEFAULT_TRACK_POINTS
+    const manifests = tripState?.manifests() ?? []
+    const active = manifests.find((manifest) => manifest.state === 'recording')
+    const latestClosed = manifests
+      .filter((manifest) => manifest.state !== 'recording')
+      .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))[0]
+    const recording = active ?? latestClosed ?? null
+    if (!recording || !outbox) {
+      return {
+        storageBackend, points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false },
+        recording: recording ?? null, trackingSessionId: null
+      }
+    }
+    const result = await outbox.track({ fromSequence: recording.firstSequence, maxPoints })
+    return { ...result, recording, trackingSessionId: recording.id }
+  }
+
+  function logWebappDiagnostic(request: unknown): void {
+    const body = (request as { body?: Record<string, unknown> }).body
+    const text = (value: unknown, maximum: number): string => typeof value === 'string' ? value.replace(/[\r\n\t]+/g, ' ').slice(0, maximum) : ''
+    const operation = text(body?.operation, 80) || 'unknown'
+    const method = text(body?.method, 10) || 'GET'
+    const path = text(body?.path, 200)
+    const status = typeof body?.status === 'number' && Number.isSafeInteger(body.status) ? String(body.status) : 'unknown'
+    const errorCode = text(body?.errorCode, 80)
+    const detail = text(body?.detail, 500)
+    const message = `Wake Logger onboard webapp ${operation} ${method} ${path} -> ${status}${errorCode ? ` (${errorCode})` : ''}${detail ? `: ${detail}` : ''}`
+    // Redact any credential-like value even though the onboard client already
+    // sanitises before sending; diagnostics must never leak tokens to the log.
+    app.error(message.replace(/(bearer\s+[A-Za-z0-9._~+/=-]+|(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s"']+)/gi, '[redacted]').slice(0, 900))
   }
 
   async function flushProgressionEvidence(): Promise<void> {
@@ -663,7 +763,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     queueStatsAt = Date.now()
     await updateHistory(stats, beginHistory)
     const queue = `${stats.messageCount} queued, ${(stats.diskBytes / 1024 / 1024).toFixed(1)} MB`
-    const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped` : ''
+    // Lifetime loss is labelled as lifetime so it is never read as samples lost
+    // from the current trip.
+    const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped lifetime` : ''
     const sequence = `, seq ${stats.acknowledgedSequence}/${stats.currentSequence}`
     const trip = tripState ? `, trip ${tripState.currentState().state}` : ''
     const extra = detail ? ` — ${detail}` : ''
@@ -677,6 +779,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       queueDiskBytes: stats.diskBytes,
       queueOldestCapturedAt: stats.oldestCapturedAt,
       queueDroppedCount: stats.droppedCount,
+      lifetimeDroppedCount: stats.droppedCount,
+      cohortDroppedSamples: history?.current()?.droppedSamples ?? null,
       acknowledgedSequence: stats.acknowledgedSequence,
       currentSequence: stats.currentSequence,
       trackingState: tripState?.currentState().state,
@@ -707,12 +811,21 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     // File outbox stats scan the durable queue; browser polls reuse the
     // normal status refresh instead of taking the outbox lock every request.
     const stats = cachedQueueStats
+    const cohort = history?.current() ?? null
     return {
       uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
       persistedUploadMode, persistenceError: persistenceError ?? null,
       paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,
       available: ready && !!outbox && connectionState !== 'device_revoked',
-      connectionState, historicalUpload: history?.current() ?? null,
+      connectionState, historicalUpload: cohort,
+      // Loss semantics are deliberately separated. `droppedCount` inside the
+      // queue is the cumulative lifetime counter and must never be presented as
+      // samples lost from the current trip. `cohortDroppedSamples` is the loss
+      // observed within the current historical-upload cohort, and
+      // `cohortProgressKnown` is false when attribution is ambiguous.
+      lifetimeDroppedCount: stats?.droppedCount ?? 0,
+      cohortDroppedSamples: cohort?.droppedSamples ?? null,
+      cohortProgressKnown: cohort?.progressKnown ?? null,
       queue: stats ? { messageCount: stats.messageCount, diskBytes: stats.diskBytes,
         oldestCapturedAt: stats.oldestCapturedAt ?? null, acknowledgedSequence: stats.acknowledgedSequence,
         currentSequence: stats.currentSequence, droppedCount: stats.droppedCount } : null,

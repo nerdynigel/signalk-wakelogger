@@ -65,7 +65,7 @@
     "prepublishOnly": "node scripts/verify-release.mjs && npm run check",
     "check": "npm run check:public && npm run lint && npm run typecheck && npm test && npm run build",
     "build:webapp": "node scripts/build-webapp.mjs",
-    "test:webapp": "node --test test/webapp/services.test.mjs && playwright test --config test/webapp/playwright.config.mjs"
+    "test:webapp": "npm run build:webapp && node --test test/webapp/services.test.mjs && playwright test --config test/webapp/playwright.config.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

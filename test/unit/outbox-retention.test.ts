@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { promises as fs } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import { DatabaseOutbox } from '../../src/outbox/database-outbox'
 import type { PluginDatabase } from '../../src/outbox/database-types'
+import { FileOutbox } from '../../src/outbox/file-outbox'
 
 interface State { next_sequence: number; acknowledged_sequence: number; dropped_count: number; dropped_through: number }
 interface RecordRow { device_id: string; sequence: number; captured_at: number; received_at: number; payload: string; payload_bytes: number }
@@ -18,13 +22,8 @@ class MemoryDatabase implements PluginDatabase {
       const [device_id, sequence, captured_at, received_at, payload, payload_bytes] = params as [string, number, number, number, string, number]
       this.records.push({ device_id, sequence, captured_at, received_at, payload, payload_bytes })
     } else if (sql.startsWith('UPDATE outbox_state SET next_sequence')) {
-      if (params.length === 5) {
-        const [next, ack, drops, through, device] = params as [number, number, number, number, string]
-        this.state.set(device, { next_sequence: next, acknowledged_sequence: ack, dropped_count: drops, dropped_through: through })
-      } else {
-        const [next, device] = params as [number, string]
-        this.state.get(device)!.next_sequence = next
-      }
+      const [next, device] = params as [number, string]
+      this.state.get(device)!.next_sequence = next
     } else if (sql.startsWith('UPDATE outbox_state SET acknowledged_sequence')) {
       const [ack, device] = params as [number, string]
       this.state.get(device)!.acknowledged_sequence = ack
@@ -47,11 +46,6 @@ class MemoryDatabase implements PluginDatabase {
       const after = Number(params[1])
       return matching.filter((row) => row.sequence >= after).map(({ payload }) => ({ payload })) as T[]
     }
-    if (sql.includes('sequence > ?')) {
-      const after = Number(params[1]); const limit = Number(params[2])
-      return matching.filter((row) => row.sequence > after).slice(0, limit).map(({ payload }) => ({ payload })) as T[]
-    }
-    if (sql.includes('ORDER BY sequence DESC')) return matching.slice(-1).map(({ payload }) => ({ payload })) as T[]
     if (sql.includes('COUNT(*)')) return [{ message_count: matching.length, storage_bytes: matching.reduce((sum, row) => sum + row.payload_bytes, 0), oldest_captured_at: matching[0]?.captured_at ?? null }] as T[]
     if (sql.startsWith('SELECT sequence, payload_bytes')) return matching.map(({ sequence, payload_bytes }) => ({ sequence, payload_bytes })) as T[]
     if (sql.startsWith('SELECT sequence, captured_at')) return matching.map(({ sequence, captured_at }) => ({ sequence, captured_at })) as T[]
@@ -59,47 +53,55 @@ class MemoryDatabase implements PluginDatabase {
   }
 }
 
+const directories: string[] = []
+afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
 const draft = (capturedAt: number) => ({ capturedAt, receivedAt: capturedAt, values: { lat: -27, lon: 153 }, quality: { timestamp: 'source' as const } })
 
-describe('DatabaseOutbox', () => {
-  it('preserves monotonic sequence and acknowledgement state across reopen', async () => {
-    const database = new MemoryDatabase()
-    const options = { maxBytes: 1_000_000, maxAgeMs: 86_400_000, segmentBytes: 1024, now: () => 3_000 }
-    const first = new DatabaseOutbox(database, 'device-1', options)
-    await first.open()
-    expect((await first.append('device-1', draft(1_000))).sequence).toBe(1)
-    expect((await first.append('device-1', draft(2_000))).sequence).toBe(2)
-    await first.acknowledge(1)
-    await first.close()
-
-    const reopened = new DatabaseOutbox(database, 'device-1', options)
-    await reopened.open()
-    expect((await reopened.append('device-1', draft(3_000))).sequence).toBe(3)
-    expect((await reopened.pendingAfter(1, 10, 100_000)).map((item) => item.sequence)).toEqual([2, 3])
-    expect(await reopened.stats()).toMatchObject({ storageBackend: 'database', acknowledgedSequence: 1, currentSequence: 3, messageCount: 2 })
-  })
-
-  it('drops oldest records at its bound while keeping the newest record and reporting the gap', async () => {
-    const database = new MemoryDatabase()
-    const outbox = new DatabaseOutbox(database, 'device-1', { maxBytes: 1, maxAgeMs: 1, segmentBytes: 1024, now: () => 10_000 })
+describe('outbox retention pressure', () => {
+  it('FileOutbox reports lifetime drops and reconstructs only surviving durable records', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'retention-file-'))
+    directories.push(dir)
+    const outbox = new FileOutbox(dir, { maxBytes: 400, maxAgeMs: 7 * 86_400_000, segmentBytes: 260, now: () => 10_000 })
     await outbox.open()
-    await outbox.append('device-1', draft(1_000))
-    await outbox.append('device-1', draft(2_000))
+    for (let index = 1; index <= 12; index += 1) await outbox.append('dev_1', draft(index * 1000))
     const stats = await outbox.stats()
-    expect(stats).toMatchObject({ currentSequence: 2, messageCount: 1, droppedCount: 1, droppedThrough: 1 })
-    expect((await outbox.latest())?.sequence).toBe(2)
+    expect(stats.droppedCount).toBeGreaterThan(0)
+    expect(stats.droppedThrough).toBeGreaterThan(0)
+    const survivingSequences: number[] = []
+    const track = await outbox.track({ fromSequence: 1 })
+    for (const point of track.points) survivingSequences.push(point.sequence)
+    // Reconstructed points are ordered and never include a discarded sequence.
+    expect([...survivingSequences].sort((a, b) => a - b)).toEqual(survivingSequences)
+    expect(survivingSequences.length).toBeGreaterThan(0)
+    expect(survivingSequences[0]).toBeGreaterThanOrEqual(stats.droppedThrough + 1)
+    expect(survivingSequences[survivingSequences.length - 1]).toBe(stats.currentSequence)
+    await outbox.close()
   })
 
-  it('reconciles a previously initialized database with a later file-backend seed', async () => {
+  it('DatabaseOutbox reports lifetime drops and reconstructs only surviving durable records', async () => {
     const database = new MemoryDatabase()
-    const options = { maxBytes: 1_000_000, maxAgeMs: 86_400_000, segmentBytes: 1024, now: () => 10_000 }
-    const interruptedSelection = new DatabaseOutbox(database, 'device-1', options)
-    await interruptedSelection.open(); await interruptedSelection.close()
-    const selected = new DatabaseOutbox(database, 'device-1', options, {
-      currentSequence: 42, acknowledgedSequence: 40, droppedCount: 2, droppedThrough: 12
-    })
-    await selected.open()
-    expect((await selected.append('device-1', draft(10_000))).sequence).toBe(43)
-    expect(await selected.stats()).toMatchObject({ acknowledgedSequence: 40, droppedCount: 2, droppedThrough: 12 })
+    const outbox = new DatabaseOutbox(database, 'device-1', { maxBytes: 1, maxAgeMs: 86_400_000, segmentBytes: 1024, now: () => 10_000 })
+    await outbox.open()
+    for (let index = 1; index <= 8; index += 1) await outbox.append('device-1', draft(index * 1000))
+    const stats = await outbox.stats()
+    expect(stats.droppedCount).toBeGreaterThan(0)
+    expect(stats.currentSequence).toBe(8)
+    const track = await outbox.track({ fromSequence: 1 })
+    expect(track.points.map((point) => point.sequence)).toEqual([8])
+    expect(track.summary.totalSamples).toBe(1)
+  })
+
+  it('an active recording keeps its surviving samples exactly once after retention', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'retention-active-'))
+    directories.push(dir)
+    const outbox = new FileOutbox(dir, { maxBytes: 500, maxAgeMs: 7 * 86_400_000, segmentBytes: 300, now: () => 100_000 })
+    await outbox.open()
+    for (let index = 1; index <= 30; index += 1) await outbox.append('dev_1', draft(index * 1000))
+    const stats = await outbox.stats()
+    const track = await outbox.track({ fromSequence: stats.droppedThrough > 0 ? stats.droppedThrough + 1 : 1 })
+    expect(track.summary.totalSamples).toBe(stats.messageCount)
+    const sequences = track.points.map((point) => point.sequence)
+    expect(new Set(sequences).size).toBe(sequences.length)
+    await outbox.close()
   })
 })
