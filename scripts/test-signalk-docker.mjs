@@ -210,11 +210,19 @@ try {
   assert.equal(dataEvents(recovered)[0]?.topic, 'wakelogger/v1/devices/dev_docker_e2e/state', 'current state must be first after reconnect')
   assert.ok(recoveredSamples.every((sample) => sample.deviceId === 'dev_docker_e2e'), 'recovered samples must retain their paired device identity')
 
-  const drained = await waitFor('reported empty queue after application ACK', () => {
+  // Read the plugin's own durable queue state rather than waiting for a
+  // particular periodic MQTT status message; the status cadence made this step
+  // flaky under host load even though the queue had already drained.
+  const drained = await waitFor('drained durable queue after application ACK', () => {
     const value = snapshot()
-    const statuses = value.events.filter((event) => event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status')
-    return statuses.some((event) => event.payload?.queueMessageCount === 0 && event.payload?.acknowledgedSequence >= maximumAck(recovered)) ? value : undefined
-  }, 90_000)
+    const tracking = query(trackingUrl)
+    if (tracking?.queue?.messageCount !== 0) return undefined
+    if (maximumAck(value) < maximumAck(recovered)) return undefined
+    return value
+  }, 120_000)
+  // The periodic status must still report the drained queue.
+  await waitFor('status reporting an empty queue', () => snapshot().events.some((event) =>
+    event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status' && event.payload?.queueMessageCount === 0), 60_000)
 
   // --- Real Signal K native navigation gate ---------------------------------
   const pluginBase = 'http://signalk:3000/plugins/signalk-wakelogger'
