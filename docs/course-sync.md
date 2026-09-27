@@ -116,9 +116,18 @@ action (and target mark where known) plus the Signal K reason.
 ## Durable onboard track
 
 The onboard webapp must not use page-open time as the beginning of the displayed
-trip. `GET /track` reconstructs the current recording's track from the durable
-onboard outbox, ordered by captured sequence, decimated to a display bound
-without modifying the raw recording, and independent of Wake Logger/cloud
-connectivity. On open or reload the app loads this track and then appends new
-fixes incrementally, so a multi-hour `local_only` recording still shows its
-complete geometry after a reload or plugin restart.
+trip. `GET /track` reconstructs the current recording's track from an
+independent durable onboard archive (one bounded binary file per recording,
+`<data>/track-archive/<deviceId>/`), ordered by captured sequence and decimated
+by seeking fixed-size record offsets so memory and work are proportional to the
+display bound rather than the recording length. The archive is deliberately
+separate from the delivery outbox, so an upload acknowledgement or segment
+reclaim never removes local map history. A read is bounded to the recording
+identity; retention prunes settled older recordings but never the active one.
+On open the app loads this track and then appends new fixes; it re-bootstraps
+the whole-trip geometry when the recording changes, the page resumes from
+suspension, or enough new fixes have arrived that the decimated view should be
+recomputed (the departure is never dropped). A multi-hour `local_only` recording
+therefore shows its complete geometry after a browser reload or plugin restart
+with no Wake Logger/cloud connectivity. The archive backend used by `/track` is
+reported as `archive`.

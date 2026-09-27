@@ -358,9 +358,26 @@ native `reverse=true` flag (an active route marked reversed) is not supported by
 
 ## Offline readiness and loss semantics
 
-The coupled offline readiness contract (course applied, native route active,
-matching prepared Race Pack with supported rules and a current forecast) is the
-only thing that may present `Offline race ready`; it is shared with the cloud.
+The coupled offline readiness contract (course applied, native route active and
+not reversed, matching prepared Race Pack with supported rules and a forecast
+valid now) is the only thing that may present `Offline race ready`. Applicability
+is computed from the current course identity and course-definition digest; the
+course revision and the Race Pack revision are separate namespaces and are never
+required to be equal. The contract distinguishes a forecast that is merely valid
+now from one whose declared coverage demonstrably spans the intended race window,
+and reports the difference as an uncertainty note rather than silently claiming
+coverage. An available but mismatched pack is reported as stored, never as ready,
+and its snapshot recommendations are not shown as current. The contract is
+carried to the cloud in the versioned device status payload, where it is stored
+with a report timestamp and surfaced as stale once the report ages.
+
+Only one onboard client at a time may auto-advance a detected rounding. A leased
+navigation-control owner (`POST /plugins/signalk-wakelogger/progression/control`)
+must be claimed explicitly; other pages are viewers and never advance. The
+advancement itself is an idempotent absolute point index bound to the selected
+course revision and the still-current native point, so a second client, a retry,
+or a lost response cannot advance twice.
+
 Retention loss is reported with three separate meanings: the cumulative
 **lifetime** `droppedCount` across all uploads, losses observed within the
 current historical-upload **cohort**, and per-recording missing/rejected

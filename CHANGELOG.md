@@ -15,7 +15,7 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ### A track that survives reload
 
-- The onboard map now rebuilds the current recording's track from durable onboard data on open or reload, rather than starting at page-open time. New fixes append incrementally, long trips are decimated for display without changing the recording, and the complete geometry survives Safari reload and plugin restart with no Wake Logger/cloud connection.
+- The onboard map now rebuilds the current recording's track from an independent durable onboard archive on open or reload, rather than starting at page-open time and rather than depending on whether telemetry has already been uploaded. New fixes append incrementally; long trips are decimated for display without changing the recording; and the complete geometry survives browser reload, page-resume and plugin restart with no Wake Logger/cloud connection. A tail-only cloud trip is marked "Reconstructing trip · N% history received" until its history converges.
 
 ### Standalone vessel instruments
 
