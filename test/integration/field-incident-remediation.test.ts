@@ -273,6 +273,43 @@ it('leases navigation control so only one onboard client may auto-advance', asyn
   } finally { await f.plugin.stop() }
 })
 
+it('validates lease generation, course, native point and detection before permitting advancement', async () => {
+  const f = await fixture()
+  const application = (overrides: Record<string, unknown> = {}) => ({
+    clientId: 'client-a', courseId: 'race-42', revision: 7,
+    expectedPointIndex: 1, detectionPointIndex: 1, detectionRevision: 7, generation: 0, ...overrides
+  })
+  try {
+    // A viewer without the lease cannot apply.
+    expect((await f.request('POST', '/progression/apply', application())).code).toBe(409)
+    const claimed = await f.request('POST', '/progression/control', { clientId: 'client-a' })
+    const generation = claimed.data.control.generation
+    // A permit is issued for the current point.
+    const permit = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(permit.code).toBe(200)
+    expect(permit.data).toMatchObject({ status: 'apply', targetPointIndex: 2, generation })
+    // A retry after a lost response is idempotent, not a second advancement.
+    const retry = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(retry.data.status).toBe('already_applied')
+    // A detection that does not match the still-current native point is rejected.
+    const stalePoint = await f.request('POST', '/progression/apply', application({ generation, expectedPointIndex: 0, detectionPointIndex: 2 }))
+    expect(stalePoint.code).toBe(409)
+    expect(stalePoint.data.error).toBe('stale_point')
+    // A superseded course revision is rejected.
+    const staleCourse = await f.request('POST', '/progression/apply', application({ generation, revision: 99, detectionRevision: 99 }))
+    expect(staleCourse.code).toBe(409)
+    expect(staleCourse.data.error).toBe('stale_course')
+    // Handover invalidates the old generation: a delayed old-controller write fails.
+    await f.request('POST', '/progression/control', { clientId: 'client-a', release: true })
+    const claimedB = await f.request('POST', '/progression/control', { clientId: 'client-b' })
+    const generationB = claimedB.data.control.generation
+    expect(generationB).toBeGreaterThan(generation)
+    const delayed = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(delayed.code).toBe(409)
+    expect(delayed.data.error).toBe('navigation_control_not_held')
+  } finally { await f.plugin.stop() }
+})
+
 it('exposes onboard routes at the least privilege that works', async () => {
   const f = await fixture()
   try {
@@ -282,7 +319,73 @@ it('exposes onboard routes at the least privilege that works', async () => {
       'POST /diagnostics': 'readonly',
       'GET /course': 'readonly',
       'POST /course/activate': 'readwrite',
-      'POST /progression/control': 'readwrite'
+      'POST /progression/control': 'readwrite',
+      'POST /progression/apply': 'readwrite'
     })
   } finally { await f.plugin.stop() }
+})
+
+import { RecordingStore } from '../../src/trips/recording-store'
+import { TrackArchive } from '../../src/tracking/archive'
+
+it('keeps a completed archive discoverable after terminal recording ACKs remove the upload manifests', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-discovery-'))
+  directories.push(directory)
+  const recordingsDirectory = path.join(directory, 'recordings', 'state.json')
+  const archiveDirectory = path.join(directory, 'track-archive')
+  const recordings = new RecordingStore(recordingsDirectory)
+  await recordings.open()
+  const archive = new TrackArchive(archiveDirectory)
+  await archive.open()
+
+  const draft = (n: number, { sog = 5, lat = -27, at }: { sog?: number; lat?: number; at?: number } = {}) => ({
+    capturedAt: at ?? 1_000_000 + n * 1000, receivedAt: 1_000_000 + n * 1000,
+    values: { lat, lon: 153, sog_kn: sog }, quality: { timestamp: 'source' as const }
+  })
+
+  // Recording A: three moving samples, archived as they are queued.
+  let sequence = 1
+  let recordingAId = ''
+  for (const n of [1, 2, 3]) {
+    const value = draft(n)
+    await recordings.prepare(value, sequence)
+    recordingAId = (value as { trackingSessionId?: string }).trackingSessionId as string
+    await archive.append(recordingAId, { sequence, capturedAt: value.capturedAt, latitude: value.values.lat, longitude: value.values.lon })
+    sequence += 1
+  }
+  expect(recordingAId).toBeTruthy()
+  // A >30 minute gap with no movement closes A without starting a new recording.
+  const gap = draft(4, { sog: 0, at: 1_000_000 + 3 * 1000 + 31 * 60_000 })
+  await recordings.prepare(gap, sequence)
+  const closedA = recordings.manifests().find((manifest) => manifest.id === recordingAId)
+  expect(closedA).toMatchObject({ state: 'interrupted' })
+  await archive.markClosed(recordingAId, closedA!.endedAt ?? null)
+
+  // Deliver the exact terminal recording ACK the transport would deliver.
+  await recordings.acknowledge([{ id: recordingAId, state: closedA!.state, lastSequence: closedA!.lastSequence! }])
+  expect(recordings.manifests().some((manifest) => manifest.id === recordingAId)).toBe(false)
+
+  // The completed archive is still the current recording and fully readable.
+  expect(archive.currentRecordingId()).toBe(recordingAId)
+  expect(archive.recordingMeta(recordingAId)).toMatchObject({ closed: true, points: 3 })
+  expect((await archive.read(recordingAId, { maxPoints: 100 })).points.map((p) => p.sequence)).toEqual([1, 2, 3])
+
+  // Reload/restart both stores; discovery must survive.
+  const reopenedRecordings = new RecordingStore(recordingsDirectory)
+  await reopenedRecordings.open()
+  const reopenedArchive = new TrackArchive(archiveDirectory)
+  await reopenedArchive.open()
+  expect(reopenedRecordings.manifests().some((manifest) => manifest.id === recordingAId)).toBe(false)
+  expect(reopenedArchive.currentRecordingId()).toBe(recordingAId)
+  expect((await reopenedArchive.read(recordingAId, { maxPoints: 100 })).points.map((p) => p.sequence)).toEqual([1, 2, 3])
+
+  // Recording B must not merge with A.
+  const valueB = draft(1, { lat: -30, at: 1_000_000 + 3 * 1000 + 31 * 60_000 + 2000 })
+  await reopenedRecordings.prepare(valueB, sequence)
+  const recordingBId = (valueB as { trackingSessionId?: string }).trackingSessionId as string
+  await reopenedArchive.append(recordingBId, { sequence, capturedAt: valueB.capturedAt, latitude: valueB.values.lat, longitude: valueB.values.lon })
+  expect(recordingBId).not.toBe(recordingAId)
+  expect(reopenedArchive.currentRecordingId()).toBe(recordingBId)
+  expect((await reopenedArchive.read(recordingBId, { maxPoints: 100 })).points.map((p) => p.latitude)).toEqual([-30])
+  expect((await reopenedArchive.read(recordingAId, { maxPoints: 100 })).points).toHaveLength(3)
 })

@@ -135,32 +135,46 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   const canDerive = trueWindSpeed?.available !== true || trueWindDirection?.available !== true
   let windSpeed = trueWindSpeed
   let windDirection = trueWindDirection
+  // Every measurement actually used by a derivation is collected explicitly, so
+  // freshness is bounded by the oldest required input and the skew policy
+  // applies to all of them (not a convenient subset).
+  function boundedDerivation(inputs, compute) {
+    const timestamps = inputs.map((item) => item.reading.timestamp)
+    const allKnown = timestamps.every(finite)
+    const allFresh = inputs.every((item) => item.reading.available)
+    const bound = allKnown ? Math.min(...timestamps) : null
+    const skew = allKnown ? Math.max(...timestamps) - Math.min(...timestamps) : Number.POSITIVE_INFINITY
+    const age = bound === null ? null : Math.max(0, Math.floor((now - bound) / 1000))
+    if (!allKnown || !allFresh || skew > skewSeconds * 1000 || age === null || age > staleSeconds) return { value: null, bound, age }
+    return { value: compute(), bound, age }
+  }
+
   if (canDerive) {
-    const boatReference = cog?.available && sog?.available
-      ? { cogDeg: cog.value, sogKnots: sog.value, basis: 'ground' }
-      : trueHeading?.available && stw?.available
-        ? { headingDeg: trueHeading.value, stwKnots: stw.value, basis: 'water' }
-        : null
-    const apparentReference = apparentDirection.available
-      ? { apparentDirectionDeg: apparentDirection.value, ts: apparentDirection.timestamp, reading: apparentDirection }
-      : trueHeading?.available && awa?.available
-        ? { awaDeg: awa.value, headingDeg: trueHeading.value, ts: awa.timestamp, reading: awa }
-        : null
-    if (boatReference && apparentReference && aws?.available) {
-      const sample = deriveTrueWindSample({
-        awsKnots: aws.value,
-        ...boatReference,
-        ...apparentReference
-      })
-      const boatTimestamp = boatReference.basis === 'ground' ? cog.timestamp : trueHeading.timestamp
-      const inputTimestamps = [aws.timestamp, boatTimestamp, apparentReference.ts].filter(finite)
-      const skewOk = inputTimestamps.length === 3 && (Math.max(...inputTimestamps) - Math.min(...inputTimestamps)) <= skewSeconds * 1000
-      const bound = inputTimestamps.length ? Math.min(...inputTimestamps) : null
-      const age = bound === null ? null : Math.floor((now - bound) / 1000)
-      const staleBound = !skewOk || [aws, boatReference.basis === 'ground' ? cog : trueHeading, apparentReference.reading].filter(Boolean).some((r) => r.freshness !== 'fresh') || age === null || age > staleSeconds
-      if (sample && !staleBound) {
-        windSpeed = readingObject({ id: 'tws', label: 'True wind speed', group: 'Wind', unit: 'kn', reference: sample.direct ? 'true' : 'derived', source: 'derived', value: sample.twsKnots, timestamp: bound, ageSeconds: age, freshness: 'fresh', basis: boatReference.basis })
-        windDirection = readingObject({ id: 'twd', label: 'True wind direction', group: 'Wind', unit: '° true', decimals: 0, reference: 'true', source: 'derived', value: sample.twdDeg, timestamp: bound, ageSeconds: age, freshness: 'fresh', basis: boatReference.basis })
+    const windInputs = [{ name: 'aws', reading: aws }]
+    let apparent = null
+    if (apparentDirection.available) {
+      apparent = { apparentDirectionDeg: apparentDirection.value }
+      windInputs.push({ name: 'awd', reading: apparentDirection })
+    } else if (trueHeading?.available && awa?.available) {
+      // Converting the relative apparent angle to an absolute direction uses the
+      // true heading, so that heading is a required input too.
+      apparent = { awaDeg: awa.value, headingDeg: trueHeading.value }
+      windInputs.push({ name: 'awa', reading: awa }, { name: 'heading', reading: trueHeading })
+    }
+    let boatReference = null
+    if (cog?.available && sog?.available) {
+      boatReference = { cogDeg: cog.value, sogKnots: sog.value, basis: 'ground' }
+      windInputs.push({ name: 'cog', reading: cog }, { name: 'sog', reading: sog })
+    } else if (trueHeading?.available && stw?.available) {
+      boatReference = { headingDeg: trueHeading.value, stwKnots: stw.value, basis: 'water' }
+      windInputs.push({ name: 'heading', reading: trueHeading }, { name: 'stw', reading: stw })
+    }
+    if (aws?.available && apparent && boatReference && windInputs.every((item) => item.reading)) {
+      const sample = deriveTrueWindSample({ awsKnots: aws.value, ...boatReference, ...apparent })
+      const result = boundedDerivation(windInputs, () => sample)
+      if (result.value) {
+        windSpeed = readingObject({ id: 'tws', label: 'True wind speed', group: 'Wind', unit: 'kn', reference: sample.direct ? 'true' : 'derived', source: 'derived', value: sample.twsKnots, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
+        windDirection = readingObject({ id: 'twd', label: 'True wind direction', group: 'Wind', unit: '° true', decimals: 0, reference: 'true', source: 'derived', value: sample.twdDeg, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
       }
     }
   }
@@ -168,17 +182,20 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   readings.push(windDirection)
 
   // Wind-relative VMG uses a consistent velocity vector: ground-relative from
-  // SOG/COG, water-relative from STW/true heading. Each is labelled.
+  // SOG/COG, water-relative from STW/true heading. Every velocity and reference
+  // input is included in the freshness/skew bound.
   const twd = windDirection?.available ? windDirection.value : null
-  if (finite(twd) && cog?.available && sog?.available) {
-    const value = sog.value * Math.cos(signedDegrees(twd - cog.value) * Math.PI / 180)
-    const timestamp = Math.min(...[sog.timestamp, cog.timestamp, windDirection.timestamp].filter(finite))
-    readings.push(readingObject({ id: 'vmg-wind-ground', label: 'VMG to wind (ground)', group: 'Wind', unit: 'kn', reference: 'wind · ground', source: 'derived', value, timestamp, ageSeconds: Math.floor((now - timestamp) / 1000), freshness: 'fresh', basis: 'ground' }))
-  }
-  if (finite(twd) && trueHeading?.available && stw?.available) {
-    const value = stw.value * Math.cos(signedDegrees(twd - trueHeading.value) * Math.PI / 180)
-    const timestamp = Math.min(...[trueHeading.timestamp, stw.timestamp, windDirection.timestamp].filter(finite))
-    readings.push(readingObject({ id: 'vmg-wind-water', label: 'VMG to wind (water)', group: 'Wind', unit: 'kn', reference: 'wind · water', source: 'derived', value, timestamp, ageSeconds: Math.floor((now - timestamp) / 1000), freshness: 'fresh', basis: 'water' }))
+  if (finite(twd) && windDirection) {
+    if (cog?.available && sog?.available) {
+      const inputs = [{ name: 'sog', reading: sog }, { name: 'cog', reading: cog }, { name: 'twd', reading: windDirection }]
+      const result = boundedDerivation(inputs, () => sog.value * Math.cos(signedDegrees(twd - cog.value) * Math.PI / 180))
+      if (result.value !== null) readings.push(readingObject({ id: 'vmg-wind-ground', label: 'VMG to wind (ground)', group: 'Wind', unit: 'kn', reference: 'wind · ground', source: 'derived', value: result.value, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: 'ground' }))
+    }
+    if (trueHeading?.available && stw?.available) {
+      const inputs = [{ name: 'stw', reading: stw }, { name: 'heading', reading: trueHeading }, { name: 'twd', reading: windDirection }]
+      const result = boundedDerivation(inputs, () => stw.value * Math.cos(signedDegrees(twd - trueHeading.value) * Math.PI / 180))
+      if (result.value !== null) readings.push(readingObject({ id: 'vmg-wind-water', label: 'VMG to wind (water)', group: 'Wind', unit: 'kn', reference: 'wind · water', source: 'derived', value: result.value, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: 'water' }))
+    }
   }
 
   const available = readings.filter((item) => item.available).length

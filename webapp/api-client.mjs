@@ -69,6 +69,43 @@ export class SignalKRequestError extends Error {
   }
 }
 
+const ERROR_BODY_LIMIT = 64 * 1024
+
+// Read at most `limit` bytes of a response body. A malformed or hostile error
+// body must not be buffered without bound, and a stalled body is what the
+// request deadline is there to interrupt.
+async function boundedBodyText(response, limit = ERROR_BODY_LIMIT) {
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text()
+    return text.slice(0, limit)
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value)
+      chunks.push(chunk)
+      size += chunk.length
+      if (size >= limit) { await reader.cancel().catch(() => undefined); break }
+    }
+  } finally {
+    try { reader.releaseLock() } catch { /* Already released. */ }
+  }
+  const total = Math.min(size, limit)
+  const joined = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    if (offset >= total) break
+    const slice = chunk.subarray(0, total - offset)
+    joined.set(slice, offset)
+    offset += slice.length
+  }
+  return new TextDecoder().decode(joined)
+}
+
 export class SignalKClient {
   constructor() { this.token = sessionStorage.getItem('wakelogger-onboard-token') || '' }
   async request(path, options = {}) {
@@ -77,30 +114,46 @@ export class SignalKClient {
     const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 5000
     const { timeoutMs: _ignored, operation: _operation, ...init } = options
     const controller = typeof AbortController === 'function' ? new AbortController() : null
-    const timer = controller && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined
-    let response
-    try {
-      response = await fetch(path, {
-        credentials: 'same-origin', ...init,
-        signal: controller ? controller.signal : undefined,
-        headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers }
+    let timer
+    // The deadline is a race, not just an abort signal, so it stays effective
+    // through response-body consumption even if the body ignores the signal.
+    const deadline = timeoutMs > 0
+      ? new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          try { controller?.abort() } catch { /* ignore */ }
+          reject(new SignalKRequestError({ operation, method, path, status: 504, errorCode: 'timeout', detail: `Signal K request did not complete within ${timeoutMs} ms` }))
+        }, timeoutMs)
       })
+      : null
+    const requestInit = {
+      credentials: 'same-origin', ...init,
+      signal: controller ? controller.signal : undefined,
+      headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers }
+    }
+    try {
+      const response = await (deadline ? Promise.race([fetch(path, requestInit), deadline]) : fetch(path, requestInit))
+      if (!response.ok) {
+        let text = ''
+        try {
+          text = deadline ? await Promise.race([boundedBodyText(response), deadline]) : await boundedBodyText(response)
+        } catch (error) {
+          if (error instanceof SignalKRequestError) throw error
+          // A missing/unreadable error body still yields a status-only error.
+        }
+        const { detail, errorCode } = parseSignalKError(response.status, text)
+        throw new SignalKRequestError({ operation, method, path, status: response.status, errorCode, detail })
+      }
+      if (response.status === 204) return null
+      return deadline ? await Promise.race([response.json(), deadline]) : await response.json()
     } catch (error) {
-      if (controller?.signal.aborted) {
-        throw new SignalKRequestError({ operation, method, path, status: 504, errorCode: 'timeout', detail: `Signal K request did not respond within ${timeoutMs} ms` })
+      if (controller?.signal.aborted && !(error instanceof SignalKRequestError)) {
+        throw new SignalKRequestError({ operation, method, path, status: 504, errorCode: 'timeout', detail: `Signal K request did not complete within ${timeoutMs} ms` })
       }
       throw error
     } finally {
       if (timer) clearTimeout(timer)
     }
-    if (!response.ok) {
-      let text = ''
-      try { text = await response.text() } catch { /* A missing body still yields a status-only error. */ }
-      const { detail, errorCode } = parseSignalKError(response.status, text)
-      throw new SignalKRequestError({ operation, method, path, status: response.status, errorCode, detail })
-    }
-    return response.status === 204 ? null : response.json()
   }
   async signIn(username, password) {
     const result = await this.request('/signalk/v1/auth/login', { method: 'POST', operation: 'sign-in', body: JSON.stringify({ username, password }) })

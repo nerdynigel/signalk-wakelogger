@@ -23,15 +23,18 @@ const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 })
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
 let raceProgression = null, applyingProgression = false
+// A per-tab identity, so two tabs do not share one controller role and a newly
+// opened tab starts as a viewer rather than inheriting control.
 const CLIENT_KEY = 'wakelogger-onboard-client'
 const CONTROL_KEY = 'wakelogger-navigation-control'
-let clientId = localStorage.getItem(CLIENT_KEY) || ''
+let clientId = sessionStorage.getItem(CLIENT_KEY) || ''
 if (!clientId) {
   clientId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-  try { localStorage.setItem(CLIENT_KEY, clientId) } catch { /* storage may be unavailable */ }
+  try { sessionStorage.setItem(CLIENT_KEY, clientId) } catch { /* storage may be unavailable */ }
 }
 let navigationControl = false
-try { navigationControl = localStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
+let navigationControlGeneration = null
+try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
@@ -290,12 +293,20 @@ async function poll() {
     renderRacePlan()
     if (navigationControl) {
       const result = await claimControl(false)
-      if (result && !result.held) raceProgression = { ...(raceProgression ?? {}), control: result }
-      else if (result?.held) {
-        navigationControl = false
-        try { localStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
-        notice('Navigation control moved to another device; this page is now a viewer.')
+      if (result && !result.held) {
+        navigationControlGeneration = result.generation ?? null
+        raceProgression = { ...(raceProgression ?? {}), control: result }
+      } else {
+        // Renewal failure/expiry or handover stops automatic application immediately.
+        clearControl()
+        notice(result?.held ? 'Navigation control moved to another device; this page is now a viewer.' : 'Navigation control renewal failed; automatic advancement is paused.')
       }
+    }
+    // Reconcile a lost write response against actual native state: if the native
+    // point already advanced past the detection, resolve it without writing again.
+    if (navigationControl && raceProgression?.pending && !raceProgression.pending.wrongSide && progress?.matches
+      && progress.index === raceProgression.pending.pointIndex + 1) {
+      await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex).catch(() => undefined)
     }
     if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide && navigationControl) await applyProgression()
     const serverSessionId = trackingStatus?.trackingSessionId ?? null
@@ -413,7 +424,7 @@ function racePlanLeg(leg, eyebrow) {
 async function claimControl(release = false) {
   try {
     const result = await client.request('/plugins/signalk-wakelogger/progression/control', { method: 'POST', operation: 'navigation-control', timeoutMs: 3000, body: JSON.stringify({ clientId, release }) })
-    return result?.control ?? null
+    return release ? { released: true } : (result?.control ?? null)
   } catch (error) {
     if (error?.status === 409) return { held: true }
     reportDiagnostic(error)
@@ -421,21 +432,51 @@ async function claimControl(release = false) {
   }
 }
 
+function clearControl() {
+  navigationControl = false
+  navigationControlGeneration = null
+  try { sessionStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
+}
+
+// The plugin is the execution boundary: it validates the lease generation,
+// course revision, native point and detection identity and returns a one-time
+// permit. Only then does this client perform the supported native pointIndex
+// write. `already_applied` means a retry after a lost response or a native point
+// that already advanced, so no second write is made.
+async function requestAdvance(pending) {
+  const href = status?.native?.course?.activeRoute?.href
+  const revision = status?.desired?.revision
+  const courseId = status?.desired?.courseId
+  if (!pending || !href || !courseId || !navigationControl || navigationControlGeneration === null) return false
+  const permit = await client.request('/plugins/signalk-wakelogger/progression/apply', {
+    method: 'POST', operation: 'apply-progression', timeoutMs: 4000,
+    body: JSON.stringify({
+      clientId, generation: navigationControlGeneration, courseId, revision,
+      expectedPointIndex: progress?.index, detectionPointIndex: pending.pointIndex, detectionRevision: pending.revision
+    })
+  })
+  if (permit?.status === 'already_applied') {
+    await raceProgressionClient.resolve('accepted', pending.pointIndex).catch(() => undefined)
+    return true
+  }
+  if (permit?.status !== 'apply' || permit.generation !== navigationControlGeneration) return false
+  await progression.setPoint(permit.targetPointIndex, progress.points.length, href)
+  await raceProgressionClient.resolve('accepted', pending.pointIndex)
+  return true
+}
+
 async function applyProgression() {
   if (applyingProgression || !navigationControl) return
   const pending = raceProgression?.pending
-  const href = status?.native?.course?.activeRoute?.href
   const revision = status?.desired?.revision
-  if (!pending || pending.wrongSide || !href) return
-  if (raceProgression.control?.clientId !== clientId) return
+  if (!pending || pending.wrongSide) return
+  if (raceProgression.control?.clientId !== clientId || raceProgression.control?.generation !== navigationControlGeneration) return
   if (pending.revision !== revision || pending.pointIndex !== progress?.index) return
   const target = pending.pointIndex + 1
   if (!Number.isInteger(target) || target >= (progress?.points?.length ?? 0)) return
   applyingProgression = true
   try {
-    await progression.setPoint(target, progress.points.length, href)
-    await raceProgressionClient.resolve('accepted', pending.pointIndex)
-    notice(`Mark ${pending.pointIndex + 1} rounding accepted.`)
+    if (await requestAdvance(pending)) notice(`Mark ${pending.pointIndex + 1} rounding accepted.`)
   } catch (error) {
     notice(`${describeNavigationFailure(error, { markNumber: pending.pointIndex + 1 })} Set the point manually if the rounding was missed.`)
     reportDiagnostic(error)
@@ -444,18 +485,18 @@ async function applyProgression() {
 
 $('navigation-control').onclick = async () => {
   if (navigationControl) {
-    navigationControl = false
-    try { localStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
+    clearControl()
     await claimControl(true)
     notice('Navigation control released. This device is now a viewer.')
   } else {
     const control = await claimControl(false)
     if (control?.clientId === clientId) {
       navigationControl = true
-      try { localStorage.setItem(CONTROL_KEY, '1') } catch { /* ignore */ }
+      navigationControlGeneration = control.generation ?? null
+      try { sessionStorage.setItem(CONTROL_KEY, '1') } catch { /* ignore */ }
       notice('Navigation control enabled on this device.')
     } else {
-      navigationControl = false
+      clearControl()
       notice('Another device is already controlling navigation for this course.')
     }
   }
@@ -466,10 +507,7 @@ $('progression-accept').onclick = () => {
   if (!navigationControl) { notice('Enable navigation control on this device before accepting a rounding.'); return }
   const pending = raceProgression?.pending
   if (!pending) return
-  return command(async () => {
-    await progression.setPoint(pending.pointIndex + 1, progress.points.length, status.native.course.activeRoute.href)
-    await raceProgressionClient.resolve('accepted', pending.pointIndex)
-  }, { markNumber: pending.pointIndex + 1 })
+  return command(async () => { await requestAdvance(pending) }, { markNumber: pending.pointIndex + 1 })
 }
 $('progression-dismiss').onclick = async () => {
   try {

@@ -3,7 +3,7 @@ import { promises as fs, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { CourseStore } from './courses/course-store'
 import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
-import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
+import { NativeCourseService, nativeRouteHref, type NativeCourseApp } from './courses/native-course'
 import { RaceProgressionService } from './race/progression-service'
 import { RaceProgressionStore } from './race/progression-store'
 import { ObservationCollector } from './race/observations'
@@ -11,6 +11,7 @@ import { RacePackStore } from './race/race-pack-store'
 import { RacePackReceiver } from './race/race-pack-protocol'
 import { OnboardSnapshotStore, type OnboardPlanSnapshot } from './race/onboard-store'
 import { OnboardRaceService, type OnboardCourseState } from './race/onboard-service'
+import { NavigationControlLease } from './race/navigation-control'
 import { offlineReadiness, type OfflineReadiness, type ReadinessPackState } from './race/readiness'
 import { UploadHistory, durableJson } from './tracking/history'
 import { TrackArchive } from './tracking/archive'
@@ -31,7 +32,6 @@ import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-clie
 import { type TripSnapshot } from './trips/state-machine'
 import { RecordingStore } from './trips/recording-store'
 
-const NAVIGATION_CONTROL_LEASE_MS = 30_000
 const DIAGNOSTIC_DEDUPE_MS = 60_000
 const SENSITIVE_DIAGNOSTIC_KEY = 'token|access[_-]?token|refresh[_-]?token|password|passwd|secret|client[_-]?secret|api[_-]?key|apikey|authorization|auth|signature|session[_-]?id|code|pin'
 
@@ -57,9 +57,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
   let trackArchive: TrackArchive | undefined
-  // Explicit, leased navigation-control ownership. Only the owning onboard
-  // client may auto-apply a detected rounding; other pages are viewers.
-  let navigationController: { clientId: string; expiresAt: number } | undefined
+  // Explicit, leased, generation-stamped navigation-control ownership. Only the
+  // owning onboard client may apply a detected rounding; other pages are viewers.
+  const navigationLease = new NavigationControlLease()
   let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistedUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistenceError: string | undefined
@@ -251,17 +251,91 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
             return
           }
           if (body?.release === true) {
-            if (navigationController?.clientId === clientId) navigationController = undefined
-            response.status(200).json({ control: controllerStatus() })
+            response.status(200).json({ control: navigationLease.release(clientId) })
             return
           }
-          const now = Date.now()
-          if (navigationController && navigationController.expiresAt > now && navigationController.clientId !== clientId) {
-            response.status(409).json({ error: 'navigation_control_held', ...controllerStatus() })
+          const result = navigationLease.claim(clientId)
+          if (!result.ok) {
+            response.status(409).json({ error: 'navigation_control_held', control: result.state })
             return
           }
-          navigationController = { clientId, expiresAt: now + NAVIGATION_CONTROL_LEASE_MS }
-          response.status(200).json({ control: controllerStatus() })
+          response.status(200).json({ control: result.state })
+        } catch (error) { next(error) }
+      })
+      // The execution boundary for automatic/manual advancement. It validates
+      // the controlling lease and its generation, the selected course identity
+      // and revision, the still-current native point and the detection identity
+      // before issuing a one-time permit. The permit is idempotent per
+      // generation+detection so a retry after a lost response cannot advance
+      // twice; reconciliation uses actual native state (see docs for the
+      // Signal K 2.31 limitation: no plugin pointIndex write API exists, so the
+      // onboard app performs the native pointIndex write after the permit).
+      writeRouter.post('/progression/apply', async (request, response, next) => {
+        try {
+          const body = (request as { body?: Record<string, unknown> }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          const generation = Number(body?.generation)
+          const courseId = typeof body?.courseId === 'string' ? body.courseId : ''
+          const revision = Number(body?.revision)
+          const expectedPointIndex = Number(body?.expectedPointIndex)
+          const detectionPointIndex = Number(body?.detectionPointIndex)
+          const detectionRevision = Number(body?.detectionRevision)
+          if (!clientId || !courseId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(revision)
+            || !Number.isSafeInteger(expectedPointIndex) || !Number.isSafeInteger(detectionPointIndex) || !Number.isSafeInteger(detectionRevision)) {
+            response.status(400).json({ error: 'invalid_application' })
+            return
+          }
+          const verdict = navigationLease.check(clientId, generation)
+          if (verdict !== 'ok') {
+            response.status(409).json({ error: verdict === 'expired' ? 'navigation_control_expired' : 'navigation_control_not_held', control: controllerStatus() })
+            return
+          }
+          const status = courses ? await courses.status() as {
+            desired?: { action?: string; revision?: number; courseId?: string } | null
+            acknowledgement?: { status?: string; revision?: number } | null
+            routePoints?: unknown[]
+            native?: { available?: boolean; activeMatchesDesired?: boolean; course?: { activeRoute?: { href?: string; pointIndex?: number; reverse?: boolean } | null } | null } | null
+          } : null
+          const desired = status?.desired
+          const acknowledgement = status?.acknowledgement
+          if (!desired || desired.action !== 'activate' || desired.revision !== revision || desired.courseId !== courseId
+            || acknowledgement?.status !== 'applied' || acknowledgement.revision !== revision) {
+            response.status(409).json({ error: 'stale_course' })
+            return
+          }
+          if (detectionRevision !== revision) {
+            response.status(409).json({ error: 'stale_detection' })
+            return
+          }
+          const native = status?.native
+          const activeRoute = native?.course?.activeRoute
+          if (native?.available !== true || native?.activeMatchesDesired !== true || activeRoute?.href !== nativeRouteHref(courseId)) {
+            response.status(409).json({ error: 'native_route_not_active' })
+            return
+          }
+          if (activeRoute.reverse === true) {
+            response.status(409).json({ error: 'reverse_course_unsupported' })
+            return
+          }
+          const points = status?.routePoints ?? []
+          const target = detectionPointIndex + 1
+          const applicationId = `${generation}:${courseId}:${revision}:${detectionPointIndex}`
+          // Idempotent retry: a lost response, or the native point already
+          // advanced, must not advance a second time.
+          if (activeRoute.pointIndex === target || navigationLease.isApplied(applicationId)) {
+            response.status(200).json({ status: 'already_applied', targetPointIndex: target, generation })
+            return
+          }
+          if (detectionPointIndex !== expectedPointIndex || activeRoute.pointIndex !== expectedPointIndex) {
+            response.status(409).json({ error: 'stale_point', expectedPointIndex, nativePointIndex: activeRoute.pointIndex ?? null })
+            return
+          }
+          if (target >= points.length) {
+            response.status(409).json({ error: 'no_next_point' })
+            return
+          }
+          navigationLease.markApplied(applicationId)
+          response.status(200).json({ status: 'apply', targetPointIndex: target, generation })
         } catch (error) { next(error) }
       })
       writeRouter.post('/progression/mode', async (request, response, next) => {
@@ -361,6 +435,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
         '/progression/control': { post: { summary: 'Claim, renew or release leased onboard navigation control so only one client auto-advances', responses: { '200': { description: 'Control status' }, '400': { description: 'Invalid client' }, '409': { description: 'Control held by another client' } } } },
+        '/progression/apply': { post: { summary: 'Validate the controlling lease, course revision, native point and detection before a one-time, idempotent advancement permit', responses: { '200': { description: 'Permit issued or already applied' }, '400': { description: 'Invalid application' }, '409': { description: 'Stale/expired control, course or point' } } } },
         '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
         '/race-plan': { get: { summary: 'Read onboard Race Plan calculation authority, Race Pack state and the latest onboard snapshot', responses: { '200': { description: 'Onboard race plan state' } } } },
         '/race-plan/recalculate': { post: { summary: 'Request an explicit onboard Race Plan recalculation (local-only authority only)', responses: { '200': { description: 'Recalculation attempted' }, '409': { description: 'Onboard planner unavailable or cloud is authoritative' } } } },
@@ -467,33 +542,34 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const maxPoints = Number.isFinite(maxPointsValue)
       ? Math.max(50, Math.min(MAX_TRACK_POINTS, Math.floor(maxPointsValue)))
       : DEFAULT_TRACK_POINTS
+    if (!trackArchive) {
+      return { storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null }
+    }
     const manifests = tripState?.manifests() ?? []
     const active = manifests.find((manifest) => manifest.state === 'recording')
-    const latestClosed = manifests
-      .filter((manifest) => manifest.state !== 'recording')
-      .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))[0]
-    const recording = active ?? latestClosed ?? null
-    if (!recording || !trackArchive) {
-      return {
-        storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false },
-        recording: recording ?? null, trackingSessionId: null
-      }
+    // The pending-upload manifests are removed after the terminal recording ACK,
+    // so discovery must not depend on them: prefer the active recording, else
+    // the archive's independently persisted current/most-recent recording.
+    const selectedId = active?.id ?? trackArchive.currentRecordingId()
+    if (!selectedId) {
+      return { storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null }
     }
-    // Prune settled older recordings when the active recording changes, never
+    // Prune settled older recordings when the selected recording changes, never
     // on the sample path and never the active file.
-    if (recording.id !== archivedRecordingId) {
-      archivedRecordingId = recording.id
+    if (selectedId !== archivedRecordingId) {
+      archivedRecordingId = selectedId
       void trackArchive.prune(active?.id ?? null).catch(() => undefined)
     }
-    const result = await trackArchive.read(recording.id, { maxPoints })
-    return { ...result, recording, trackingSessionId: recording.id }
+    const meta = trackArchive.recordingMeta(selectedId)
+    const result = await trackArchive.read(selectedId, { maxPoints })
+    const recording = active ?? (meta
+      ? { id: meta.id, state: meta.closed ? 'complete' : 'closed', startedAt: meta.startedAt, endedAt: meta.endedAt, firstSequence: meta.firstSequence, lastSequence: meta.lastSequence }
+      : { id: selectedId, state: 'closed', startedAt: null, endedAt: null, firstSequence: null, lastSequence: null })
+    return { ...result, recording, trackingSessionId: selectedId }
   }
 
-  function controllerStatus(): { clientId: string | null; active: boolean; expiresAt: number | null } {
-    if (navigationController && navigationController.expiresAt <= Date.now()) navigationController = undefined
-    return navigationController
-      ? { clientId: navigationController.clientId, active: true, expiresAt: navigationController.expiresAt }
-      : { clientId: null, active: false, expiresAt: null }
+  function controllerStatus(): import('./race/navigation-control').NavigationControlState {
+    return navigationLease.status()
   }
 
   // Structured, allow-listed diagnostic sanitisation. The onboard client
@@ -609,12 +685,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     onboardSnapshots = undefined
     await racePacks?.close()
     racePacks = undefined
+    await trackArchive?.close().catch(() => undefined)
     trackArchive = undefined
     archivedRecordingId = null
     racePackReceiver = undefined
     observations = undefined
     onboardCourse = null
-    navigationController = undefined
     await courses?.close()
     courses = undefined
     courseInitializationError = undefined
@@ -845,6 +921,11 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         // failure; scanning the complete offline queue every sample is costly.
         nextSequence = (await outbox.stats()).currentSequence + 1
         throw error
+      }
+      // Close the archive recording when the manifest is terminal so its
+      // metadata is settled even after the upload manifest is acknowledged.
+      if (draft.recording && draft.recording.state !== 'recording' && trackArchive) {
+        void trackArchive.markClosed(draft.recording.id, draft.recording.endedAt ?? null).catch((error) => app.error(`Wake Logger track archive close failed: ${safeError(error)}`))
       }
       transport?.updateCurrent(queued)
       if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${queued.sequence}`)

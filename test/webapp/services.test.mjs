@@ -368,6 +368,56 @@ test('derived wind requires fresh reference-compatible inputs with bounded skew'
   assert.equal(source(magnetic, 'tws').value, null)
 })
 
+test('every derivation input participates in freshness and skew', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const source = (view, id) => view.readings.find((reading) => reading.id === id)
+  const ground = (overrides = {}) => {
+    const nav = {
+      speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: 1, timestamp: ts() },
+      headingTrue: { value: 1, timestamp: ts() }
+    }
+    const wind = { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } }
+    for (const [path, value] of Object.entries(overrides.nav ?? {})) nav[path] = value
+    for (const [path, value] of Object.entries(overrides.wind ?? {})) wind[path] = value
+    return instrumentReadings({ now, skewSeconds: overrides.skewSeconds ?? 10, navigation: nav, environment: { wind } })
+  }
+
+  // SOG 25 s old while AWS/AWA/heading/COG are current. It is within the 30 s
+  // freshness limit, so only the 10 s skew policy blocks the derivation; a wider
+  // skew policy accepts it, proving the distinction.
+  const oldSog = { speedOverGround: { value: 3, timestamp: ts(25_000) } }
+  assert.equal(source(ground({ nav: oldSog }), 'tws').value, null)
+  assert.notEqual(source(ground({ nav: oldSog, skewSeconds: 30 }), 'tws').value, null)
+
+  // Water-referenced STW 25 s old with otherwise current inputs.
+  const water = (stwTimestamp) => instrumentReadings({ now, skewSeconds: 10, navigation: { headingTrue: { value: 1, timestamp: ts() }, speedThroughWater: { value: 2.5, timestamp: stwTimestamp } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(water(ts(25_000)), 'tws').value, null)
+  assert.notEqual(source(water(ts()), 'tws').value, null)
+
+  // Heading 25 s old when converting AWA to an absolute direction.
+  const oldHeading = { headingTrue: { value: 1, timestamp: ts(25_000) } }
+  assert.equal(source(ground({ nav: oldHeading }), 'tws').value, null)
+
+  // Each required input independently stale (older than the freshness limit).
+  for (const overrides of [
+    { nav: { speedOverGround: { value: 3, timestamp: ts(40_000) } } },
+    { nav: { courseOverGroundTrue: { value: 1, timestamp: ts(40_000) } } },
+    { nav: { headingTrue: { value: 1, timestamp: ts(40_000) } } },
+    { wind: { speedApparent: { value: 9, timestamp: ts(40_000) } } },
+    { wind: { angleApparent: { value: 0.5, timestamp: ts(40_000) } } }
+  ]) assert.equal(source(ground(overrides), 'tws').value, null)
+
+  // An unknown or future timestamp on any required input invalidates it.
+  assert.equal(source(ground({ nav: { speedOverGround: { value: 3 } } }), 'tws').value, null)
+  assert.equal(source(ground({ wind: { angleApparent: { value: 0.5, timestamp: new Date(now + 60_000).toISOString() } } }), 'tws').value, null)
+
+  // VMG obeys the same discipline: a stale SOG blocks ground VMG.
+  const vmgInputs = { speedOverGround: { value: 3, timestamp: ts(25_000) }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts() } }
+  const vmgView = instrumentReadings({ now, skewSeconds: 10, navigation: vmgInputs, environment: { wind: { speedTrue: { value: 8, timestamp: ts() }, directionTrue: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(vmgView, 'vmg-wind-ground'), undefined)
+})
+
 test('true wind angle references and wind-relative VMG bases are explicit', () => {
   const now = Date.parse('2026-09-17T02:05:00Z')
   const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
@@ -428,4 +478,42 @@ test('an available but inapplicable pack is stored, never shown as current', asy
   assert.equal(view.currentLeg, null)
   assert.deepEqual(view.remainingLegs, [])
   assert.match(view.warning, /does not match the selected Wake Logger course/)
+})
+
+test('request deadlines stay active through the response body and recover', async () => {
+  const { SignalKClient } = await import('../../webapp/api-client.mjs')
+  const originalFetch = globalThis.fetch
+  const hadSession = 'sessionStorage' in globalThis
+  const originalSession = globalThis.sessionStorage
+  globalThis.sessionStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+  try {
+    // No headers: fetch never settles.
+    globalThis.fetch = () => new Promise(() => {})
+    const client = new SignalKClient()
+    await assert.rejects(client.request('/x', { operation: 'read-navigation', timeoutMs: 40 }), (error) => error.status === 504 && error.errorCode === 'timeout')
+
+    // Headers received but the body stalls.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // Partial JSON followed by a stall.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"a":')) } }), { status: 200 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // A stalled error body is bounded and interrupted by the deadline.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start() {} }), { status: 500 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // Malformed JSON that completes rejects promptly (a parse error, not a hang).
+    globalThis.fetch = () => Promise.resolve(new Response('{not json', { status: 200 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 1000 }), (error) => error?.errorCode !== 'timeout')
+
+    // The next polling cycle recovers normally.
+    globalThis.fetch = () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    assert.deepEqual(await client.request('/x', { timeoutMs: 1000 }), { ok: true })
+  } finally {
+    globalThis.fetch = originalFetch
+    if (hadSession) globalThis.sessionStorage = originalSession
+    else delete globalThis.sessionStorage
+  }
 })

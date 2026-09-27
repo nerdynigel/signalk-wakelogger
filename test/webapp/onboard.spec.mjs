@@ -15,7 +15,8 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
-  let controlState = { clientId: null, active: false, expiresAt: null }
+  let controlGeneration = 0
+  let controlState = { clientId: null, active: false, expiresAt: null, generation: null }
   const external = []
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
@@ -49,10 +50,23 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     if (pathname === '/plugins/signalk-wakelogger/progression') return json({ ...(progressionState ?? {}), control: controlState })
     if (pathname === '/plugins/signalk-wakelogger/progression/control') {
       const body = request.postDataJSON()
-      if (body.release) controlState = { clientId: null, active: false, expiresAt: null }
+      if (body.release) controlState = { clientId: null, active: false, expiresAt: null, generation: null }
       else if (controlState.active && controlState.clientId !== body.clientId) return route.fulfill({ status: 409, json: { error: 'navigation_control_held', control: controlState } })
-      else controlState = { clientId: body.clientId, active: true, expiresAt: Date.now() + 30000 }
+      else {
+        if (!controlState.active || controlState.clientId !== body.clientId) controlGeneration += 1
+        controlState = { clientId: body.clientId, active: true, expiresAt: Date.now() + 30000, generation: controlGeneration }
+      }
       return json({ control: controlState })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression/apply') {
+      const body = request.postDataJSON()
+      if (!controlState.active || controlState.clientId !== body.clientId || controlState.generation !== body.generation) {
+        return route.fulfill({ status: 409, json: { error: 'navigation_control_not_held', control: controlState } })
+      }
+      const target = body.detectionPointIndex + 1
+      if (navigation.activeRoute.pointIndex === target) return json({ status: 'already_applied', targetPointIndex: target, generation: controlState.generation })
+      if (navigation.activeRoute.pointIndex !== body.detectionPointIndex) return route.fulfill({ status: 409, json: { error: 'stale_point' } })
+      return json({ status: 'apply', targetPointIndex: target, generation: controlState.generation })
     }
     if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
