@@ -2,6 +2,27 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [Unreleased] - 2026-09-27
+
+### Offline race readiness you can trust
+
+- One clear **Offline race ready** status now checks that the selected course is applied, the expected Signal K route is active, and a Race Pack that matches the course (id, race plan and course definition) is prepared with supported rules and a current forecast. Changing the course immediately invalidates readiness for the old pack, even though that pack is kept for history.
+- Switching Live tracking off stays possible for radio silence, but if readiness is incomplete the app now shows a prominent pre-switch warning that names exactly what is missing instead of implying onboard sail planning will work.
+
+### Clearer navigation failures
+
+- Failed Signal K requests now keep the operation, method, path, HTTP status and a bounded, credential-safe reason. Advancing, setting or activating a course shows a human-readable message such as "Could not advance to the next course point to Mark 3 — Signal K rejected the active route update: <reason>", and the bounded detail is written to the plugin log. Tokens and passwords are never logged or displayed.
+
+### A track that survives reload
+
+- The onboard map now rebuilds the current recording's track from durable onboard data on open or reload, rather than starting at page-open time. New fixes append incrementally, long trips are decimated for display without changing the recording, and the complete geometry survives Safari reload and plugin restart with no Wake Logger/cloud connection.
+
+### Standalone vessel instruments
+
+- A new **Instruments** tab is the default when no course is selected. It reads position, speed and course over ground, heading (true or magnetic), speed through water, depth (with its reference), and apparent and true wind directly from the local Signal K server.
+- Instruments are independent of the course, Race Pack, recording and Wake Logger connection: a failed course request, a mismatched pack or Live tracking off does not stop them. Freshness is tracked per measurement, stale and missing values are marked, and no wind is invented from forecast data. Wind-relative VMG is labelled as such.
+- "No course selected" is a normal state: the instrument view stays clean, and course controls and race warnings remain in the race panel.
+
 ## [0.2.0-beta.6] - 2026-09-26
 
 ### Onboard race planning matches Wake Logger exactly

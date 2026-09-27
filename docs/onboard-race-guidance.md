@@ -347,6 +347,41 @@ outbound Wake Logger transport or pairing traffic.
 - Snapshots queued during `local_only` are not lost and upload after authority
   returns to `automatic`.
 
+## Reverse courses
+
+Wake Logger represents a reversed race by storing the route points in reversed
+order. That is a normal ordered course to the onboard planner: it follows the
+stored order exactly and never reverses it a second time. The separate Signal K
+native `reverse=true` flag (an active route marked reversed) is not supported by
+`race_plan_dynamic_v1`; the onboard scheduler fails closed with
+`reverse_course_unsupported` rather than calculating the course forwards.
+
+## Offline readiness and loss semantics
+
+The coupled offline readiness contract (course applied, native route active,
+matching prepared Race Pack with supported rules and a current forecast) is the
+only thing that may present `Offline race ready`; it is shared with the cloud.
+Retention loss is reported with three separate meanings: the cumulative
+**lifetime** `droppedCount` across all uploads, losses observed within the
+current historical-upload **cohort**, and per-recording missing/rejected
+samples. The UI never describes lifetime `droppedCount` as samples lost from the
+current trip, and a recording affected by retention pressure is explicitly
+marked as not complete.
+
+## Standalone vessel instruments
+
+The onboard app exposes an **Instruments** view that is the default when no
+course is selected. It subscribes to local Signal K navigation and environment
+measurements directly and is independent of the desired/cached course,
+`native.activeMatchesDesired`, course activation, Race Pack readiness, the
+onboard scheduler, an active recording, and MQTT/cloud mode. A failed course,
+race-plan or chart request is isolated to that feature and never stops
+instrument updates. Freshness is tracked per measurement from source timestamps;
+stale values show their age, missing values show as unavailable, and forecast
+data is never substituted for live readings. Wind-relative VMG is labelled
+separately from waypoint VMG. Local Signal K connection state is reported
+separately from Wake Logger cloud/upload state.
+
 ## Rule-set version and parity
 
 The pack carries `ruleSetVersion`; every plan and snapshot records the
