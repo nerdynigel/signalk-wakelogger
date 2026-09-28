@@ -131,3 +131,17 @@ recomputed (the departure is never dropped). A multi-hour `local_only` recording
 therefore shows its complete geometry after a browser reload or plugin restart
 with no Wake Logger/cloud connectivity. The archive backend used by `/track` is
 reported as `archive`.
+
+The archive keeps its own `manifest.json` (atomic + fsynced) describing every
+recording and the current/most-recent one, and rebuilds it from the archive
+files if it is ever lost. `GET /track` therefore selects the active recording
+if one exists, otherwise the archive's current/most-recent recording, and is
+independent of the pending-upload manifests that are removed after the terminal
+recording acknowledgement. Appends are serialised and bounded, duplicate/retried
+samples are idempotent, and before appending the archive repairs an interrupted
+write: a partial header is rewritten, a partial final record is trimmed to the
+last aligned boundary, and a corrupt header is quarantined and replaced, so a
+duplicate header or misaligned record cannot occur. Durability guarantee: a
+completed append survives an ordinary process restart; the manifest is fsynced
+on close; per-sample power-loss durability is not claimed, and the last
+unflushed tail is repaired rather than trusted on the next open.

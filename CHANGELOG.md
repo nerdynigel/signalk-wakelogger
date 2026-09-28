@@ -2,6 +2,22 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [Unreleased] - 2026-09-28
+
+### Completed trips stay on the map after upload
+
+- The onboard map archive keeps its own recording index, independent of the upload queue. A completed trip remains available on the map after its telemetry has been uploaded and acknowledged and after the pending-upload records are removed, and it survives a reload or plugin restart. Starting a new trip never mixes it with the previous one.
+- The archive repairs an interrupted write when it next opens or appends: a partial header is rewritten, a partial final record is trimmed, and a corrupt file is quarantined, so records stay aligned. Writes are ordered and bounded, and pending writes are flushed on orderly shutdown. Power-loss durability is not claimed per sample; the last flushed data is retained and the tail is repaired.
+
+### Navigation can only be advanced by the controlling device
+
+- Taking navigation control now returns a generation. Automatic advancement goes through a plugin check that validates the controller, its generation, the selected course revision, the current native point and the detection before issuing a one-time permit; a retry after a lost response is idempotent, a delayed old controller cannot advance after handover, and a stale point or changed course is rejected. Each browser tab has its own identity, so a newly opened tab is a viewer until someone deliberately takes control.
+
+### Trustworthy instrument values
+
+- Every input used by a derived wind or VMG value — including speed over ground/through water and the heading used to convert an apparent angle — now participates in the freshness and time-skew bound, so a stale input cannot be hidden by a fresh one.
+- Signal K request deadlines now stay active while the response body is being read, so a stalled body times out instead of hanging, and the next poll recovers.
+
 ## [Unreleased] - 2026-09-27
 
 ### Offline race readiness you can trust

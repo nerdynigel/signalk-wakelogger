@@ -66,8 +66,14 @@ export interface OfflineReadiness {
   /** Honest caveats that do not by themselves block readiness. */
   uncertainty: string[]
   forecastCoverage: ForecastCoverage
+  /** A visible qualification of the forecast coverage (never tooltip-only). */
+  coverageQualification: string | null
   /** Whether the pack is stored but does not apply to the selected course. */
   packStoredNotApplicable: boolean
+  /** Identity the readiness was evaluated against, so a later course change invalidates it. */
+  courseId: string | null
+  courseRevision: number | null
+  packRevision: number | null
   detail: string
   evaluatedAt: number
 }
@@ -146,6 +152,14 @@ export function offlineReadiness(input: {
       : 'The Race Pack has no declared forecast coverage window; only current validity is confirmed.')
   }
 
+  const coverageQualification = !packReady || !forecastValidNow
+    ? null
+    : forecastCoverage === 'covers_expected_window'
+      ? 'Forecast coverage extends at least a nominal race window beyond now; the exact race duration is not known, so this is a heuristic, not proof.'
+      : forecastCoverage === 'valid_now_only'
+        ? (uncertainty[0] ?? 'Forecast is valid now only; coverage of the whole race window is not confirmed.')
+        : null
+
   const ready = missing.length === 0
   return {
     ready,
@@ -154,9 +168,13 @@ export function offlineReadiness(input: {
     missing,
     uncertainty,
     forecastCoverage,
+    coverageQualification,
     packStoredNotApplicable,
+    courseId: selected ? course?.courseId ?? null : null,
+    courseRevision: selected ? course?.revision ?? null : null,
+    packRevision: packReady ? pack?.revision ?? null : null,
     detail: ready
-      ? `Course applied, native route active, matching Race Pack prepared with supported rules and a forecast valid now (${forecastCoverage}).${uncertainty.length ? ` ${uncertainty.join(' ')}` : ''}`
+      ? `Course applied, native route active, matching Race Pack prepared with supported rules and a forecast valid now.${coverageQualification ? ` ${coverageQualification}` : ''}`
       : `Missing: ${missing.join('; ')}.`,
     evaluatedAt: input.now
   }

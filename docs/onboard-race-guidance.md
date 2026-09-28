@@ -371,12 +371,25 @@ and its snapshot recommendations are not shown as current. The contract is
 carried to the cloud in the versioned device status payload, where it is stored
 with a report timestamp and surfaced as stale once the report ages.
 
-Only one onboard client at a time may auto-advance a detected rounding. A leased
-navigation-control owner (`POST /plugins/signalk-wakelogger/progression/control`)
-must be claimed explicitly; other pages are viewers and never advance. The
-advancement itself is an idempotent absolute point index bound to the selected
-course revision and the still-current native point, so a second client, a retry,
-or a lost response cannot advance twice.
+Only one onboard client at a time may auto-advance a detected rounding. A leased,
+generation-stamped navigation-control owner
+(`POST /plugins/signalk-wakelogger/progression/control`) must be claimed
+explicitly; other pages, including a newly opened tab, are viewers and never
+advance. Advancement goes through the execution boundary
+`POST /plugins/signalk-wakelogger/progression/apply`, which validates the
+controller and its generation, the selected course identity and revision, the
+still-current native point and the detection identity before issuing a one-time
+permit; the permit is idempotent per generation and detection, so a retry after
+a lost response cannot advance twice, and a delayed command from a previous owner
+fails after a handover. The onboard app then performs the supported native
+`pointIndex` write and reconciles against actual native state.
+
+Underlying native-API limitation (stated honestly): Signal K 2.31 exposes no
+plugin API to set the active route point index, so the plugin cannot perform the
+native compare-and-set itself; the write is the app's supported native REST call
+performed only after the validated permit. The plugin therefore bounds and
+serialises advancement authorisation but does not claim an atomic
+Signal K-side compare-and-set.
 
 Retention loss is reported with three separate meanings: the cumulative
 **lifetime** `droppedCount` across all uploads, losses observed within the
