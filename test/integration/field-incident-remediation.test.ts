@@ -411,14 +411,21 @@ it('requires the actual pending detection, not just matching caller fields', asy
 it('keeps GET /track after terminal recording ACKs remove the upload manifest', async () => {
   const f = await fixture()
   const statePath = path.join(f.directory, 'recordings', deviceId, 'state.json')
+  const start = Date.now()
   try {
+    // Past source timestamps so a later closing gap can exceed the interruption
+    // window (future source timestamps are rejected by the normaliser).
     for (let index = 0; index < 4; index += 1) {
-      f.ingest({ latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 })
+      f.ingest(
+        { latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 },
+        new Date(start - 40 * 60_000 + index * 1000).toISOString(),
+        3
+      )
       await new Promise((resolve) => setTimeout(resolve, 600))
     }
     await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(3), { timeout: 10000 })
     // A >30 minute stationary gap closes the recording without starting a new one.
-    f.ingest({ latitude: -27.4, longitude: 153.17 }, new Date(Date.now() + 31 * 60_000).toISOString(), 0)
+    f.ingest({ latitude: -27.4, longitude: 153.17 }, new Date(start - 5 * 60_000).toISOString(), 0)
     await vi.waitFor(async () => {
       const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed?: unknown[] }
       expect(persisted.closed?.length ?? 0).toBeGreaterThan(0)
