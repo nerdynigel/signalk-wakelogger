@@ -411,33 +411,32 @@ it('requires the actual pending detection, not just matching caller fields', asy
 it('keeps GET /track after terminal recording ACKs remove the upload manifest', async () => {
   const f = await fixture()
   const statePath = path.join(f.directory, 'recordings', deviceId, 'state.json')
-  const start = Date.now()
   try {
-    // Past source timestamps so a later closing gap can exceed the interruption
-    // window (future source timestamps are rejected by the normaliser).
     for (let index = 0; index < 4; index += 1) {
-      f.ingest(
-        { latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 },
-        new Date(start - 40 * 60_000 + index * 1000).toISOString(),
-        3
-      )
+      f.ingest({ latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 })
       await new Promise((resolve) => setTimeout(resolve, 600))
     }
     await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(3), { timeout: 10000 })
-    // A >30 minute stationary gap closes the recording without starting a new one.
-    f.ingest({ latitude: -27.4, longitude: 153.17 }, new Date(start - 5 * 60_000).toISOString(), 0)
-    await vi.waitFor(async () => {
-      const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed?: unknown[] }
-      expect(persisted.closed?.length ?? 0).toBeGreaterThan(0)
-    }, { timeout: 10000 })
     await f.plugin.stop()
 
-    // Deliver the exact terminal recording ACK through the real store the plugin
-    // uses, as the transport's recordingAcks callback would.
-    const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed: Array<{ id: string; state: string; lastSequence: number }> }
-    const recording = persisted.closed[0]!
+    // Close the active recording through the real store the plugin uses (a
+    // >30 minute interruption gap closes it without starting a new recording).
     const store = new RecordingStore(statePath)
     await store.open()
+    const before = JSON.parse(await fs.readFile(statePath, 'utf8')) as { active?: { id: string }; lastCapturedAt?: number; lastSequence?: number }
+    expect(before.active?.id).toBeTruthy()
+    await store.prepare({
+      capturedAt: (before.lastCapturedAt ?? Date.now()) + 31 * 60_000,
+      receivedAt: Date.now(),
+      values: { lat: -27.4, lon: 153.17, sog_kn: 0 },
+      quality: { timestamp: 'source' }
+    } as never, (before.lastSequence ?? 0) + 1)
+
+    // Deliver the exact terminal recording ACK, as the transport's
+    // recordingAcks callback would.
+    const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed: Array<{ id: string; state: string; lastSequence: number }> }
+    const recording = persisted.closed.find((manifest) => manifest.id === before.active!.id)!
+    expect(recording).toBeTruthy()
     await store.acknowledge([{ id: recording.id, state: recording.state as 'interrupted', lastSequence: recording.lastSequence }])
     expect((JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed: unknown[] }).closed.length).toBe(0)
 
