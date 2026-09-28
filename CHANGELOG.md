@@ -11,7 +11,8 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ### Navigation can only be advanced by the controlling device
 
-- Taking navigation control now returns a generation. Automatic advancement goes through a plugin check that validates the controller, its generation, the selected course revision, the current native point and the detection before issuing a one-time permit; a retry after a lost response is idempotent, a delayed old controller cannot advance after handover, and a stale point or changed course is rejected. Each browser tab has its own identity, so a newly opened tab is a viewer until someone deliberately takes control.
+- Taking navigation control returns a generation. A permit from the plugin is an authorisation, not an application: `already_applied`/`superseded` are reported only from observed native state, the actual pending detection is validated, and the detection is accepted only after a confirm step re-reads native state. A stale point, changed course, expired/handed-over controller, or missing detection is rejected, and a merely permitted-but-unexecuted attempt stays pending and retryable.
+- Automatic application is disabled in this candidate, because Signal K 2.31 has no plugin point-index API or compare-and-set to fence a client-performed native write. Detections are offered for explicit acceptance by the controlling device. Each browser tab has its own identity, so a newly opened tab is a viewer until someone deliberately takes control.
 
 ### Trustworthy instrument values
 

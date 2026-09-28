@@ -371,25 +371,35 @@ and its snapshot recommendations are not shown as current. The contract is
 carried to the cloud in the versioned device status payload, where it is stored
 with a report timestamp and surfaced as stale once the report ages.
 
-Only one onboard client at a time may auto-advance a detected rounding. A leased,
-generation-stamped navigation-control owner
-(`POST /plugins/signalk-wakelogger/progression/control`) must be claimed
-explicitly; other pages, including a newly opened tab, are viewers and never
-advance. Advancement goes through the execution boundary
-`POST /plugins/signalk-wakelogger/progression/apply`, which validates the
-controller and its generation, the selected course identity and revision, the
-still-current native point and the detection identity before issuing a one-time
-permit; the permit is idempotent per generation and detection, so a retry after
-a lost response cannot advance twice, and a delayed command from a previous owner
-fails after a handover. The onboard app then performs the supported native
-`pointIndex` write and reconciles against actual native state.
+Only one onboard client at a time may hold navigation control. A leased,
+generation-stamped owner (`POST /plugins/signalk-wakelogger/progression/control`)
+must be claimed explicitly; other pages, including a newly opened tab, are
+viewers and never advance. Advancement goes through two execution boundaries:
 
-Underlying native-API limitation (stated honestly): Signal K 2.31 exposes no
-plugin API to set the active route point index, so the plugin cannot perform the
-native compare-and-set itself; the write is the app's supported native REST call
-performed only after the validated permit. The plugin therefore bounds and
-serialises advancement authorisation but does not claim an atomic
-Signal K-side compare-and-set.
+- `POST /plugins/signalk-wakelogger/progression/apply` validates the controller
+  and its generation, the selected course identity and revision, the
+  still-current native point and the **actual pending detection** (not merely
+  caller-supplied fields), then returns a permit. A permit is an authorisation,
+  never an application: it does not accept the detection. `already_applied` and
+  `superseded` are returned only from observed native state.
+- `POST /plugins/signalk-wakelogger/progression/apply/confirm` re-reads native
+  state and returns `confirmed`/`superseded` only when the advancement is
+  observed; otherwise `pending`. The onboard app accepts the detection only
+  after `confirmed`/`superseded`, and otherwise leaves it pending and retryable.
+
+Automatic application is **disabled in this candidate**. A detected rounding is
+offered for explicit acceptance by the controlling device rather than
+auto-applied, so no automatic native write is ever outstanding across a control
+handover.
+
+Underlying native-API limitation (stated precisely): Signal K 2.31 exposes no
+plugin API to set the active route point index and no compare-and-set, so the
+plugin cannot perform the native write itself nor fence one performed directly
+against Signal K. The supported native REST `pointIndex` write is the app's, made
+only after the validated permit, and confirmed against native state afterwards.
+The plugin therefore serialises and validates advancement authorisation but does
+not claim an atomic Signal K-side compare-and-set; a client that writes the
+native endpoint outside this flow cannot be prevented by the plugin.
 
 Retention loss is reported with three separate meanings: the cumulative
 **lifetime** `droppedCount` across all uploads, losses observed within the
