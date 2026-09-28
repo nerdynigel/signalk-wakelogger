@@ -2,9 +2,12 @@
 //
 // Only one onboard client may hold control at a time. A new owner increments the
 // generation, so a delayed command from a previous owner (or a stale tab) is
-// rejected even though it may still hold an old client identity. Applied
-// applications are remembered per generation so a retry after a lost response is
-// idempotent rather than a second advancement.
+// rejected even though it may still hold an old client identity.
+//
+// This lease authorises a command; it never records that navigation has been
+// applied. Whether progress actually advanced is decided only from observed
+// native Signal K state (see the confirm step), because issuing a permit does not
+// mean the (client-performed) native write happened or succeeded.
 export const NAVIGATION_CONTROL_LEASE_MS = 30_000
 
 export interface NavigationControlState {
@@ -17,7 +20,6 @@ export interface NavigationControlState {
 export class NavigationControlLease {
   private holder: { clientId: string; generation: number; expiresAt: number } | undefined
   private generation = 0
-  private readonly applied = new Set<string>()
   private expiredFrom: { clientId: string; generation: number } | undefined
 
   constructor(private readonly leaseMs: number = NAVIGATION_CONTROL_LEASE_MS, private readonly now: () => number = Date.now) {}
@@ -35,17 +37,13 @@ export class NavigationControlLease {
     if (!this.holder) {
       // Handover or first claim starts a new generation so stale commands fail.
       this.generation += 1
-      this.applied.clear()
     }
     this.holder = { clientId, generation: this.generation, expiresAt: this.now() + this.leaseMs }
     return { ok: true, state: this.status() }
   }
 
   release(clientId: string): NavigationControlState {
-    if (this.holder?.clientId === clientId) {
-      this.holder = undefined
-      this.applied.clear()
-    }
+    if (this.holder?.clientId === clientId) this.holder = undefined
     return this.status()
   }
 
@@ -56,18 +54,10 @@ export class NavigationControlLease {
     return 'ok'
   }
 
-  isApplied(key: string): boolean { return this.applied.has(key) }
-
-  markApplied(key: string): void {
-    if (this.applied.size > 512) this.applied.clear()
-    this.applied.add(key)
-  }
-
   private expire(): void {
     if (this.holder && this.holder.expiresAt <= this.now()) {
       this.expiredFrom = { clientId: this.holder.clientId, generation: this.holder.generation }
       this.holder = undefined
-      this.applied.clear()
     }
   }
 }

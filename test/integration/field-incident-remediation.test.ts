@@ -98,11 +98,26 @@ async function fixture(options: { seed?: boolean } = {}) {
   await vi.waitFor(async () => expect((await request('GET', '/tracking')).data.available).toBe(true), { timeout: 10000 })
   return {
     directory, app, plugin, request, accessLevels, errors, configuration: () => configuration,
-    ingest: (position: { latitude: number; longitude: number }, at = new Date().toISOString()) => ingest({ updates: [{ timestamp: at, values: [
+    // Simulates a supported native pointIndex change (another client or a manual action).
+    setNativePoint: (index: number) => { nativeCourse = { ...nativeCourse, activeRoute: { ...nativeCourse.activeRoute, pointIndex: index } } },
+    nativePoint: () => nativeCourse?.activeRoute?.pointIndex ?? null,
+    ingest: (position: { latitude: number; longitude: number }, at = new Date().toISOString(), sog = 3) => ingest({ updates: [{ timestamp: at, values: [
       { path: 'navigation.position', value: position },
-      { path: 'navigation.speedOverGround', value: 3 }
+      { path: 'navigation.speedOverGround', value: sog }
     ] }] })
   }
+}
+
+// Drives the real detector across the active course point to produce the actual
+// pending detection the apply endpoint must validate against.
+async function seedDetection(f: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  const now = Date.now()
+  f.ingest({ latitude: -27.3905, longitude: 153.17 }, new Date(now - 3000).toISOString())
+  f.ingest({ latitude: -27.3895, longitude: 153.17 }, new Date(now - 2000).toISOString())
+  await vi.waitFor(async () => {
+    const progression = (await f.request('GET', '/progression')).data
+    expect(progression.pending?.pointIndex).toBe(1)
+  }, { timeout: 10000 })
 }
 
 it('exposes one coupled offline readiness status and invalidation for the field sequence', async () => {
@@ -273,33 +288,58 @@ it('leases navigation control so only one onboard client may auto-advance', asyn
   } finally { await f.plugin.stop() }
 })
 
-it('validates lease generation, course, native point and detection before permitting advancement', async () => {
+it('a permit is not an application: only observed native state confirms advancement', async () => {
   const f = await fixture()
   const application = (overrides: Record<string, unknown> = {}) => ({
     clientId: 'client-a', courseId: 'race-42', revision: 7,
     expectedPointIndex: 1, detectionPointIndex: 1, detectionRevision: 7, generation: 0, ...overrides
   })
+  const confirmation = (overrides: Record<string, unknown> = {}) => ({
+    clientId: 'client-a', courseId: 'race-42', revision: 7, targetPointIndex: 2, generation: 0, ...overrides
+  })
   try {
+    await seedDetection(f)
     // A viewer without the lease cannot apply.
     expect((await f.request('POST', '/progression/apply', application())).code).toBe(409)
     const claimed = await f.request('POST', '/progression/control', { clientId: 'client-a' })
     const generation = claimed.data.control.generation
-    // A permit is issued for the current point.
+
+    // 1. Permit issued; native point is still unchanged and the detection is not
+    //    accepted. A retry re-issues the same permit (not already_applied).
     const permit = await f.request('POST', '/progression/apply', application({ generation }))
     expect(permit.code).toBe(200)
     expect(permit.data).toMatchObject({ status: 'apply', targetPointIndex: 2, generation })
-    // A retry after a lost response is idempotent, not a second advancement.
-    const retry = await f.request('POST', '/progression/apply', application({ generation }))
-    expect(retry.data.status).toBe('already_applied')
-    // A detection that does not match the still-current native point is rejected.
-    const stalePoint = await f.request('POST', '/progression/apply', application({ generation, expectedPointIndex: 0, detectionPointIndex: 2 }))
+    expect(f.nativePoint()).toBe(1)
+    const duplicate = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(duplicate.data.status).toBe('apply')
+    // Confirm before the native write is observed: still pending, never accepted.
+    expect((await f.request('POST', '/progression/apply/confirm', confirmation({ generation }))).data.status).toBe('pending')
+
+    // 2. The native point advances; now the permit path sees native evidence and
+    //    confirm confirms it.
+    f.setNativePoint(2)
+    const repeated = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(repeated.data.status).toBe('already_applied')
+    expect((await f.request('POST', '/progression/apply/confirm', confirmation({ generation }))).data.status).toBe('confirmed')
+
+    // 3. A native point beyond the target is superseded, not "applied".
+    f.setNativePoint(3)
+    expect((await f.request('POST', '/progression/apply', application({ generation }))).data.status).toBe('superseded')
+    expect((await f.request('POST', '/progression/apply/confirm', confirmation({ generation }))).data.status).toBe('superseded')
+
+    // 4. An unexpected native point is stale, never silently accepted.
+    f.setNativePoint(0)
+    const stalePoint = await f.request('POST', '/progression/apply', application({ generation }))
     expect(stalePoint.code).toBe(409)
     expect(stalePoint.data.error).toBe('stale_point')
-    // A superseded course revision is rejected.
+
+    // 5. A superseded course revision is rejected.
+    f.setNativePoint(1)
     const staleCourse = await f.request('POST', '/progression/apply', application({ generation, revision: 99, detectionRevision: 99 }))
     expect(staleCourse.code).toBe(409)
     expect(staleCourse.data.error).toBe('stale_course')
-    // Handover invalidates the old generation: a delayed old-controller write fails.
+
+    // 6. Handover invalidates the old generation.
     await f.request('POST', '/progression/control', { clientId: 'client-a', release: true })
     const claimedB = await f.request('POST', '/progression/control', { clientId: 'client-b' })
     const generationB = claimedB.data.control.generation
@@ -307,6 +347,99 @@ it('validates lease generation, course, native point and detection before permit
     const delayed = await f.request('POST', '/progression/apply', application({ generation }))
     expect(delayed.code).toBe(409)
     expect(delayed.data.error).toBe('navigation_control_not_held')
+    expect((await f.request('POST', '/progression/apply/confirm', confirmation({ generation }))).code).toBe(409)
+  } finally { await f.plugin.stop() }
+})
+
+it('a superseded controller cannot confirm after handover and native state is authoritative', async () => {
+  // Automatic application is disabled in this candidate, so the app never holds
+  // an outstanding automatic write. This test covers the handover boundary and
+  // the fact that the plugin trusts observed native state, not a permit.
+  const f = await fixture()
+  const application = (clientId: string, generation: number) => ({
+    clientId, generation, courseId: 'race-42', revision: 7,
+    expectedPointIndex: 1, detectionPointIndex: 1, detectionRevision: 7
+  })
+  const confirmation = (clientId: string, generation: number) => ({ clientId, generation, courseId: 'race-42', revision: 7, targetPointIndex: 2 })
+  try {
+    await seedDetection(f)
+    const claimedA = await f.request('POST', '/progression/control', { clientId: 'client-a' })
+    const generationA = claimedA.data.control.generation
+    expect((await f.request('POST', '/progression/apply', application('client-a', generationA))).data.status).toBe('apply')
+
+    // Handover to B while A still holds a permit it has not executed.
+    await f.request('POST', '/progression/control', { clientId: 'client-a', release: true })
+    const claimedB = await f.request('POST', '/progression/control', { clientId: 'client-b' })
+    const generationB = claimedB.data.control.generation
+
+    // A (or a later manual action) changes native progress to a point beyond the
+    // permit's target. A delayed client native write is outside the plugin's
+    // control; the plugin's boundary simply refuses to accept A's stale permit.
+    f.setNativePoint(3)
+    expect((await f.request('POST', '/progression/apply/confirm', confirmation('client-a', generationA))).code).toBe(409)
+    // B sees observed native state, so a permit for the old target is superseded.
+    expect((await f.request('POST', '/progression/apply', application('client-b', generationB))).data.status).toBe('superseded')
+  } finally { await f.plugin.stop() }
+})
+
+it('requires the actual pending detection, not just matching caller fields', async () => {
+  const f = await fixture()
+  const application = (overrides: Record<string, unknown> = {}) => ({
+    clientId: 'client-a', courseId: 'race-42', revision: 7,
+    expectedPointIndex: 1, detectionPointIndex: 1, detectionRevision: 7, generation: 0, ...overrides
+  })
+  try {
+    const claimed = await f.request('POST', '/progression/control', { clientId: 'client-a' })
+    const generation = claimed.data.control.generation
+    // No real pending detection exists yet.
+    const noDetection = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(noDetection.code).toBe(409)
+    expect(noDetection.data.error).toBe('no_pending_detection')
+
+    await seedDetection(f)
+    // The real pending detection now matches.
+    expect((await f.request('POST', '/progression/apply', application({ generation }))).data.status).toBe('apply')
+
+    // Dismissing the real detection makes a fabricated application fail.
+    await f.request('POST', '/progression/resolve', { resolution: 'dismissed', pointIndex: 1 })
+    const afterDismiss = await f.request('POST', '/progression/apply', application({ generation }))
+    expect(afterDismiss.code).toBe(409)
+    expect(afterDismiss.data.error).toBe('no_pending_detection')
+  } finally { await f.plugin.stop() }
+})
+
+it('keeps GET /track after terminal recording ACKs remove the upload manifest', async () => {
+  const f = await fixture()
+  const statePath = path.join(f.directory, 'recordings', deviceId, 'state.json')
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      f.ingest({ latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 })
+      await new Promise((resolve) => setTimeout(resolve, 600))
+    }
+    await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(3), { timeout: 10000 })
+    // A >30 minute stationary gap closes the recording without starting a new one.
+    f.ingest({ latitude: -27.4, longitude: 153.17 }, new Date(Date.now() + 31 * 60_000).toISOString(), 0)
+    await vi.waitFor(async () => {
+      const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed?: unknown[] }
+      expect(persisted.closed?.length ?? 0).toBeGreaterThan(0)
+    }, { timeout: 10000 })
+    await f.plugin.stop()
+
+    // Deliver the exact terminal recording ACK through the real store the plugin
+    // uses, as the transport's recordingAcks callback would.
+    const persisted = JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed: Array<{ id: string; state: string; lastSequence: number }> }
+    const recording = persisted.closed[0]!
+    const store = new RecordingStore(statePath)
+    await store.open()
+    await store.acknowledge([{ id: recording.id, state: recording.state as 'interrupted', lastSequence: recording.lastSequence }])
+    expect((JSON.parse(await fs.readFile(statePath, 'utf8')) as { closed: unknown[] }).closed.length).toBe(0)
+
+    f.plugin.start(f.configuration(), vi.fn())
+    await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true), { timeout: 10000 })
+    const afterAck = (await f.request('GET', '/track')).data
+    expect(afterAck.recording?.id).toBe(recording.id)
+    expect(afterAck.points.length).toBeGreaterThanOrEqual(3)
+    expect(afterAck.summary.fromSequence).not.toBeNull()
   } finally { await f.plugin.stop() }
 })
 

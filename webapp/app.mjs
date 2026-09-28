@@ -22,7 +22,7 @@ const vesselLayer = L.layerGroup().addTo(map)
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
-let raceProgression = null, applyingProgression = false
+let raceProgression = null
 // A per-tab identity, so two tabs do not share one controller role and a newly
 // opened tab starts as a viewer rather than inheriting control.
 const CLIENT_KEY = 'wakelogger-onboard-client'
@@ -303,12 +303,18 @@ async function poll() {
       }
     }
     // Reconcile a lost write response against actual native state: if the native
-    // point already advanced past the detection, resolve it without writing again.
+    // point already advanced past the detection, confirm it from native state and
+    // only then accept it, without writing again.
     if (navigationControl && raceProgression?.pending && !raceProgression.pending.wrongSide && progress?.matches
       && progress.index === raceProgression.pending.pointIndex + 1) {
-      await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex).catch(() => undefined)
+      const confirmation = await confirmAdvance(raceProgression.pending, progress.index)
+      if (confirmation === 'confirmed' || confirmation === 'superseded') {
+        await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex).catch(() => undefined)
+      }
     }
-    if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide && navigationControl) await applyProgression()
+    // Automatic application is disabled in this candidate (Signal K 2.31 cannot
+    // fence a client-performed native pointIndex write), so a detected rounding
+    // is offered to the crew for explicit acceptance rather than auto-applied.
     const serverSessionId = trackingStatus?.trackingSessionId ?? null
     if (trackBootstrapped && serverSessionId !== trackRecordingId) trackNeedsRebootstrap = true
     if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested })) {
@@ -336,15 +342,17 @@ function renderProgression() {
     control.setAttribute('aria-pressed', String(navigationControl))
     control.textContent = navigationControl ? 'Navigation control: this device' : 'Take navigation control'
     control.disabled = heldByOther && !navigationControl
-    control.title = heldByOther ? 'Another onboard device is controlling navigation' : 'Only the controlling device advances the course automatically'
+    control.title = heldByOther ? 'Another onboard device is controlling navigation' : 'Only the controlling device may accept or advance the course'
   }
   const labels = { auto: 'Automatic', suggest: 'Suggest', off: 'Off' }
   const mode = raceProgression?.mode
   const pending = raceProgression?.pending
   if (!mode) { element.textContent = ''; $('progression-actions').hidden = true; return }
   const detail = pending && !pending.wrongSide ? ` · ${pending.type} detected at point ${pending.pointIndex + 1}` : ''
+  // Automatic application is disabled in this candidate; every detection is
+  // offered for explicit acceptance by the controlling device.
   element.textContent = `Mark detection: ${labels[mode] ?? mode}${detail}`
-  $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide && navigationControl)
+  $('progression-actions').hidden = !(pending && !pending.wrongSide && navigationControl)
 }
 
 function renderRacePlan() {
@@ -438,11 +446,27 @@ function clearControl() {
   try { sessionStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
 }
 
+// Confirm from observed native state that a permitted advancement happened.
+// Returns 'confirmed', 'superseded' or 'pending'; only the first two accept the
+// detection. A permit alone never does.
+async function confirmAdvance(pending, targetPointIndex) {
+  const courseId = status?.desired?.courseId
+  const revision = status?.desired?.revision
+  if (!pending || !courseId || navigationControlGeneration === null) return 'pending'
+  const confirmation = await client.request('/plugins/signalk-wakelogger/progression/apply/confirm', {
+    method: 'POST', operation: 'confirm-progression', timeoutMs: 4000,
+    body: JSON.stringify({ clientId, generation: navigationControlGeneration, courseId, revision, targetPointIndex })
+  })
+  return confirmation?.status ?? 'pending'
+}
+
 // The plugin is the execution boundary: it validates the lease generation,
-// course revision, native point and detection identity and returns a one-time
+// course revision, native point and the actual pending detection and returns a
 // permit. Only then does this client perform the supported native pointIndex
-// write. `already_applied` means a retry after a lost response or a native point
-// that already advanced, so no second write is made.
+// write, and the detection is accepted only after native state confirms it.
+// `already_applied`/`superseded` require observed native state, so a retry after
+// a lost response is idempotent while a merely permitted-but-unexecuted attempt
+// stays unresolved.
 async function requestAdvance(pending) {
   const href = status?.native?.course?.activeRoute?.href
   const revision = status?.desired?.revision
@@ -455,32 +479,20 @@ async function requestAdvance(pending) {
       expectedPointIndex: progress?.index, detectionPointIndex: pending.pointIndex, detectionRevision: pending.revision
     })
   })
-  if (permit?.status === 'already_applied') {
+  if (permit?.status === 'already_applied' || permit?.status === 'superseded') {
     await raceProgressionClient.resolve('accepted', pending.pointIndex).catch(() => undefined)
     return true
   }
   if (permit?.status !== 'apply' || permit.generation !== navigationControlGeneration) return false
   await progression.setPoint(permit.targetPointIndex, progress.points.length, href)
-  await raceProgressionClient.resolve('accepted', pending.pointIndex)
-  return true
-}
-
-async function applyProgression() {
-  if (applyingProgression || !navigationControl) return
-  const pending = raceProgression?.pending
-  const revision = status?.desired?.revision
-  if (!pending || pending.wrongSide) return
-  if (raceProgression.control?.clientId !== clientId || raceProgression.control?.generation !== navigationControlGeneration) return
-  if (pending.revision !== revision || pending.pointIndex !== progress?.index) return
-  const target = pending.pointIndex + 1
-  if (!Number.isInteger(target) || target >= (progress?.points?.length ?? 0)) return
-  applyingProgression = true
-  try {
-    if (await requestAdvance(pending)) notice(`Mark ${pending.pointIndex + 1} rounding accepted.`)
-  } catch (error) {
-    notice(`${describeNavigationFailure(error, { markNumber: pending.pointIndex + 1 })} Set the point manually if the rounding was missed.`)
-    reportDiagnostic(error)
-  } finally { applyingProgression = false }
+  const confirmation = await confirmAdvance(pending, permit.targetPointIndex)
+  if (confirmation === 'confirmed' || confirmation === 'superseded') {
+    await raceProgressionClient.resolve('accepted', pending.pointIndex)
+    return true
+  }
+  // The native write was not observed: leave the detection unresolved so it can
+  // be retried rather than falsely accepting it.
+  return false
 }
 
 $('navigation-control').onclick = async () => {
@@ -503,11 +515,22 @@ $('navigation-control').onclick = async () => {
   renderProgression()
 }
 
-$('progression-accept').onclick = () => {
+$('progression-accept').onclick = async () => {
+  if (busy) return
   if (!navigationControl) { notice('Enable navigation control on this device before accepting a rounding.'); return }
   const pending = raceProgression?.pending
   if (!pending) return
-  return command(async () => { await requestAdvance(pending) }, { markNumber: pending.pointIndex + 1 })
+  busy = true
+  try {
+    const applied = await requestAdvance(pending)
+    notice(applied
+      ? `Mark ${pending.pointIndex + 1} rounding accepted.`
+      : 'Signal K has not confirmed the advancement yet. It remains pending and will be retried.')
+    await poll()
+  } catch (error) {
+    notice(`${describeNavigationFailure(error, { markNumber: pending.pointIndex + 1 })} Set the point manually if the rounding was missed.`)
+    reportDiagnostic(error)
+  } finally { busy = false }
 }
 $('progression-dismiss').onclick = async () => {
   try {

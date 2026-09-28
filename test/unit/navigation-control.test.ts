@@ -34,14 +34,12 @@ describe('navigation control lease', () => {
     expect(lease.claim('b').state.generation).toBeGreaterThan(state.generation!)
   })
 
-  it('remembers applied applications per generation for idempotent retries', () => {
-    let now = 0
-    const lease = new NavigationControlLease(30_000, () => now)
+  it('never treats a permit as applied (application is observed from native state)', () => {
+    // The lease only authorises; it exposes no "applied" state that could be
+    // mistaken for a completed native write.
+    const lease = new NavigationControlLease(30_000, () => 0)
     lease.claim('a')
-    expect(lease.isApplied('g1:course:1:2')).toBe(false)
-    lease.markApplied('g1:course:1:2')
-    expect(lease.isApplied('g1:course:1:2')).toBe(true)
-    lease.release('a')
-    expect(lease.isApplied('g1:course:1:2')).toBe(false)
+    expect('markApplied' in lease).toBe(false)
+    expect('isApplied' in lease).toBe(false)
   })
 })

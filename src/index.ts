@@ -319,11 +319,14 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           }
           const points = status?.routePoints ?? []
           const target = detectionPointIndex + 1
-          const applicationId = `${generation}:${courseId}:${revision}:${detectionPointIndex}`
-          // Idempotent retry: a lost response, or the native point already
-          // advanced, must not advance a second time.
-          if (activeRoute.pointIndex === target || navigationLease.isApplied(applicationId)) {
-            response.status(200).json({ status: 'already_applied', targetPointIndex: target, generation })
+          // Whether progress advanced is decided only from observed native
+          // state. A previously issued permit is NOT evidence of application.
+          if (Number.isInteger(activeRoute.pointIndex) && activeRoute.pointIndex! > target) {
+            response.status(200).json({ status: 'superseded', targetPointIndex: target, nativePointIndex: activeRoute.pointIndex })
+            return
+          }
+          if (activeRoute.pointIndex === target) {
+            response.status(200).json({ status: 'already_applied', targetPointIndex: target, nativePointIndex: target, generation })
             return
           }
           if (detectionPointIndex !== expectedPointIndex || activeRoute.pointIndex !== expectedPointIndex) {
@@ -334,8 +337,59 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
             response.status(409).json({ error: 'no_next_point' })
             return
           }
-          navigationLease.markApplied(applicationId)
+          // Validate the actual pending detection rather than trusting the
+          // caller-supplied revision/index fields alone.
+          const pending = (progression?.status() as { pending?: { pointIndex?: number; revision?: number; wrongSide?: boolean } } | undefined)?.pending
+          if (!pending || pending.wrongSide === true || pending.pointIndex !== detectionPointIndex || pending.revision !== revision) {
+            response.status(409).json({ error: 'no_pending_detection' })
+            return
+          }
           response.status(200).json({ status: 'apply', targetPointIndex: target, generation })
+        } catch (error) { next(error) }
+      })
+      // Confirms from observed native state that a permitted advancement
+      // actually happened. The detection is only accepted after this returns
+      // 'confirmed' (or 'superseded'); a permit on its own never accepts it.
+      writeRouter.post('/progression/apply/confirm', async (request, response, next) => {
+        try {
+          const body = (request as { body?: Record<string, unknown> }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          const generation = Number(body?.generation)
+          const courseId = typeof body?.courseId === 'string' ? body.courseId : ''
+          const revision = Number(body?.revision)
+          const targetPointIndex = Number(body?.targetPointIndex)
+          if (!clientId || !courseId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(revision) || !Number.isSafeInteger(targetPointIndex)) {
+            response.status(400).json({ error: 'invalid_confirmation' })
+            return
+          }
+          const verdict = navigationLease.check(clientId, generation)
+          if (verdict !== 'ok') {
+            response.status(409).json({ error: verdict === 'expired' ? 'navigation_control_expired' : 'navigation_control_not_held', control: controllerStatus() })
+            return
+          }
+          const status = courses ? await courses.status() as {
+            desired?: { action?: string; revision?: number; courseId?: string } | null
+            native?: { course?: { activeRoute?: { href?: string; pointIndex?: number } | null } | null } | null
+          } : null
+          const desired = status?.desired
+          if (!desired || desired.action !== 'activate' || desired.revision !== revision || desired.courseId !== courseId) {
+            response.status(409).json({ error: 'stale_course' })
+            return
+          }
+          const activeRoute = status?.native?.course?.activeRoute
+          if (activeRoute?.href !== nativeRouteHref(courseId)) {
+            response.status(409).json({ error: 'native_route_not_active' })
+            return
+          }
+          if (Number.isInteger(activeRoute.pointIndex) && activeRoute.pointIndex! > targetPointIndex) {
+            response.status(200).json({ status: 'superseded', targetPointIndex, nativePointIndex: activeRoute.pointIndex })
+            return
+          }
+          if (activeRoute.pointIndex === targetPointIndex) {
+            response.status(200).json({ status: 'confirmed', targetPointIndex, nativePointIndex: targetPointIndex, generation })
+            return
+          }
+          response.status(200).json({ status: 'pending', targetPointIndex, nativePointIndex: activeRoute.pointIndex ?? null })
         } catch (error) { next(error) }
       })
       writeRouter.post('/progression/mode', async (request, response, next) => {
@@ -435,7 +489,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
         '/progression/control': { post: { summary: 'Claim, renew or release leased onboard navigation control so only one client auto-advances', responses: { '200': { description: 'Control status' }, '400': { description: 'Invalid client' }, '409': { description: 'Control held by another client' } } } },
-        '/progression/apply': { post: { summary: 'Validate the controlling lease, course revision, native point and detection before a one-time, idempotent advancement permit', responses: { '200': { description: 'Permit issued or already applied' }, '400': { description: 'Invalid application' }, '409': { description: 'Stale/expired control, course or point' } } } },
+        '/progression/apply': { post: { summary: 'Validate the controlling lease, course revision, native point and actual pending detection before issuing an advancement permit; already_applied/superseded require observed native state', responses: { '200': { description: 'Permit issued, already applied, or superseded' }, '400': { description: 'Invalid application' }, '409': { description: 'Stale/expired control, course, point or no pending detection' } } } },
+        '/progression/apply/confirm': { post: { summary: 'Confirm from observed native state that a permitted advancement happened; only then may the detection be accepted', responses: { '200': { description: 'confirmed, superseded or still pending' }, '400': { description: 'Invalid confirmation' }, '409': { description: 'Stale/expired control or course' } } } },
         '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
         '/race-plan': { get: { summary: 'Read onboard Race Plan calculation authority, Race Pack state and the latest onboard snapshot', responses: { '200': { description: 'Onboard race plan state' } } } },
         '/race-plan/recalculate': { post: { summary: 'Request an explicit onboard Race Plan recalculation (local-only authority only)', responses: { '200': { description: 'Recalculation attempted' }, '409': { description: 'Onboard planner unavailable or cloud is authoritative' } } } },

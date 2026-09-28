@@ -63,10 +63,22 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       if (!controlState.active || controlState.clientId !== body.clientId || controlState.generation !== body.generation) {
         return route.fulfill({ status: 409, json: { error: 'navigation_control_not_held', control: controlState } })
       }
+      if (progressionState?.pending?.pointIndex !== body.detectionPointIndex) return route.fulfill({ status: 409, json: { error: 'no_pending_detection' } })
       const target = body.detectionPointIndex + 1
+      if (navigation.activeRoute.pointIndex > target) return json({ status: 'superseded', targetPointIndex: target })
       if (navigation.activeRoute.pointIndex === target) return json({ status: 'already_applied', targetPointIndex: target, generation: controlState.generation })
       if (navigation.activeRoute.pointIndex !== body.detectionPointIndex) return route.fulfill({ status: 409, json: { error: 'stale_point' } })
       return json({ status: 'apply', targetPointIndex: target, generation: controlState.generation })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression/apply/confirm') {
+      const body = request.postDataJSON()
+      if (!controlState.active || controlState.clientId !== body.clientId || controlState.generation !== body.generation) {
+        return route.fulfill({ status: 409, json: { error: 'navigation_control_not_held', control: controlState } })
+      }
+      const native = navigation.activeRoute.pointIndex
+      if (native > body.targetPointIndex) return json({ status: 'superseded', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
+      if (native === body.targetPointIndex) return json({ status: 'confirmed', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
+      return json({ status: 'pending', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
     }
     if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
@@ -239,18 +251,22 @@ test('failed mode save reads back the actual safely paused state', async ({ page
   await expect(page.locator('#tracking-description')).toContainText('Setting could not be saved')
 })
 
-test('auto-advances the active point from a detected rounding only for the controlling device', async ({ page }) => {
+test('automatic application is disabled; the controlling device must accept a rounding explicitly', async ({ page }) => {
   const { writes } = await mockBoat(page, {
     progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: false, revision: 7, at: 0 }, lastDetection: null }
   })
   await page.goto('/signalk-wakelogger/')
   await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
-  // A viewer with no navigation control must not advance.
+  // Neither a viewer nor the controlling device auto-advances.
   await page.waitForTimeout(1000)
   expect(writes).toEqual([])
   await page.locator('#navigation-control').click()
   await expect(page.locator('#navigation-control')).toHaveAttribute('aria-pressed', 'true')
-  // The advance is an idempotent absolute point index, not a relative nextPoint.
+  await page.waitForTimeout(1000)
+  expect(writes).toEqual([])
+  // A permit is issued, the native absolute point index is written, native state
+  // confirms it, and only then is the detection accepted.
+  await page.locator('#progression-accept').click()
   await expect.poll(() => writes.find((write) => write.path.endsWith('/pointIndex'))).toMatchObject({ method: 'PUT', body: { value: 2 } })
   await expect.poll(() => writes.find((write) => write.path.endsWith('/progression/resolve'))).toMatchObject({ body: { resolution: 'accepted', pointIndex: 1 } })
   expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
