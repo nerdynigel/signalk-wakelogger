@@ -43,6 +43,10 @@ class MemoryDatabase implements PluginDatabase {
     const device = String(params[0])
     if (sql.startsWith('SELECT next_sequence')) return [this.state.get(device)] as T[]
     const matching = this.records.filter((row) => row.device_id === device).sort((a, b) => a.sequence - b.sequence)
+    if (sql.startsWith('SELECT MAX(sequence)')) {
+      const maximum = matching.reduce((value, row) => Math.max(value, row.sequence), 0)
+      return [{ maximum: maximum || null }] as T[]
+    }
     if (sql.includes('sequence >= ?')) {
       const after = Number(params[1])
       return matching.filter((row) => row.sequence >= after).map(({ payload }) => ({ payload })) as T[]
@@ -96,10 +100,19 @@ describe('DatabaseOutbox', () => {
     const interruptedSelection = new DatabaseOutbox(database, 'device-1', options)
     await interruptedSelection.open(); await interruptedSelection.close()
     const selected = new DatabaseOutbox(database, 'device-1', options, {
-      currentSequence: 42, acknowledgedSequence: 40, droppedCount: 2, droppedThrough: 12
+      currentSequence: 42, acknowledgedSequence: 40, droppedCount: 2, droppedThrough: 40
     })
     await selected.open()
     expect((await selected.append('device-1', draft(10_000))).sequence).toBe(43)
-    expect(await selected.stats()).toMatchObject({ acknowledgedSequence: 40, droppedCount: 2, droppedThrough: 12 })
+    expect(await selected.stats()).toMatchObject({ acknowledgedSequence: 40, droppedCount: 4, droppedThrough: 42 })
+  })
+
+  it('declares sequences skipped by a seed as dropped so the acknowledgement can advance', async () => {
+    const database = new MemoryDatabase()
+    const options = { maxBytes: 1_000_000, maxAgeMs: 86_400_000, segmentBytes: 1024, now: () => 10_000 }
+    database.state.set('device-1', { next_sequence: 5731, acknowledged_sequence: 5727, dropped_count: 0, dropped_through: 0 })
+    const outbox = new DatabaseOutbox(database, 'device-1', options)
+    await outbox.open()
+    expect(await outbox.stats()).toMatchObject({ acknowledgedSequence: 5727, currentSequence: 5730, droppedCount: 3, droppedThrough: 5730 })
   })
 })

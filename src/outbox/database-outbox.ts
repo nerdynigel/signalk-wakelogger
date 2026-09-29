@@ -70,6 +70,23 @@ export class DatabaseOutbox implements OutboxStore {
         ]
       )
     }
+    // A seed or a prior reset can advance next_sequence past records that were
+    // never enqueued. Those sequences are unrecoverable, so declare them dropped
+    // exactly like the file outbox does; otherwise the cloud's contiguous
+    // acknowledgement can never pass the hole and every later trip stalls.
+    const settled = await this.readState(this.database)
+    const maximumRow = await this.database.query<{ maximum: number | null }>(
+      'SELECT MAX(sequence) AS maximum FROM outbox_records WHERE device_id = ?', [this.deviceId])
+    const maximum = Number(maximumRow[0]?.maximum ?? 0)
+    const accountedThrough = Math.max(maximum, Number(settled.acknowledged_sequence), Number(settled.dropped_through))
+    if (Number(settled.next_sequence) > accountedThrough + 1) {
+      const droppedThrough = Number(settled.next_sequence) - 1
+      await this.database.run(
+        `UPDATE outbox_state SET dropped_count = dropped_count + ?,
+         dropped_through = CASE WHEN dropped_through > ? THEN dropped_through ELSE ? END WHERE device_id = ?`,
+        [droppedThrough - accountedThrough, droppedThrough, droppedThrough, this.deviceId]
+      )
+    }
     this.opened = true
     await this.enforceLimits()
   }

@@ -19,6 +19,11 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - Every input used by a derived wind or VMG value — including speed over ground/through water and the heading used to convert an apparent angle — now participates in the freshness and time-skew bound, so a stale input cannot be hidden by a fresh one.
 - Signal K request deadlines now stay active while the response body is being read, so a stalled body times out instead of hanging, and the next poll recovers.
 
+### A broken source clock can no longer hide the trip
+
+- A source time more than 30 days before the delta was delivered is treated as a broken clock and replaced by receipt time, instead of being queued and later rejected by Wake Logger as outside the vessel's entitled capture window (for example a GPS reporting a stale 2014 default date).
+- The database outbox now declares sequences skipped by a seed or reset as dropped when it opens, matching the file outbox, so the cloud's contiguous acknowledgement can advance and later trips are not left waiting for history.
+
 ## [Unreleased] - 2026-09-27
 
 ### Offline race readiness you can trust

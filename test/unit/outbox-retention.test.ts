@@ -42,6 +42,10 @@ class MemoryDatabase implements PluginDatabase {
     const device = String(params[0])
     if (sql.startsWith('SELECT next_sequence')) return [this.state.get(device)] as T[]
     const matching = this.records.filter((row) => row.device_id === device).sort((a, b) => a.sequence - b.sequence)
+    if (sql.startsWith('SELECT MAX(sequence)')) {
+      const maximum = matching.reduce((value, row) => Math.max(value, row.sequence), 0)
+      return [{ maximum: maximum || null }] as T[]
+    }
     if (sql.includes('sequence > ?')) {
       const after = Number(params[1]); const limit = Number(params[2])
       return matching.filter((row) => row.sequence > after).slice(0, limit).map(({ payload }) => ({ payload })) as T[]

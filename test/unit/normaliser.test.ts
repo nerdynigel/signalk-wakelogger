@@ -57,6 +57,17 @@ describe('TelemetryNormaliser', () => {
     expect(sample?.values.heading_reference).toBe('magnetic')
   })
 
+  it('ignores a broken source clock that reports a capture time years in the past', () => {
+    const normaliser = new TelemetryNormaliser()
+    const now = Date.parse('2026-08-31T00:00:00Z')
+    normaliser.ingest(delta('2014-08-15T19:00:00Z', [
+      { path: 'navigation.position', value: { latitude: -27, longitude: 153 } }
+    ]), now)
+    const sample = normaliser.takeSample(now)
+    expect(sample?.capturedAt).toBe(now)
+    expect(sample?.quality).toEqual({ timestamp: 'receipt' })
+  })
+
   it('does not emit without position or when nothing changed', () => {
     const normaliser = new TelemetryNormaliser()
     normaliser.ingest(delta('2026-08-31T00:00:00Z', [{ path: 'navigation.speedOverGround', value: 2 }]))
