@@ -11,7 +11,9 @@
 //   is exercised separately by `scripts/test-signalk-docker.mjs`
 //   (`npm run test:docker`), which is the process-kill evidence for the file
 //   backend. No vitest test here spawns or kills an OS process.
-// - Storage/power-loss simulation is labelled per test.
+// - Teardown is intentionally separate from the simulated crash: every SQLite
+//   handle (including reopened ones) is registered and closed, then directories
+//   are removed with retries, so Windows EBUSY from a live handle cannot leak.
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -22,15 +24,49 @@ import type { PluginDatabase } from '../../src/outbox/database-types'
 import { TrackArchive } from '../../src/tracking/archive'
 import { SqlitePluginDatabase } from '../helpers/sqlite-plugin-database'
 
-const cleanups: Array<() => Promise<void> | void> = []
+const pendingCleanups: Array<() => Promise<void> | void> = []
+function onCleanup(action: () => Promise<void> | void): void {
+  pendingCleanups.push(action)
+}
+
+async function removeDirectory(directory: string): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await fs.rm(directory, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  throw lastError
+}
+
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) await cleanup()
+  // Attempt every cleanup action (handles first, then directories) and report
+  // any genuine failure rather than aborting on the first one.
+  const failures: unknown[] = []
+  for (const cleanup of pendingCleanups.splice(0).reverse()) {
+    try {
+      await cleanup()
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+  if (failures.length) throw new AggregateError(failures, 'crash-recovery cleanup failed')
 })
 
 async function tempDir(prefix: string): Promise<string> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
-  cleanups.push(() => fs.rm(directory, { recursive: true, force: true }))
+  onCleanup(() => removeDirectory(directory))
   return directory
+}
+
+function openDatabase(directory: string, file = 'plugin.db'): SqlitePluginDatabase {
+  const database = new SqlitePluginDatabase(path.join(directory, file))
+  onCleanup(() => database.close())
+  return database
 }
 
 function draft(capturedAt = 1000): any {
@@ -44,9 +80,7 @@ function options(overrides: object = {}): any {
 describe('abrupt shutdown recovery', () => {
   it('reopens a real SQLite-backed DatabaseOutbox after losing the instance and keeps committed state', async () => {
     const directory = await tempDir('crash-db-')
-    const file = path.join(directory, 'plugin.db')
-    const database = new SqlitePluginDatabase(file)
-    cleanups.push(() => database.close())
+    const database = openDatabase(directory)
     const outbox = new DatabaseOutbox(database, 'dev_1', options())
     await outbox.open()
     expect((await outbox.append('dev_1', draft())).sequence).toBe(1)
@@ -55,22 +89,21 @@ describe('abrupt shutdown recovery', () => {
     // Record the real durability boundary this backend provides.
     expect(database.durability()).toMatchObject({ journalMode: 'wal', synchronous: 2 })
 
-    // "Crash": abandon the instance without close(), then reopen on a fresh connection.
-    const recovered = new DatabaseOutbox(new SqlitePluginDatabase(file), 'dev_1', options())
+    // "Crash": abandon the instance without close(), then reopen a fresh connection.
+    const recovered = new DatabaseOutbox(openDatabase(directory), 'dev_1', options())
     await recovered.open()
     expect((await recovered.pending(10, 100_000)).map((sample) => sample.sequence)).toEqual([2])
     expect((await recovered.append('dev_1', draft())).sequence).toBe(3)
     expect(await recovered.stats()).toMatchObject({ acknowledgedSequence: 1, currentSequence: 3 })
   })
 
-  it('does not treat a rolled-back sequence allocation as loss, and does not reuse the sequence', async () => {
+  it('does not declare a rolled-back allocation lost, and never reassigns a committed sequence', async () => {
     const directory = await tempDir('crash-db-')
-    const database = new SqlitePluginDatabase(path.join(directory, 'plugin.db'))
-    cleanups.push(() => database.close())
+    const database = openDatabase(directory)
     await new DatabaseOutbox(database, 'dev_1', options()).open()
 
     // Power-loss simulation: an append that wrote the record and advanced the
-    // allocator but died before COMMIT. The transaction rolls back on reopen.
+    // allocator but died before COMMIT. The transaction rolls back.
     await database
       .transaction(async (tx: PluginDatabase) => {
         await tx.run(
@@ -84,10 +117,13 @@ describe('abrupt shutdown recovery', () => {
 
     const recovered = new DatabaseOutbox(database, 'dev_1', options())
     await recovered.open()
-    // The uncommitted allocation was neither persisted nor declared lost, and the
-    // next real append reuses sequence 1 rather than leaking a phantom gap.
+    // A fully rolled-back allocation was never committed or emitted, so it may
+    // legitimately be reused for the next sample, and it is not declared lost.
     expect((await recovered.append('dev_1', draft())).sequence).toBe(1)
     expect(await recovered.stats()).toMatchObject({ currentSequence: 1, droppedCount: 0, droppedThrough: 0 })
+    // Once committed, the sequence identity is fixed: the next sample gets a new
+    // sequence and never reuses the committed one for a different sample.
+    expect((await recovered.append('dev_1', draft())).sequence).toBe(2)
   })
 
   it('FileOutbox persists an acknowledgement before reclaiming, so a crash mid-reclaim never resends delivered samples', async () => {
@@ -132,8 +168,7 @@ describe('abrupt shutdown recovery', () => {
     await reopenedFile.close()
 
     const dbDirectory = await tempDir('crash-loss-db-')
-    const database = new SqlitePluginDatabase(path.join(dbDirectory, 'plugin.db'))
-    cleanups.push(() => database.close())
+    const database = openDatabase(dbDirectory)
     const dbOutbox = new DatabaseOutbox(database, 'dev_1', options({ maxBytes: 1 }))
     await dbOutbox.open()
     for (let sequence = 1; sequence <= 3; sequence += 1) await dbOutbox.append('dev_1', draft(sequence))

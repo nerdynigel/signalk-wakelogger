@@ -51,6 +51,7 @@
     "build": "tsc -p tsconfig.build.json && npm run build:webapp",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "prepare:test-sqlite": "npm rebuild better-sqlite3",
     "test:integration": "vitest run test/integration",
     "test:broker": "vitest run test/integration/mqtt-broker.test.ts",
     "test:docker": "node scripts/test-signalk-docker.mjs",

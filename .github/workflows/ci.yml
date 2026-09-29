@@ -22,6 +22,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
+      # The install above deliberately skips scripts (packaged-plugin/App Store
+      # compatibility). The crash-recovery tests use a real, test-only SQLite
+      # backend, so prepare just that native dev dependency before running tests.
+      - run: npm run prepare:test-sqlite
       - run: npm run check
       - run: npm audit --omit=dev --audit-level=high
 
