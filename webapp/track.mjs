@@ -55,10 +55,14 @@ export function trackBounds(points) {
 // loads or is recomputed, unless the user has already taken manual control of
 // the viewport. A new recording id is a new passage and re-enables fitting, so
 // opening another client or changing upload mode never changes the extent.
-export function shouldAutoFitTrack({ hasTrack, recordingChanged = false, userControlled = false } = {}) {
+export function shouldAutoFitTrack({ hasTrack, recordingChanged = false, userControlled = false, mode = 'track' } = {}) {
   if (!hasTrack) return false
   if (recordingChanged) return true
-  return !userControlled
+  if (userControlled) return false
+  // 'auto' means no explicit viewport choice yet, so the arrival of durable
+  // history may still frame the full track. 'course'/'follow'/'manual' are
+  // deliberate choices and are left alone.
+  return mode === 'auto' || mode === 'track'
 }
 
 export function needsRebootstrap({
@@ -67,9 +71,14 @@ export function needsRebootstrap({
   threshold = REBOOTSTRAP_TAIL_THRESHOLD,
   recordingChanged = false,
   gapDetected = false,
-  resumed = false
+  resumed = false,
+  historyEmpty = false
 } = {}) {
   if (recordingChanged || gapDetected || resumed) return true
   if (!(Number.isFinite(trackLength) && trackLength > 0)) return true
+  // An empty/failed initial archive response must not be treated as the whole
+  // recording just because the browser has since drawn its own tail; reconcile
+  // on the next poll instead of waiting for the full tail threshold.
+  if (historyEmpty) return true
   return fixesSinceBootstrap >= threshold
 }

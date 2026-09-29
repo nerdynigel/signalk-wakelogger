@@ -4,6 +4,11 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## [Unreleased] - 2026-09-28
 
+### A new recording never shows the previous trip
+
+- If a fresh recording starts (or the boat records before a browser connects), the onboard map no longer treats a browser-drawn tail as the whole trip: an empty or failed archive read is reconciled on the next poll, so the full recovered track appears promptly instead of after hundreds of fixes.
+- The map keeps an explicit viewport intent. Fullscreen, rotation, resizing and course changes no longer re-frame the map or drop the selected recording, the archive identity is guarded so a delayed response for a previous recording cannot appear, and a new recording's positions are never appended to the recording still on screen. Fit course, Fit track and Centre on vessel stay separate.
+
 ### See the whole trip from wherever you open the map
 
 - Opening the onboard map part-way through a passage (or reloading, or connecting a second device) now shows the recorded track from the real departure through the latest position, sourced from the durable onboard archive rather than from page-open time. This works with no internet and with Live tracking off, and it survives a plugin restart without its graceful stop path.

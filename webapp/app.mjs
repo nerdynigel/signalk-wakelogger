@@ -38,10 +38,11 @@ try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { 
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
+let trackHistoryEmpty = false, trackRequestSeq = 0
 // Viewport intent is separate from track availability: a user may pan/zoom or
 // follow the vessel, but the full track stays in the line and is always
-// available through Fit track. A new recording re-enables auto-fit.
-let trackUserControlled = false, fittingViewport = false, trackStartSequence = null, trackEndSequence = null
+// available through Fit track. Modes: 'auto' | 'track' | 'course' | 'follow' | 'manual'.
+let viewportMode = 'auto', trackUserControlled = false, fittingViewport = false, trackStartSequence = null, trackEndSequence = null
 let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false, defaultPanelChosen = false, instrumentPolling = false, instrumentRequest = 0
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
@@ -61,6 +62,7 @@ function publishViewport() {
   const centre = map.getCenter()
   mapElement.dataset.viewportCenter = `${centre.lat.toFixed(4)},${centre.lng.toFixed(4)}`
   mapElement.dataset.viewportZoom = String(map.getZoom())
+  mapElement.dataset.viewportMode = viewportMode
 }
 
 function fitCourse() {
@@ -152,16 +154,26 @@ function renderCourse() {
       : L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${progress.direction}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
     L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
     if (trackBootstrapped) {
-      const before = track.length
-      track = appendTrackPoint(track, point)
-      fixesSinceBootstrap += 1
-      if (track.length === before && before >= MAX_DISPLAY_TRACK_POINTS) trackNeedsRebootstrap = true
+      // Never append a live fix from a new recording onto the previous
+      // recording still on screen; refresh the archive identity first.
+      const serverSessionId = trackingStatus?.trackingSessionId ?? null
+      if (serverSessionId && trackRecordingId && serverSessionId !== trackRecordingId) {
+        trackNeedsRebootstrap = true
+      } else {
+        const before = track.length
+        track = appendTrackPoint(track, point)
+        fixesSinceBootstrap += 1
+        if (track.length === before && before >= MAX_DISPLAY_TRACK_POINTS) trackNeedsRebootstrap = true
+      }
     }
     trackLine.setLatLngs(track)
   }
   publishTrack()
   $('centre-vessel').disabled = !progress.position
-  if (courseChanged) { fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
+  // A course change re-frames the course only before any explicit viewport
+  // choice, or when the viewer deliberately chose Fit course; an independently
+  // selected track view is preserved.
+  if (courseChanged) { if (viewportMode === 'course' || viewportMode === 'auto') fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
 }
 
 // The onboard map track comes from a durable onboard archive, not from
@@ -172,8 +184,11 @@ function renderCourse() {
 async function bootstrapTrackFromDurable() {
   if (trackLoading) return
   trackLoading = true
+  const requestSeq = ++trackRequestSeq
   try {
     const response = await client.request(`/plugins/signalk-wakelogger/track?maxPoints=${MAX_DISPLAY_TRACK_POINTS}`, { operation: 'read-track' })
+    // Discard a superseded response (a newer request already started).
+    if (requestSeq !== trackRequestSeq) return
     if (response && Array.isArray(response.points)) {
       const nextRecordingId = response.trackingSessionId || response.recording?.id || null
       const recordingChanged = trackBootstrapped && nextRecordingId !== trackRecordingId
@@ -182,17 +197,25 @@ async function bootstrapTrackFromDurable() {
       trackRecordingId = nextRecordingId
       fixesSinceBootstrap = 0
       trackNeedsRebootstrap = false
+      trackHistoryEmpty = track.length === 0
       const sequences = response.points.map(point => point?.sequence).filter(Number.isFinite)
       trackStartSequence = sequences.length ? Math.min(...sequences) : null
       trackEndSequence = sequences.length ? Math.max(...sequences) : null
       // A new passage re-enables auto-fit; a reload/reconnect with existing
       // manual control never yanks the viewport.
-      if (recordingChanged) trackUserControlled = false
+      if (recordingChanged) { trackUserControlled = false; viewportMode = 'auto' }
       trackLine.setLatLngs(track)
       publishTrack()
-      if (shouldAutoFitTrack({ hasTrack: track.length > 0, recordingChanged, userControlled: trackUserControlled })) fitTrack()
+      if (shouldAutoFitTrack({ hasTrack: track.length > 0, recordingChanged, userControlled: trackUserControlled, mode: viewportMode })) {
+        fitTrack()
+        viewportMode = 'track'
+        publishViewport()
+      }
     }
-  } catch { /* Keep retrying on the next poll; never block instruments. */ }
+  } catch {
+    // A failed read is not proof the recording is empty; reconcile again soon.
+    if (requestSeq === trackRequestSeq) trackHistoryEmpty = true
+  }
   finally { trackLoading = false }
 }
 
@@ -372,7 +395,7 @@ async function poll() {
     // is offered to the crew for explicit acceptance rather than auto-applied.
     const serverSessionId = trackingStatus?.trackingSessionId ?? null
     if (trackBootstrapped && serverSessionId !== trackRecordingId) trackNeedsRebootstrap = true
-    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested })) {
+    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested, historyEmpty: trackHistoryEmpty })) {
       trackResumeRequested = false
       await bootstrapTrackFromDurable()
     }
@@ -595,12 +618,13 @@ $('progression-dismiss').onclick = async () => {
     notice('Rounding dismissed.')
   } catch (error) { notice(error.message); reportDiagnostic(error) }
 }
-$('fit-course').onclick = fitCourse
-$('fit-track').onclick = fitTrack
-$('centre-vessel').onclick = () => { if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) }
-// A deliberate pan/zoom takes viewport control; programmatic fits do not.
-map.on('dragstart', () => { if (!fittingViewport) trackUserControlled = true })
-map.on('zoomstart', () => { if (!fittingViewport) trackUserControlled = true })
+$('fit-course').onclick = () => { viewportMode = 'course'; fitCourse() }
+$('fit-track').onclick = () => { viewportMode = 'track'; fitTrack() }
+$('centre-vessel').onclick = () => { if (progress?.position) { viewportMode = 'follow'; map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) } }
+// A deliberate pan/zoom takes viewport control; programmatic fits and resizes
+// do not (they have no originalEvent and/or run under fittingViewport).
+map.on('dragstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
+map.on('zoomstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
 $('activate-course').onclick = () => command(() => progression.activate())
 $('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name })
 $('point-index').onchange = () => { selectedPointDirty = true }
@@ -736,14 +760,20 @@ for (const name of tabNames) {
 }
 const chartplotter = $('chartplotter')
 const screen = window.matchMedia('(max-width: 760px)')
+// Resizing, fullscreen and orientation changes preserve the current viewport
+// intent and never silently re-frame the course or the track.
 function resizeMap() {
   chartplotter.dataset.screen = screen.matches ? 'mobile' : 'desktop'
-  requestAnimationFrame(() => map.invalidateSize({ animate: false }))
+  // invalidateSize preserves the current centre/zoom, so the viewport intent and
+  // the selected passage survive resizing, rotation and fullscreen.
+  fittingViewport = true
+  requestAnimationFrame(() => {
+    map.invalidateSize({ animate: false })
+    fittingViewport = false
+    publishViewport()
+  })
 }
-screen.addEventListener('change', () => {
-  resizeMap()
-  requestAnimationFrame(fitCourse)
-})
+screen.addEventListener('change', resizeMap)
 new ResizeObserver(resizeMap).observe(chartplotter)
 resizeMap()
 function setFullscreen(active) {
@@ -753,7 +783,6 @@ function setFullscreen(active) {
   $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen')
   $('fullscreen').setAttribute('aria-pressed', String(active))
   resizeMap()
-  requestAnimationFrame(fitCourse)
 }
 $('fullscreen').onclick = async () => {
   const active = chartplotter.classList.contains('is-fullscreen') || document.fullscreenElement === chartplotter

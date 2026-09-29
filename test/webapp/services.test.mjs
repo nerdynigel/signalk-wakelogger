@@ -452,6 +452,9 @@ test('durable track helpers order, never drop the departure, and request re-boot
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, recordingChanged: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, resumed: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, gapDetected: true }), true)
+  // An empty/failed initial archive response reconciles on the next poll rather
+  // than waiting for the full browser tail threshold.
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true }), true)
 })
 
 test('full-track fitting covers the whole passage and defers to manual viewport control', () => {
@@ -466,6 +469,10 @@ test('full-track fitting covers the whole passage and defers to manual viewport 
   assert.equal(shouldAutoFitTrack({ hasTrack: true }), true)
   assert.equal(shouldAutoFitTrack({ hasTrack: true, userControlled: true }), false)
   assert.equal(shouldAutoFitTrack({ hasTrack: true, recordingChanged: true, userControlled: true }), true)
+  // An explicit course/follow choice is respected until the track is chosen.
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'auto' }), true)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'course' }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'manual' }), false)
 })
 
 test('lifetime retention loss is never presented as current-trip loss', () => {

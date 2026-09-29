@@ -11,7 +11,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [] } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1' } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -47,13 +47,15 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
     if (pathname === '/plugins/signalk-wakelogger/track') {
-      const sequences = track.map((point) => point.sequence).filter(Number.isFinite)
+      const rows = typeof track === 'function' ? track() : track
+      const id = typeof trackId === 'function' ? trackId() : trackId
+      const sequences = rows.map((point) => point.sequence).filter(Number.isFinite)
       return json({
         storageBackend: 'file',
-        points: track,
-        summary: { fromSequence: sequences.length ? Math.min(...sequences) : null, throughSequence: sequences.length ? Math.max(...sequences) : null, totalSamples: track.length, decimated: false },
-        recording: track.length ? { id: 'rec-1', state: 'recording', firstSequence: sequences.length ? Math.min(...sequences) : 1 } : null,
-        trackingSessionId: track.length ? 'rec-1' : null
+        points: rows,
+        summary: { fromSequence: sequences.length ? Math.min(...sequences) : null, throughSequence: sequences.length ? Math.max(...sequences) : null, totalSamples: rows.length, decimated: false },
+        recording: rows.length ? { id, state: 'recording', firstSequence: sequences.length ? Math.min(...sequences) : 1 } : null,
+        trackingSessionId: rows.length ? id : null
       })
     }
     if (pathname === '/plugins/signalk-wakelogger/progression') return json({ ...(progressionState ?? {}), control: controlState })
@@ -457,6 +459,7 @@ test('a late-joining onboard browser fits the whole recorded track with no cours
   await expect(map).toHaveAttribute('data-track-south', '-28')
   await expect(map).toHaveAttribute('data-track-north', '-27')
   // Auto-fit happens even with no course, so the departure is on screen.
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
   await expectFittedToTrack(map)
   // Reload re-derives the same full extent from the local archive.
   await page.reload()
@@ -469,4 +472,64 @@ test('a late-joining onboard browser fits the whole recorded track with no cours
   await expectFittedToTrack(map)
   // No Wake Logger network traffic while local_only.
   expect(external).toEqual([])
+})
+
+test('an empty initial archive reconciles promptly when durable history appears', async ({ page }) => {
+  let rows = []
+  const { external } = await mockBoat(page, { track: () => rows, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-point-count', '0')
+  rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  // Poll interval is 3s; this reconciles well before the 250-fix tail threshold.
+  await expect(map).toHaveAttribute('data-track-point-count', '3', { timeout: 12_000 })
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expectFittedToTrack(map)
+  expect(external).toEqual([])
+})
+
+test('fullscreen and resize preserve the track viewport intent', async ({ page }) => {
+  const track = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  await mockBoat(page, { track, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
+  await page.locator('#fullscreen').click()
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expectFittedToTrack(map)
+})
+
+test('switching recordings replaces the displayed track without mixing A and B', async ({ page }) => {
+  let id = 'A'
+  let rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.1, longitude: 153.1 },
+  ]
+  await mockBoat(page, { track: () => rows, trackId: () => id, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-recording-id', 'A')
+  await expect(map).toHaveAttribute('data-track-point-count', '2')
+  await expect(map).toHaveAttribute('data-track-south', '-27.1')
+  // A genuinely new recording B with distinct geometry.
+  id = 'B'
+  rows = [
+    { sequence: 1, capturedAt: 6_000, latitude: -30.0, longitude: 150.0 },
+    { sequence: 2, capturedAt: 7_000, latitude: -30.5, longitude: 150.5 },
+  ]
+  await expect(map).toHaveAttribute('data-track-recording-id', 'B', { timeout: 12_000 })
+  await expect(map).toHaveAttribute('data-track-point-count', '2')
+  // B's geometry only; no A coordinate survives and no A->B line is drawn.
+  await expect(map).toHaveAttribute('data-track-south', '-30.5')
+  await expect(map).toHaveAttribute('data-track-north', '-30')
 })
