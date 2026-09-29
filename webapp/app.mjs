@@ -7,7 +7,7 @@ import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
 import { instrumentReadings, formatReading } from './instruments.mjs'
-import { bootstrapTrack, appendTrackPoint, needsRebootstrap, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
+import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
@@ -38,6 +38,10 @@ try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { 
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
+// Viewport intent is separate from track availability: a user may pan/zoom or
+// follow the vessel, but the full track stays in the line and is always
+// available through Fit track. A new recording re-enables auto-fit.
+let trackUserControlled = false, fittingViewport = false, trackStartSequence = null, trackEndSequence = null
 let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false, defaultPanelChosen = false, instrumentPolling = false, instrumentRequest = 0
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
@@ -51,10 +55,50 @@ function reportDiagnostic(error) {
   client.request('/plugins/signalk-wakelogger/diagnostics', { method: 'POST', operation: 'report-diagnostic', body: JSON.stringify(diagnostic) }).catch(() => {})
 }
 
+function publishViewport() {
+  const mapElement = $('map')
+  if (!mapElement || !map.getCenter) return
+  const centre = map.getCenter()
+  mapElement.dataset.viewportCenter = `${centre.lat.toFixed(4)},${centre.lng.toFixed(4)}`
+  mapElement.dataset.viewportZoom = String(map.getZoom())
+}
+
 function fitCourse() {
   const points = progress?.points || []
+  fittingViewport = true
   if (points.length) map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 55], maxZoom: 15, animate: false })
   else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], 13)
+  fittingViewport = false
+  publishViewport()
+}
+
+// Fit the whole available sailed track (the real departure through the latest
+// recorded position), independent of when this browser connected.
+function fitTrack() {
+  const bounds = trackBounds(track)
+  fittingViewport = true
+  if (bounds) map.fitBounds([[bounds.south, bounds.west], [bounds.north, bounds.east]], { padding: [35, 55], maxZoom: 15, animate: false })
+  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(13, map.getZoom()))
+  fittingViewport = false
+  publishViewport()
+}
+
+function publishTrack() {
+  const mapElement = $('map')
+  if (!mapElement) return
+  const bounds = trackBounds(track)
+  mapElement.dataset.trackPointCount = String(track.length)
+  mapElement.dataset.trackRecordingId = trackRecordingId || ''
+  mapElement.dataset.trackStartSequence = trackStartSequence === null ? '' : String(trackStartSequence)
+  mapElement.dataset.trackEndSequence = trackEndSequence === null ? '' : String(trackEndSequence)
+  if (bounds) {
+    mapElement.dataset.trackSouth = String(bounds.south)
+    mapElement.dataset.trackWest = String(bounds.west)
+    mapElement.dataset.trackNorth = String(bounds.north)
+    mapElement.dataset.trackEast = String(bounds.east)
+  }
+  const fit = $('fit-track')
+  if (fit) fit.disabled = track.length === 0
 }
 
 function renderCourse() {
@@ -115,6 +159,7 @@ function renderCourse() {
     }
     trackLine.setLatLngs(track)
   }
+  publishTrack()
   $('centre-vessel').disabled = !progress.position
   if (courseChanged) { fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
 }
@@ -130,12 +175,22 @@ async function bootstrapTrackFromDurable() {
   try {
     const response = await client.request(`/plugins/signalk-wakelogger/track?maxPoints=${MAX_DISPLAY_TRACK_POINTS}`, { operation: 'read-track' })
     if (response && Array.isArray(response.points)) {
+      const nextRecordingId = response.trackingSessionId || response.recording?.id || null
+      const recordingChanged = trackBootstrapped && nextRecordingId !== trackRecordingId
       track = bootstrapTrack(response)
       trackBootstrapped = true
-      trackRecordingId = response.trackingSessionId || response.recording?.id || null
+      trackRecordingId = nextRecordingId
       fixesSinceBootstrap = 0
       trackNeedsRebootstrap = false
+      const sequences = response.points.map(point => point?.sequence).filter(Number.isFinite)
+      trackStartSequence = sequences.length ? Math.min(...sequences) : null
+      trackEndSequence = sequences.length ? Math.max(...sequences) : null
+      // A new passage re-enables auto-fit; a reload/reconnect with existing
+      // manual control never yanks the viewport.
+      if (recordingChanged) trackUserControlled = false
       trackLine.setLatLngs(track)
+      publishTrack()
+      if (shouldAutoFitTrack({ hasTrack: track.length > 0, recordingChanged, userControlled: trackUserControlled })) fitTrack()
     }
   } catch { /* Keep retrying on the next poll; never block instruments. */ }
   finally { trackLoading = false }
@@ -541,7 +596,11 @@ $('progression-dismiss').onclick = async () => {
   } catch (error) { notice(error.message); reportDiagnostic(error) }
 }
 $('fit-course').onclick = fitCourse
+$('fit-track').onclick = fitTrack
 $('centre-vessel').onclick = () => { if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) }
+// A deliberate pan/zoom takes viewport control; programmatic fits do not.
+map.on('dragstart', () => { if (!fittingViewport) trackUserControlled = true })
+map.on('zoomstart', () => { if (!fittingViewport) trackUserControlled = true })
 $('activate-course').onclick = () => command(() => progression.activate())
 $('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name })
 $('point-index').onchange = () => { selectedPointDirty = true }

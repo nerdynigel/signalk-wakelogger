@@ -11,7 +11,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [] } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -46,7 +46,16 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       })
     }
     if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
-    if (pathname === '/plugins/signalk-wakelogger/track') return json({ storageBackend: 'file', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null })
+    if (pathname === '/plugins/signalk-wakelogger/track') {
+      const sequences = track.map((point) => point.sequence).filter(Number.isFinite)
+      return json({
+        storageBackend: 'file',
+        points: track,
+        summary: { fromSequence: sequences.length ? Math.min(...sequences) : null, throughSequence: sequences.length ? Math.max(...sequences) : null, totalSamples: track.length, decimated: false },
+        recording: track.length ? { id: 'rec-1', state: 'recording', firstSequence: sequences.length ? Math.min(...sequences) : 1 } : null,
+        trackingSessionId: track.length ? 'rec-1' : null
+      })
+    }
     if (pathname === '/plugins/signalk-wakelogger/progression') return json({ ...(progressionState ?? {}), control: controlState })
     if (pathname === '/plugins/signalk-wakelogger/progression/control') {
       const body = request.postDataJSON()
@@ -419,5 +428,45 @@ test('a hanging course request does not freeze the standalone instruments', asyn
   await page.waitForTimeout(6000)
   await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
   await expect(page.locator('#instruments-grid .instrument[data-available=true]').first()).toBeVisible()
+  expect(external).toEqual([])
+})
+
+async function expectFittedToTrack(map) {
+  // Leaflet padding/rounding nudges the centre slightly; assert the viewport is
+  // centred on the whole track and zoomed in from the initial world view.
+  await expect.poll(async () => {
+    const [lat, lon] = ((await map.getAttribute('data-viewport-center')) || '').split(',').map(Number)
+    return Number.isFinite(lat) && Math.abs(lat + 27.5) < 0.05 && Math.abs(lon - 153.5) < 0.05
+  }).toBe(true)
+  await expect.poll(async () => Number((await map.getAttribute('data-viewport-zoom')) || 0)).toBeGreaterThan(2)
+}
+
+test('a late-joining onboard browser fits the whole recorded track with no course', async ({ page }) => {
+  const track = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  const { external } = await mockBoat(page, { track, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  // The full recorded extent comes from local history, not page-open time.
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expect(map).toHaveAttribute('data-track-end-sequence', '3')
+  await expect(map).toHaveAttribute('data-track-south', '-28')
+  await expect(map).toHaveAttribute('data-track-north', '-27')
+  // Auto-fit happens even with no course, so the departure is on screen.
+  await expectFittedToTrack(map)
+  // Reload re-derives the same full extent from the local archive.
+  await page.reload()
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expectFittedToTrack(map)
+  // Fit track stays available and works with no course.
+  await expect(page.locator('#fit-track')).toBeEnabled()
+  await page.locator('#fit-track').click()
+  await expectFittedToTrack(map)
+  // No Wake Logger network traffic while local_only.
   expect(external).toEqual([])
 })

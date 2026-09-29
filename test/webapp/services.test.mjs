@@ -7,7 +7,7 @@ import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
 import { instrumentReadings, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
 import { trackingPresentation } from '../../webapp/tracking-controls.mjs'
-import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap } from '../../webapp/track.mjs'
+import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
 const point = (latitude, longitude) => ({ latitude, longitude })
@@ -452,6 +452,20 @@ test('durable track helpers order, never drop the departure, and request re-boot
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, recordingChanged: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, resumed: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, gapDetected: true }), true)
+})
+
+test('full-track fitting covers the whole passage and defers to manual viewport control', () => {
+  assert.equal(trackBounds([]), null)
+  assert.equal(trackBounds(null), null)
+  assert.deepEqual(trackBounds([[1, 2], [3, 5], [2, 4]]), { south: 1, west: 2, north: 3, east: 5 })
+  // Non-finite points are ignored rather than corrupting the bounds.
+  assert.deepEqual(trackBounds([[1, 2], [Number.NaN, 9]]), { south: 1, west: 2, north: 1, east: 2 })
+  // A track fit happens on first load and on a new passage, and never fights a
+  // user who has deliberately moved the viewport.
+  assert.equal(shouldAutoFitTrack({ hasTrack: false }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true }), true)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, userControlled: true }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, recordingChanged: true, userControlled: true }), true)
 })
 
 test('lifetime retention loss is never presented as current-trip loss', () => {

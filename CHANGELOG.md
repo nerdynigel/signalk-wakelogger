@@ -4,6 +4,11 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## [Unreleased] - 2026-09-28
 
+### See the whole trip from wherever you open the map
+
+- Opening the onboard map part-way through a passage (or reloading, or connecting a second device) now shows the recorded track from the real departure through the latest position, sourced from the durable onboard archive rather than from page-open time. This works with no internet and with Live tracking off, and it survives a plugin restart without its graceful stop path.
+- A labelled **Fit track** control fits the whole sailed track, independent of any course, and the map automatically fits the full track on first load unless you have already panned or zoomed. Fit course and Centre on vessel stay separate, so course overlays never hide the sailed history.
+
 ### Completed trips stay on the map after upload
 
 - The onboard map archive keeps its own recording index, independent of the upload queue. A completed trip remains available on the map after its telemetry has been uploaded and acknowledged and after the pending-upload records are removed, and it survives a reload or plugin restart. Starting a new trip never mixes it with the previous one.

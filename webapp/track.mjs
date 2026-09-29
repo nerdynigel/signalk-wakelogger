@@ -31,6 +31,36 @@ export function appendTrackPoint(track, point, maxPoints = MAX_DISPLAY_TRACK_POI
   return [...track, point]
 }
 
+// Bounding box of a coordinate track, or null when it has no usable points.
+// Used to fit the map to the whole recorded passage independently of when the
+// browser connected.
+export function trackBounds(points) {
+  if (!Array.isArray(points) || !points.length) return null
+  let south = Infinity
+  let west = Infinity
+  let north = -Infinity
+  let east = -Infinity
+  for (const point of points) {
+    if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue
+    if (point[0] < south) south = point[0]
+    if (point[0] > north) north = point[0]
+    if (point[1] < west) west = point[1]
+    if (point[1] > east) east = point[1]
+  }
+  if (!Number.isFinite(south) || !Number.isFinite(west) || !Number.isFinite(north) || !Number.isFinite(east)) return null
+  return { south, west, north, east }
+}
+
+// The map should fit the full available track when a passage's history first
+// loads or is recomputed, unless the user has already taken manual control of
+// the viewport. A new recording id is a new passage and re-enables fitting, so
+// opening another client or changing upload mode never changes the extent.
+export function shouldAutoFitTrack({ hasTrack, recordingChanged = false, userControlled = false } = {}) {
+  if (!hasTrack) return false
+  if (recordingChanged) return true
+  return !userControlled
+}
+
 export function needsRebootstrap({
   trackLength,
   fixesSinceBootstrap = 0,
