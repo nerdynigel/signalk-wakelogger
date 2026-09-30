@@ -452,9 +452,17 @@ test('durable track helpers order, never drop the departure, and request re-boot
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, recordingChanged: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, resumed: true }), true)
   assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, gapDetected: true }), true)
-  // An empty/failed initial archive response reconciles on the next poll rather
-  // than waiting for the full browser tail threshold.
-  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true }), true)
+  // An unresolved archive history (empty, pending, failed, stale) reconciles on
+  // its bounded retry schedule rather than being treated as complete history.
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true }), false)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true, retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'empty', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'pending', retryDue: false }), false)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'pending', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'failed', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'stale', retryDue: true }), true)
+  // A loaded recording only re-bootstraps when the tail has grown materially.
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'loaded' }), false)
 })
 
 test('full-track fitting covers the whole passage and defers to manual viewport control', () => {

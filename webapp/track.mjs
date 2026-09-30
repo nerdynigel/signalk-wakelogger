@@ -72,13 +72,16 @@ export function needsRebootstrap({
   recordingChanged = false,
   gapDetected = false,
   resumed = false,
-  historyEmpty = false
+  historyEmpty = false,
+  historyState = 'idle',
+  retryDue = false
 } = {}) {
   if (recordingChanged || gapDetected || resumed) return true
+  // A read failure, an authoritative-empty answer, a pending recording or a
+  // stale identity must be reconciled again: a browser-only tail is never
+  // treated as the complete recording. Retrying is bounded by the caller.
+  const unresolved = historyEmpty || ['failed', 'empty', 'pending', 'stale'].includes(historyState)
+  if (unresolved) return retryDue
   if (!(Number.isFinite(trackLength) && trackLength > 0)) return true
-  // An empty/failed initial archive response must not be treated as the whole
-  // recording just because the browser has since drawn its own tail; reconcile
-  // on the next poll instead of waiting for the full tail threshold.
-  if (historyEmpty) return true
   return fixesSinceBootstrap >= threshold
 }

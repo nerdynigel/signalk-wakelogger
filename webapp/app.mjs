@@ -38,7 +38,12 @@ try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { 
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
-let trackHistoryEmpty = false, trackRequestSeq = 0
+// History is a bounded state machine, not a boolean: a failed read, an
+// authoritative empty answer, a pending recording and a stale identity are all
+// unresolved and must be reconciled again, while a browser-only tail is never
+// promoted to "complete" history.
+let trackHistoryState = 'idle', trackHistoryEmpty = false, trackRequestSeq = 0, trackGeneration = 0
+let trackRetryAt = 0, trackRetryDelayMs = 0
 // Viewport intent is separate from track availability: a user may pan/zoom or
 // follow the vessel, but the full track stays in the line and is always
 // available through Fit track. Modes: 'auto' | 'track' | 'course' | 'follow' | 'manual'.
@@ -91,6 +96,7 @@ function publishTrack() {
   const bounds = trackBounds(track)
   mapElement.dataset.trackPointCount = String(track.length)
   mapElement.dataset.trackRecordingId = trackRecordingId || ''
+  mapElement.dataset.trackHistoryState = trackHistoryState
   mapElement.dataset.trackStartSequence = trackStartSequence === null ? '' : String(trackStartSequence)
   mapElement.dataset.trackEndSequence = trackEndSequence === null ? '' : String(trackEndSequence)
   if (bounds) {
@@ -101,6 +107,38 @@ function publishTrack() {
   }
   const fit = $('fit-track')
   if (fit) fit.disabled = track.length === 0
+}
+
+// A /tracking identity that differs from the displayed recording is a real
+// transition: invalidate any in-flight /track request immediately, drop the
+// previous passage's geometry so it cannot be shown as the new one, and request
+// the new archive history promptly. A failed /tracking read never calls this.
+// Re-observing the same mismatch does not re-invalidate the retry already under
+// way for it.
+let observedStaleRecordingId = null
+function observeServerRecording(serverSessionId) {
+  if (!serverSessionId) return false
+  if (trackBootstrapped && trackRecordingId && serverSessionId !== trackRecordingId) {
+    if (observedStaleRecordingId === serverSessionId) return true
+    observedStaleRecordingId = serverSessionId
+    // Observable marker so the browser tests can assert that a delayed response
+    // for the superseded recording is discarded after this point.
+    const mapElement = $('map')
+    if (mapElement) mapElement.dataset.trackObservedRecording = serverSessionId
+    trackGeneration += 1
+    // Any response already in flight belongs to the previous generation.
+    trackRequestSeq += 1
+    trackNeedsRebootstrap = true
+    trackHistoryState = 'stale'
+    track = []
+    trackStartSequence = null
+    trackEndSequence = null
+    trackLine.setLatLngs(track)
+    publishTrack()
+    return true
+  }
+  if (serverSessionId === trackRecordingId) observedStaleRecordingId = null
+  return false
 }
 
 function renderCourse() {
@@ -157,9 +195,7 @@ function renderCourse() {
       // Never append a live fix from a new recording onto the previous
       // recording still on screen; refresh the archive identity first.
       const serverSessionId = trackingStatus?.trackingSessionId ?? null
-      if (serverSessionId && trackRecordingId && serverSessionId !== trackRecordingId) {
-        trackNeedsRebootstrap = true
-      } else {
+      if (!observeServerRecording(serverSessionId)) {
         const before = track.length
         track = appendTrackPoint(track, point)
         fixesSinceBootstrap += 1
@@ -181,23 +217,55 @@ function renderCourse() {
 // local API on load and again whenever the recording changes, the page resumes,
 // or enough new fixes have arrived that the whole-trip geometry should be
 // recomputed (which preserves the departure instead of dropping it).
+// Each request is bound to the recording identity/generation it was started
+// for, so a delayed response for a superseded recording is discarded.
 async function bootstrapTrackFromDurable() {
   if (trackLoading) return
   trackLoading = true
+  const generation = trackGeneration
   const requestSeq = ++trackRequestSeq
+  if (track.length === 0 && trackHistoryState !== 'loaded') trackHistoryState = 'loading'
+  publishTrack()
   try {
     const response = await client.request(`/plugins/signalk-wakelogger/track?maxPoints=${MAX_DISPLAY_TRACK_POINTS}`, { operation: 'read-track' })
-    // Discard a superseded response (a newer request already started).
-    if (requestSeq !== trackRequestSeq) return
+    // Discard a superseded response (a newer request started or the observed
+    // recording changed while this request was in flight).
+    if (requestSeq !== trackRequestSeq || generation !== trackGeneration) return
     if (response && Array.isArray(response.points)) {
       const nextRecordingId = response.trackingSessionId || response.recording?.id || null
+      const serverSessionId = trackingStatus?.trackingSessionId ?? null
+      // Once a different recording was observed, that identity is authoritative
+      // until its own archive history is accepted, even if a tracking poll is
+      // momentarily in flight. A response for any other recording is not the
+      // current passage and must never be displayed as it.
+      const unresolvedIdentity = observedStaleRecordingId || serverSessionId
+      if (unresolvedIdentity && nextRecordingId && unresolvedIdentity !== nextRecordingId) {
+        trackHistoryState = 'stale'
+        trackNeedsRebootstrap = true
+        publishTrack()
+        return
+      }
       const recordingChanged = trackBootstrapped && nextRecordingId !== trackRecordingId
       track = bootstrapTrack(response)
       trackBootstrapped = true
       trackRecordingId = nextRecordingId
+      observedStaleRecordingId = null
       fixesSinceBootstrap = 0
       trackNeedsRebootstrap = false
       trackHistoryEmpty = track.length === 0
+      const recordingState = response.recording?.state ?? null
+      if (track.length > 0) trackHistoryState = 'loaded'
+      else if (recordingState === 'recording') trackHistoryState = 'pending'
+      else trackHistoryState = 'empty'
+      if (trackHistoryState === 'loaded') {
+        trackRetryAt = 0
+        trackRetryDelayMs = 0
+      } else {
+        // An empty or still-pending recording is unresolved, not complete
+        // history: reconcile again promptly but with a bounded backoff.
+        trackRetryDelayMs = trackRetryDelayMs ? Math.min(trackRetryDelayMs * 2, 30000) : 3000
+        trackRetryAt = Date.now() + trackRetryDelayMs
+      }
       const sequences = response.points.map(point => point?.sequence).filter(Number.isFinite)
       trackStartSequence = sequences.length ? Math.min(...sequences) : null
       trackEndSequence = sequences.length ? Math.max(...sequences) : null
@@ -213,10 +281,25 @@ async function bootstrapTrackFromDurable() {
       }
     }
   } catch {
-    // A failed read is not proof the recording is empty; reconcile again soon.
-    if (requestSeq === trackRequestSeq) trackHistoryEmpty = true
+    // A failed read is not proof the recording is empty; keep the state
+    // unresolved and reconcile again with a bounded exponential backoff.
+    if (requestSeq === trackRequestSeq && generation === trackGeneration) {
+      trackHistoryState = trackHistoryState === 'loaded' ? 'stale' : 'failed'
+      trackHistoryEmpty = true
+      trackNeedsRebootstrap = true
+      trackRetryDelayMs = trackRetryDelayMs ? Math.min(trackRetryDelayMs * 2, 30000) : 3000
+      trackRetryAt = Date.now() + trackRetryDelayMs
+      publishTrack()
+    }
   }
-  finally { trackLoading = false }
+  finally {
+    trackLoading = false
+    // A transition observed while this request was in flight deserves a prompt
+    // follow-up rather than waiting a full poll interval.
+    if (trackNeedsRebootstrap && trackGeneration !== generation) {
+      window.setTimeout(() => { if (trackNeedsRebootstrap && !trackLoading) void bootstrapTrackFromDurable() }, 50)
+    }
+  }
 }
 
 function renderInstruments() {
@@ -394,8 +477,9 @@ async function poll() {
     // fence a client-performed native pointIndex write), so a detected rounding
     // is offered to the crew for explicit acceptance rather than auto-applied.
     const serverSessionId = trackingStatus?.trackingSessionId ?? null
-    if (trackBootstrapped && serverSessionId !== trackRecordingId) trackNeedsRebootstrap = true
-    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested, historyEmpty: trackHistoryEmpty })) {
+    observeServerRecording(serverSessionId)
+    const retryDue = trackRetryAt > 0 && Date.now() >= trackRetryAt
+    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested, historyEmpty: trackHistoryEmpty, historyState: trackHistoryState, retryDue })) {
       trackResumeRequested = false
       await bootstrapTrackFromDurable()
     }
