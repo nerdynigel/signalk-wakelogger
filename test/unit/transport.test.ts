@@ -229,6 +229,28 @@ describe('WakeLoggerTransport', () => {
     await transport.stop()
   })
 
+  it('carries a persisted loss declaration in the telemetry batch after reconnect', async () => {
+    const outbox: any = {
+      latest: vi.fn().mockResolvedValue(sample),
+      pendingAfter: vi.fn().mockResolvedValue([{ ...sample, sequence: 4 }]),
+      stats: vi.fn().mockResolvedValue({ messageCount: 1, acknowledgedSequence: 2, droppedThrough: 3 }),
+      acknowledge: vi.fn()
+    }
+    const transport = new WakeLoggerTransport({
+      version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
+      mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn() })
+    transport.start(); await tick()
+    const client = clients[0]!
+    client.emit('connect'); await tick(); await tick()
+    await (transport as any).pump(); await tick()
+    const telemetry = client.publications
+      .filter((entry) => entry.topic.endsWith('/telemetry'))
+      .map((entry) => JSON.parse(entry.payload))
+    expect(telemetry.some((batch) => batch.droppedThrough === 3)).toBe(true)
+    await transport.stop()
+  })
+
   it('applies a retained managed profile and reports the revision result', async () => {
     const outbox: any = {
       latest: vi.fn().mockResolvedValue(undefined), pendingAfter: vi.fn().mockResolvedValue([]),

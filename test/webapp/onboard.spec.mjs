@@ -11,11 +11,22 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1' } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
+  let controlGeneration = 0
+  let controlState = { clientId: null, active: false, expiresAt: null, generation: null }
   const external = []
+  // Test control for the recording/history identity ordering: a one-shot delay
+  // on the next /track response and the /tracking-reported recording identity.
+  const control = {
+    trackDelayOnce: 0,
+    trackingSessionId: null,
+    trackFailuresRemaining: 0,
+    trackRequests: [],
+    emptyRecordingId: null,
+  }
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
     activeRoute: { href: conflict ? '/resources/routes/another-route' : ownedHref, pointIndex: 1, pointTotal: 3, reverse: false, name: conflict ? 'Existing native route' : desired.name },
@@ -33,15 +44,81 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     const pathname = url.pathname
     if (pathname === '/plugins/signalk-wakelogger/tracking') {
       if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: { uploadMode } }) }
-      return json({ uploadMode, paired: true, recording: true, connectionState: uploadMode === 'automatic' ? 'online' : 'recording_locally', queue: { messageCount: 123, currentSequence: 200, acknowledgedSequence: 77 } })
+      return json({
+        uploadMode, paired: true, recording: true,
+        trackingSessionId: control.trackingSessionId,
+        connectionState: uploadMode === 'automatic' ? 'online' : 'recording_locally',
+        queue: { messageCount: 123, currentSequence: 200, acknowledgedSequence: 77 }
+      })
     }
     if (pathname === '/plugins/signalk-wakelogger/course') {
+      if (courseError) return route.fulfill({ status: courseError, json: { error: 'course_unavailable', detail: 'Signal K course provider rejected the request' } })
+      if (!course) return json({ desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } })
       return json({ desired, cachedCourse: desired, acknowledgement: { v: 1, revision: 7, status: 'applied' }, routePoints: points,
         native: { available: true, course: navigation, ownedRouteId, activeMatchesDesired: navigation.activeRoute.href === ownedHref, conflict: navigation.activeRoute.href !== ownedHref },
         credentials: { password: secret },
       })
     }
-    if (pathname === '/plugins/signalk-wakelogger/progression') return json(progressionState)
+    if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
+    if (pathname === '/plugins/signalk-wakelogger/track') {
+      const rows = typeof track === 'function' ? track() : track
+      const id = typeof trackId === 'function' ? trackId() : trackId
+      control.trackRequests.push(id)
+      if (control.trackFailuresRemaining > 0) {
+        control.trackFailuresRemaining -= 1
+        return route.fulfill({ status: 503, json: { error: 'track_archive_unavailable' } })
+      }
+      if (control.trackDelayOnce > 0) {
+        const delay = control.trackDelayOnce
+        control.trackDelayOnce = 0
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+      const sequences = rows.map((point) => point.sequence).filter(Number.isFinite)
+      return json({
+        storageBackend: 'file',
+        points: rows,
+        summary: { fromSequence: sequences.length ? Math.min(...sequences) : null, throughSequence: sequences.length ? Math.max(...sequences) : null, totalSamples: rows.length, decimated: false },
+        recording: rows.length
+          ? { id, state: 'recording', firstSequence: sequences.length ? Math.min(...sequences) : 1 }
+          : control.emptyRecordingId
+            ? { id: control.emptyRecordingId, state: 'recording', firstSequence: 1 }
+            : null,
+        trackingSessionId: rows.length ? id : control.emptyRecordingId || null
+      })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression') return json({ ...(progressionState ?? {}), control: controlState })
+    if (pathname === '/plugins/signalk-wakelogger/progression/control') {
+      const body = request.postDataJSON()
+      if (body.release) controlState = { clientId: null, active: false, expiresAt: null, generation: null }
+      else if (controlState.active && controlState.clientId !== body.clientId) return route.fulfill({ status: 409, json: { error: 'navigation_control_held', control: controlState } })
+      else {
+        if (!controlState.active || controlState.clientId !== body.clientId) controlGeneration += 1
+        controlState = { clientId: body.clientId, active: true, expiresAt: Date.now() + 30000, generation: controlGeneration }
+      }
+      return json({ control: controlState })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression/apply') {
+      const body = request.postDataJSON()
+      if (!controlState.active || controlState.clientId !== body.clientId || controlState.generation !== body.generation) {
+        return route.fulfill({ status: 409, json: { error: 'navigation_control_not_held', control: controlState } })
+      }
+      if (progressionState?.pending?.pointIndex !== body.detectionPointIndex) return route.fulfill({ status: 409, json: { error: 'no_pending_detection' } })
+      const target = body.detectionPointIndex + 1
+      if (navigation.activeRoute.pointIndex > target) return json({ status: 'superseded', targetPointIndex: target })
+      if (navigation.activeRoute.pointIndex === target) return json({ status: 'already_applied', targetPointIndex: target, generation: controlState.generation })
+      if (navigation.activeRoute.pointIndex !== body.detectionPointIndex) return route.fulfill({ status: 409, json: { error: 'stale_point' } })
+      return json({ status: 'apply', targetPointIndex: target, generation: controlState.generation })
+    }
+    if (pathname === '/plugins/signalk-wakelogger/progression/apply/confirm') {
+      const body = request.postDataJSON()
+      if (!controlState.active || controlState.clientId !== body.clientId || controlState.generation !== body.generation) {
+        return route.fulfill({ status: 409, json: { error: 'navigation_control_not_held', control: controlState } })
+      }
+      const native = navigation.activeRoute.pointIndex
+      if (native > body.targetPointIndex) return json({ status: 'superseded', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
+      if (native === body.targetPointIndex) return json({ status: 'confirmed', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
+      return json({ status: 'pending', targetPointIndex: body.targetPointIndex, nativePointIndex: native })
+    }
     if (pathname === '/plugins/signalk-wakelogger/race-plan') return json(racePlan)
     if (pathname === '/plugins/signalk-wakelogger/progression/resolve') {
       const body = request.postDataJSON()
@@ -66,12 +143,16 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       navigation = { ...navigation, activeRoute: { ...navigation.activeRoute, pointIndex: index } }
       return json({ state: 'COMPLETED', statusCode: 200 })
     }
-    if (pathname === '/signalk/v1/api/vessels/self/navigation') return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
+    if (pathname === '/signalk/v1/api/vessels/self/navigation') {
+      if (navigationOverride) return json(navigationOverride)
+      return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
+    }
+    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
   })
-  return { writes, external }
+  return { writes, external, control }
 }
 
 // Selectors are kept in one place to describe the onboard controls.
@@ -209,14 +290,25 @@ test('failed mode save reads back the actual safely paused state', async ({ page
   await expect(page.locator('#tracking-description')).toContainText('Setting could not be saved')
 })
 
-test('auto-advances the active point from a detected rounding', async ({ page }) => {
+test('automatic application is disabled; the controlling device must accept a rounding explicitly', async ({ page }) => {
   const { writes } = await mockBoat(page, {
     progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: false, revision: 7, at: 0 }, lastDetection: null }
   })
   await page.goto('/signalk-wakelogger/')
   await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
-  await expect.poll(() => writes.find((write) => write.path.endsWith('/nextPoint'))).toMatchObject({ method: 'PUT', body: { value: 1 } })
+  // Neither a viewer nor the controlling device auto-advances.
+  await page.waitForTimeout(1000)
+  expect(writes).toEqual([])
+  await page.locator('#navigation-control').click()
+  await expect(page.locator('#navigation-control')).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(1000)
+  expect(writes).toEqual([])
+  // A permit is issued, the native absolute point index is written, native state
+  // confirms it, and only then is the detection accepted.
+  await page.locator('#progression-accept').click()
+  await expect.poll(() => writes.find((write) => write.path.endsWith('/pointIndex'))).toMatchObject({ method: 'PUT', body: { value: 2 } })
   await expect.poll(() => writes.find((write) => write.path.endsWith('/progression/resolve'))).toMatchObject({ body: { resolution: 'accepted', pointIndex: 1 } })
+  expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
 })
 
 test('holds a wrong-side detection for the crew instead of advancing', async ({ page }) => {
@@ -267,4 +359,317 @@ test('warns without a Race Pack but does not block local-only recording', async 
   await expect(page.locator('#race-plan-warning')).toContainText('Recording continues')
   await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeEnabled()
   expect(writes).toEqual([])
+})
+
+const freshInstruments = () => {
+  const now = Date.now()
+  return {
+    environment: {
+      depth: { belowTransducer: { value: 12.5, timestamp: now } },
+      wind: { speedTrue: { value: 7, timestamp: now }, directionTrue: { value: 0.8, timestamp: now }, speedApparent: { value: 9, timestamp: now }, angleApparent: { value: 0.5, timestamp: now } }
+    },
+    navigationOverride: {
+      position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: now },
+      speedOverGround: { value: 3, timestamp: now },
+      courseOverGroundTrue: { value: 1.1, timestamp: now },
+      headingTrue: { value: 1, timestamp: now },
+      speedThroughWater: { value: 2.8, timestamp: now }
+    }
+  }
+}
+
+test('standalone instruments are the default with no course and need no Race Pack', async ({ page }, testInfo) => {
+  const { writes, external } = await mockBoat(page, { course: false, ...freshInstruments() })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-tab')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('True wind speed')
+  await expect(page.locator('#instruments-grid')).toContainText('Depth')
+  await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
+  // Viewing instruments must not activate a course, advance a mark or change upload mode.
+  expect(writes).toEqual([])
+  expect(external).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('onboard-instruments.png'), fullPage: true })
+})
+
+test('instruments keep updating when the course API fails', async ({ page }) => {
+  await mockBoat(page, { courseError: 409, ...freshInstruments() })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#notice')).toContainText('409')
+})
+
+test('losing GPS does not blank independent wind and depth', async ({ page }) => {
+  const now = Date.now()
+  await mockBoat(page, {
+    course: false,
+    environment: { depth: { belowSurface: { value: 4, timestamp: now } }, wind: { speedTrue: { value: 8, timestamp: now }, directionTrue: { value: 0.5, timestamp: now } } },
+    navigationOverride: { speedOverGround: { value: 3, timestamp: now } }
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  await expect(grid).toContainText('True wind speed')
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'True wind speed' })).toHaveCount(1)
+  await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
+})
+
+test('a stale measurement is marked without ageing the others', async ({ page }) => {
+  const now = Date.now()
+  await mockBoat(page, {
+    course: false,
+    environment: { depth: { belowSurface: { value: 4, timestamp: now } }, wind: { speedTrue: { value: 8, timestamp: now - 120_000 }, directionTrue: { value: 0.5, timestamp: now - 120_000 } } }
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  await expect(grid.locator('.instrument[data-stale=true]').first()).toBeVisible()
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+})
+
+test('reload and a second client are read-only and resume instruments', async ({ browser }) => {
+  const context = await browser.newContext()
+  const first = await context.newPage()
+  const second = await context.newPage()
+  const writes = []
+  for (const page of [first, second]) {
+    await mockBoat(page, { course: false, ...freshInstruments() })
+    await page.goto('/signalk-wakelogger/')
+    await expect(page.locator('#instruments-panel')).toBeVisible()
+  }
+  await first.reload()
+  await expect(first.locator('#instruments-panel')).toBeVisible()
+  await expect(first.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(second.locator('#instruments-grid')).toContainText('Speed over ground')
+  expect(writes).toEqual([])
+  await context.close()
+})
+
+test('a hanging course request does not freeze the standalone instruments', async ({ page }) => {
+  const { external } = await mockBoat(page, { course: false, ...freshInstruments() })
+  // Register after mockBoat so this handler takes precedence (routes are LIFO)
+  // and never resolves: the course poll must be bounded and must not block the
+  // independent instrument loop.
+  await page.route('**/plugins/signalk-wakelogger/course', () => new Promise(() => {}))
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#instruments-panel')).toBeVisible()
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await page.waitForTimeout(6000)
+  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid .instrument[data-available=true]').first()).toBeVisible()
+  expect(external).toEqual([])
+})
+
+async function expectFittedToTrack(map) {
+  // Leaflet padding/rounding nudges the centre slightly; assert the viewport is
+  // centred on the whole track and zoomed in from the initial world view.
+  await expect.poll(async () => {
+    const [lat, lon] = ((await map.getAttribute('data-viewport-center')) || '').split(',').map(Number)
+    return Number.isFinite(lat) && Math.abs(lat + 27.5) < 0.05 && Math.abs(lon - 153.5) < 0.05
+  }).toBe(true)
+  await expect.poll(async () => Number((await map.getAttribute('data-viewport-zoom')) || 0)).toBeGreaterThan(2)
+}
+
+test('a late-joining onboard browser fits the whole recorded track with no course', async ({ page }) => {
+  const track = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  const { external } = await mockBoat(page, { track, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  // The full recorded extent comes from local history, not page-open time.
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expect(map).toHaveAttribute('data-track-end-sequence', '3')
+  await expect(map).toHaveAttribute('data-track-south', '-28')
+  await expect(map).toHaveAttribute('data-track-north', '-27')
+  // Auto-fit happens even with no course, so the departure is on screen.
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
+  await expectFittedToTrack(map)
+  // Reload re-derives the same full extent from the local archive.
+  await page.reload()
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expectFittedToTrack(map)
+  // Fit track stays available and works with no course.
+  await expect(page.locator('#fit-track')).toBeEnabled()
+  await page.locator('#fit-track').click()
+  await expectFittedToTrack(map)
+  // No Wake Logger network traffic while local_only.
+  expect(external).toEqual([])
+})
+
+test('an empty initial archive reconciles promptly when durable history appears', async ({ page }) => {
+  let rows = []
+  const { external } = await mockBoat(page, { track: () => rows, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-point-count', '0')
+  rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  // Poll interval is 3s; this reconciles well before the 250-fix tail threshold.
+  await expect(map).toHaveAttribute('data-track-point-count', '3', { timeout: 12_000 })
+  await expect(map).toHaveAttribute('data-track-start-sequence', '1')
+  await expectFittedToTrack(map)
+  expect(external).toEqual([])
+})
+
+test('fullscreen and resize preserve the track viewport intent', async ({ page }) => {
+  const track = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  await mockBoat(page, { track, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
+  await page.locator('#fullscreen').click()
+  await expect(map).toHaveAttribute('data-viewport-mode', 'track')
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expectFittedToTrack(map)
+})
+
+test('switching recordings replaces the displayed track without mixing A and B', async ({ page }) => {
+  let id = 'A'
+  let rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.1, longitude: 153.1 },
+  ]
+  const { control } = await mockBoat(page, { track: () => rows, trackId: () => id, course: false })
+  control.trackingSessionId = 'A'
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-recording-id', 'A')
+  await expect(map).toHaveAttribute('data-track-point-count', '2')
+  await expect(map).toHaveAttribute('data-track-south', '-27.1')
+  // A genuinely new recording B with distinct geometry is reported by /tracking.
+  id = 'B'
+  control.trackingSessionId = 'B'
+  rows = [
+    { sequence: 1, capturedAt: 6_000, latitude: -30.0, longitude: 150.0 },
+    { sequence: 2, capturedAt: 7_000, latitude: -30.5, longitude: 150.5 },
+  ]
+  await expect(map).toHaveAttribute('data-track-recording-id', 'B', { timeout: 12_000 })
+  await expect(map).toHaveAttribute('data-track-point-count', '2')
+  // B's geometry only; no A coordinate survives and no A->B line is drawn.
+  await expect(map).toHaveAttribute('data-track-south', '-30.5')
+  await expect(map).toHaveAttribute('data-track-north', '-30')
+})
+
+test('a delayed old /track response cannot restore A after /tracking reports B', async ({ page }) => {
+  let id = 'A'
+  let rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.1, longitude: 153.1 },
+  ]
+  const { control } = await mockBoat(page, { track: () => rows, trackId: () => id, course: false })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-recording-id', 'A')
+  await expect(map).toHaveAttribute('data-track-south', '-27.1')
+
+  // Record every displayed identity/geometry transition so a rollback to A's
+  // geometry after the app observed the B transition is detectable, not just
+  // the final state.
+  await page.evaluate(() => {
+    window.__trackEvents = []
+    const element = document.getElementById('map')
+    new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        window.__trackEvents.push({
+          t: Date.now(),
+          attr: mutation.attributeName,
+          oldValue: mutation.oldValue,
+          value: element.getAttribute(mutation.attributeName),
+          id: element.dataset.trackRecordingId,
+          count: Number(element.dataset.trackPointCount || 0),
+        })
+      }
+    }).observe(element, {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: [
+        'data-track-recording-id',
+        'data-track-point-count',
+        'data-track-history-state',
+        'data-track-observed-recording',
+      ],
+    })
+  })
+
+  // /tracking now reports B while A's next archive read is deliberately held.
+  control.trackingSessionId = 'B'
+  control.trackDelayOnce = 2500
+  await page.evaluate(() => { window.__bObservedAt = Date.now() })
+  await expect.poll(() => control.trackRequests.length, { timeout: 10_000 }).toBeGreaterThan(1)
+  // The held request snapshotted A; by the time it returns the archive has B.
+  id = 'B'
+  rows = [
+    { sequence: 1, capturedAt: 6_000, latitude: -30.0, longitude: 150.0 },
+    { sequence: 2, capturedAt: 7_000, latitude: -30.5, longitude: 150.5 },
+  ]
+  // The delayed A response is discarded and B's geometry replaces it.
+  await expect(map).toHaveAttribute('data-track-recording-id', 'B', { timeout: 25_000 })
+  await expect(map).toHaveAttribute('data-track-point-count', '2')
+  await expect(map).toHaveAttribute('data-track-south', '-30.5')
+  // Past the delayed response window the old A geometry must not reappear.
+  await page.waitForTimeout(4000)
+  await expect(map).toHaveAttribute('data-track-recording-id', 'B')
+  await expect(map).toHaveAttribute('data-track-south', '-30.5')
+
+  const violations = await page.evaluate(() => {
+    const events = window.__trackEvents || []
+    const observed = events.find((entry) => entry.attr === 'data-track-observed-recording' && entry.value === 'B')
+    // Only transitions after the app actually observed the B transition count:
+    // an A acceptance that happened while B had not yet been observed is not a
+    // rollback. With the fix the observed marker appears and A never returns.
+    const since = observed ? observed.t + 250 : (window.__bObservedAt || 0) + 250
+    return events.filter((entry) => entry.t > since && entry.id === 'A' && entry.count > 0)
+  })
+  expect(violations).toEqual([])
+})
+
+test('a failed archive read stays unresolved and reconciles instead of looking complete', async ({ page }) => {
+  let rows = []
+  const { control } = await mockBoat(page, { track: () => rows, course: false })
+  control.trackFailuresRemaining = 1
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-history-state', 'failed', { timeout: 10_000 })
+  await expect(map).toHaveAttribute('data-track-point-count', '0')
+  rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  // A bounded retry (3s backoff) reconciles the real durable history.
+  await expect(map).toHaveAttribute('data-track-point-count', '3', { timeout: 20_000 })
+  await expect(map).toHaveAttribute('data-track-history-state', 'loaded')
+  await expectFittedToTrack(map)
+})
+
+test('a pending recording with no archive points yet is not complete history', async ({ page }) => {
+  let rows = []
+  const { control } = await mockBoat(page, { track: () => rows, course: false })
+  control.emptyRecordingId = 'rec-1'
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-track-history-state', 'pending')
+  await expect(map).toHaveAttribute('data-track-point-count', '0')
+  rows = [
+    { sequence: 1, capturedAt: 1_000, latitude: -27.0, longitude: 153.0 },
+    { sequence: 2, capturedAt: 2_000, latitude: -27.5, longitude: 153.5 },
+    { sequence: 3, capturedAt: 3_000, latitude: -28.0, longitude: 154.0 },
+  ]
+  await expect(map).toHaveAttribute('data-track-history-state', 'loaded', { timeout: 20_000 })
+  await expect(map).toHaveAttribute('data-track-point-count', '3')
+  await expectFittedToTrack(map)
 })

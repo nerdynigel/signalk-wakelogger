@@ -3,7 +3,7 @@ import { promises as fs, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { CourseStore } from './courses/course-store'
 import { CourseError, parseCourse, type CourseAcknowledgement } from './courses/protocol'
-import { NativeCourseService, type NativeCourseApp } from './courses/native-course'
+import { NativeCourseService, nativeRouteHref, type NativeCourseApp } from './courses/native-course'
 import { RaceProgressionService } from './race/progression-service'
 import { RaceProgressionStore } from './race/progression-store'
 import { ObservationCollector } from './race/observations'
@@ -11,7 +11,11 @@ import { RacePackStore } from './race/race-pack-store'
 import { RacePackReceiver } from './race/race-pack-protocol'
 import { OnboardSnapshotStore, type OnboardPlanSnapshot } from './race/onboard-store'
 import { OnboardRaceService, type OnboardCourseState } from './race/onboard-service'
+import { NavigationControlLease } from './race/navigation-control'
+import { offlineReadiness, type OfflineReadiness, type ReadinessPackState } from './race/readiness'
 import { UploadHistory, durableJson } from './tracking/history'
+import { TrackArchive } from './tracking/archive'
+import { DEFAULT_TRACK_POINTS, MAX_TRACK_POINTS } from './tracking/track'
 import { configSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
@@ -27,6 +31,9 @@ import { PathSampler } from './telemetry/sampler'
 import { WakeLoggerTransport, type ConnectionState } from './transport/mqtt-client'
 import { type TripSnapshot } from './trips/state-machine'
 import { RecordingStore } from './trips/recording-store'
+
+const DIAGNOSTIC_DEDUPE_MS = 60_000
+const SENSITIVE_DIAGNOSTIC_KEY = 'token|access[_-]?token|refresh[_-]?token|password|passwd|secret|client[_-]?secret|api[_-]?key|apikey|authorization|auth|signature|session[_-]?id|code|pin'
 
 const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   const pluginVersion = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version: string }).version
@@ -49,6 +56,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let courseInitializationError: string | undefined
   let courseFailureAcknowledgement: CourseAcknowledgement | undefined
   let tripState: RecordingStore | undefined
+  let trackArchive: TrackArchive | undefined
+  // Explicit, leased, generation-stamped navigation-control ownership. Only the
+  // owning onboard client may apply a detected rounding; other pages are viewers.
+  const navigationLease = new NavigationControlLease()
   let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistedUploadMode: PluginConfig['uploadMode'] = 'automatic'
   let persistenceError: string | undefined
@@ -182,9 +193,25 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         try {
           response.status(200).json({
             ...(await courses?.status() ?? { desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } }),
-            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError
+            uploadMode: activeUploadMode, connectionState, courseError: courseInitializationError ?? transport?.transportMetrics().courseSyncError,
+            offlineReadiness: await currentOfflineReadiness()
           })
         } catch (error) { next(error) }
+      })
+      readRouter.get?.('/offline-readiness', async (_request, response, next) => {
+        try { response.status(200).json(await currentOfflineReadiness()) }
+        catch (error) { next(error) }
+      })
+      readRouter.get?.('/track', async (request, response, next) => {
+        try { response.status(200).json(await currentTrack(request)) }
+        catch (error) { next(error) }
+      })
+      // Bounded diagnostic capture for the onboard app. Read-only: it records
+      // why a local Signal K request failed and never changes any state. The
+      // client sends no credentials and every field is length-bounded.
+      readRouter.post?.('/diagnostics', async (request, response, next) => {
+        try { logWebappDiagnostic(request); response.status(200).json({ logged: true }) }
+        catch (error) { next(error) }
       })
       writeRouter.post('/course/activate', async (_request, response, next) => {
         try {
@@ -212,7 +239,157 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       })
       readRouter.get?.('/progression', async (_request, response, next) => {
         try {
-          response.status(200).json(progression?.status() ?? { mode: null, revision: 0, activeIndex: 0, pending: null, lastDetection: null })
+          response.status(200).json({ ...(progression?.status() ?? { mode: null, revision: 0, activeIndex: 0, pending: null, lastDetection: null }), control: controllerStatus() })
+        } catch (error) { next(error) }
+      })
+      writeRouter.post('/progression/control', async (request, response, next) => {
+        try {
+          const body = (request as { body?: { clientId?: unknown; release?: unknown } }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          if (!clientId || clientId.length > 80) {
+            response.status(400).json({ error: 'invalid_client' })
+            return
+          }
+          if (body?.release === true) {
+            response.status(200).json({ control: navigationLease.release(clientId) })
+            return
+          }
+          const result = navigationLease.claim(clientId)
+          if (!result.ok) {
+            response.status(409).json({ error: 'navigation_control_held', control: result.state })
+            return
+          }
+          response.status(200).json({ control: result.state })
+        } catch (error) { next(error) }
+      })
+      // The execution boundary for automatic/manual advancement. It validates
+      // the controlling lease and its generation, the selected course identity
+      // and revision, the still-current native point and the detection identity
+      // before issuing a one-time permit. The permit is idempotent per
+      // generation+detection so a retry after a lost response cannot advance
+      // twice; reconciliation uses actual native state (see docs for the
+      // Signal K 2.31 limitation: no plugin pointIndex write API exists, so the
+      // onboard app performs the native pointIndex write after the permit).
+      writeRouter.post('/progression/apply', async (request, response, next) => {
+        try {
+          const body = (request as { body?: Record<string, unknown> }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          const generation = Number(body?.generation)
+          const courseId = typeof body?.courseId === 'string' ? body.courseId : ''
+          const revision = Number(body?.revision)
+          const expectedPointIndex = Number(body?.expectedPointIndex)
+          const detectionPointIndex = Number(body?.detectionPointIndex)
+          const detectionRevision = Number(body?.detectionRevision)
+          if (!clientId || !courseId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(revision)
+            || !Number.isSafeInteger(expectedPointIndex) || !Number.isSafeInteger(detectionPointIndex) || !Number.isSafeInteger(detectionRevision)) {
+            response.status(400).json({ error: 'invalid_application' })
+            return
+          }
+          const verdict = navigationLease.check(clientId, generation)
+          if (verdict !== 'ok') {
+            response.status(409).json({ error: verdict === 'expired' ? 'navigation_control_expired' : 'navigation_control_not_held', control: controllerStatus() })
+            return
+          }
+          const status = courses ? await courses.status() as {
+            desired?: { action?: string; revision?: number; courseId?: string } | null
+            acknowledgement?: { status?: string; revision?: number } | null
+            routePoints?: unknown[]
+            native?: { available?: boolean; activeMatchesDesired?: boolean; course?: { activeRoute?: { href?: string; pointIndex?: number; reverse?: boolean } | null } | null } | null
+          } : null
+          const desired = status?.desired
+          const acknowledgement = status?.acknowledgement
+          if (!desired || desired.action !== 'activate' || desired.revision !== revision || desired.courseId !== courseId
+            || acknowledgement?.status !== 'applied' || acknowledgement.revision !== revision) {
+            response.status(409).json({ error: 'stale_course' })
+            return
+          }
+          if (detectionRevision !== revision) {
+            response.status(409).json({ error: 'stale_detection' })
+            return
+          }
+          const native = status?.native
+          const activeRoute = native?.course?.activeRoute
+          if (native?.available !== true || native?.activeMatchesDesired !== true || activeRoute?.href !== nativeRouteHref(courseId)) {
+            response.status(409).json({ error: 'native_route_not_active' })
+            return
+          }
+          if (activeRoute.reverse === true) {
+            response.status(409).json({ error: 'reverse_course_unsupported' })
+            return
+          }
+          const points = status?.routePoints ?? []
+          const target = detectionPointIndex + 1
+          // Whether progress advanced is decided only from observed native
+          // state. A previously issued permit is NOT evidence of application.
+          if (Number.isInteger(activeRoute.pointIndex) && activeRoute.pointIndex! > target) {
+            response.status(200).json({ status: 'superseded', targetPointIndex: target, nativePointIndex: activeRoute.pointIndex })
+            return
+          }
+          if (activeRoute.pointIndex === target) {
+            response.status(200).json({ status: 'already_applied', targetPointIndex: target, nativePointIndex: target, generation })
+            return
+          }
+          if (detectionPointIndex !== expectedPointIndex || activeRoute.pointIndex !== expectedPointIndex) {
+            response.status(409).json({ error: 'stale_point', expectedPointIndex, nativePointIndex: activeRoute.pointIndex ?? null })
+            return
+          }
+          if (target >= points.length) {
+            response.status(409).json({ error: 'no_next_point' })
+            return
+          }
+          // Validate the actual pending detection rather than trusting the
+          // caller-supplied revision/index fields alone.
+          const pending = (progression?.status() as { pending?: { pointIndex?: number; revision?: number; wrongSide?: boolean } } | undefined)?.pending
+          if (!pending || pending.wrongSide === true || pending.pointIndex !== detectionPointIndex || pending.revision !== revision) {
+            response.status(409).json({ error: 'no_pending_detection' })
+            return
+          }
+          response.status(200).json({ status: 'apply', targetPointIndex: target, generation })
+        } catch (error) { next(error) }
+      })
+      // Confirms from observed native state that a permitted advancement
+      // actually happened. The detection is only accepted after this returns
+      // 'confirmed' (or 'superseded'); a permit on its own never accepts it.
+      writeRouter.post('/progression/apply/confirm', async (request, response, next) => {
+        try {
+          const body = (request as { body?: Record<string, unknown> }).body
+          const clientId = typeof body?.clientId === 'string' ? body.clientId.trim() : ''
+          const generation = Number(body?.generation)
+          const courseId = typeof body?.courseId === 'string' ? body.courseId : ''
+          const revision = Number(body?.revision)
+          const targetPointIndex = Number(body?.targetPointIndex)
+          if (!clientId || !courseId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(revision) || !Number.isSafeInteger(targetPointIndex)) {
+            response.status(400).json({ error: 'invalid_confirmation' })
+            return
+          }
+          const verdict = navigationLease.check(clientId, generation)
+          if (verdict !== 'ok') {
+            response.status(409).json({ error: verdict === 'expired' ? 'navigation_control_expired' : 'navigation_control_not_held', control: controllerStatus() })
+            return
+          }
+          const status = courses ? await courses.status() as {
+            desired?: { action?: string; revision?: number; courseId?: string } | null
+            native?: { course?: { activeRoute?: { href?: string; pointIndex?: number } | null } | null } | null
+          } : null
+          const desired = status?.desired
+          if (!desired || desired.action !== 'activate' || desired.revision !== revision || desired.courseId !== courseId) {
+            response.status(409).json({ error: 'stale_course' })
+            return
+          }
+          const activeRoute = status?.native?.course?.activeRoute
+          if (activeRoute?.href !== nativeRouteHref(courseId)) {
+            response.status(409).json({ error: 'native_route_not_active' })
+            return
+          }
+          if (Number.isInteger(activeRoute.pointIndex) && activeRoute.pointIndex! > targetPointIndex) {
+            response.status(200).json({ status: 'superseded', targetPointIndex, nativePointIndex: activeRoute.pointIndex })
+            return
+          }
+          if (activeRoute.pointIndex === targetPointIndex) {
+            response.status(200).json({ status: 'confirmed', targetPointIndex, nativePointIndex: targetPointIndex, generation })
+            return
+          }
+          response.status(200).json({ status: 'pending', targetPointIndex, nativePointIndex: activeRoute.pointIndex ?? null })
         } catch (error) { next(error) }
       })
       writeRouter.post('/progression/mode', async (request, response, next) => {
@@ -305,9 +482,15 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         '/tracking': { get: { summary: 'Read live upload mode and the local queue', responses: { '200': { description: 'Tracking status' } } }, post: { summary: 'Persist and apply live upload mode without restarting recording', responses: { '200': { description: 'Tracking mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Tracking unavailable' }, '503': { description: 'Persistence failed; see actual mode in response' } } } },
         '/course': { get: { summary: 'Read cached and native course state', responses: { '200': { description: 'Course state' } } } },
         '/course/map-readiness': { post: { summary: 'Report locally verified chart readiness for a course revision', responses: { '200': { description: 'Readiness saved' }, '409': { description: 'Invalid or stale revision' } } } },
+        '/offline-readiness': { get: { summary: 'Coupled offline readiness (course, native route, Race Pack, forecast and rule set)', responses: { '200': { description: 'Offline readiness contract' } } } },
+        '/track': { get: { summary: 'Reconstruct the current recording track from durable onboard data, decimated for display', responses: { '200': { description: 'Track points and recording identity' } } } },
+        '/diagnostics': { post: { summary: 'Record a bounded onboard webapp Signal K request failure in the plugin log', responses: { '200': { description: 'Diagnostic recorded' } } } },
         '/course/activate': { post: { summary: 'Explicitly activate the selected cached course', responses: { '200': { description: 'Course active' }, '409': { description: 'No selected course or native course unavailable' } } } },
         '/progression': { get: { summary: 'Read mark detection mode, active point and any pending detection', responses: { '200': { description: 'Progression status' } } } },
         '/progression/mode': { post: { summary: 'Change mark detection between automatic, suggest and off', responses: { '200': { description: 'Mode saved' }, '400': { description: 'Invalid mode' }, '409': { description: 'Progression unavailable' } } } },
+        '/progression/control': { post: { summary: 'Claim, renew or release leased onboard navigation control so only one client auto-advances', responses: { '200': { description: 'Control status' }, '400': { description: 'Invalid client' }, '409': { description: 'Control held by another client' } } } },
+        '/progression/apply': { post: { summary: 'Validate the controlling lease, course revision, native point and actual pending detection before issuing an advancement permit; already_applied/superseded require observed native state', responses: { '200': { description: 'Permit issued, already applied, or superseded' }, '400': { description: 'Invalid application' }, '409': { description: 'Stale/expired control, course, point or no pending detection' } } } },
+        '/progression/apply/confirm': { post: { summary: 'Confirm from observed native state that a permitted advancement happened; only then may the detection be accepted', responses: { '200': { description: 'confirmed, superseded or still pending' }, '400': { description: 'Invalid confirmation' }, '409': { description: 'Stale/expired control or course' } } } },
         '/progression/resolve': { post: { summary: 'Resolve a pending detection as accepted or dismissed for its point index', responses: { '200': { description: 'Resolution recorded' }, '400': { description: 'Invalid resolution' }, '409': { description: 'No matching pending detection' } } } },
         '/race-plan': { get: { summary: 'Read onboard Race Plan calculation authority, Race Pack state and the latest onboard snapshot', responses: { '200': { description: 'Onboard race plan state' } } } },
         '/race-plan/recalculate': { post: { summary: 'Request an explicit onboard Race Plan recalculation (local-only authority only)', responses: { '200': { description: 'Recalculation attempted' }, '409': { description: 'Onboard planner unavailable or cloud is authoritative' } } } },
@@ -360,6 +543,146 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   function racingUnderway(): boolean {
     if (onboardCourse && onboardCourse.activeIndex > 0 && onboardCourse.activeIndex < onboardCourse.totalPoints) return true
     return tripState?.currentState().state === 'MOVING'
+  }
+
+  // One deterministic offline readiness contract, derived every time from the
+  // selected course, the expected native route and the applied Race Pack. It is
+  // never a stored toggle, so a course change immediately invalidates an older
+  // pack even though that immutable pack is retained for history/recovery.
+  async function currentOfflineReadiness(): Promise<OfflineReadiness> {
+    const courseStatus = courses ? await courses.status() as {
+      desired?: { action?: string; revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
+      acknowledgement?: { status?: string; revision?: number } | null
+      native?: { available?: boolean; activeMatchesDesired?: boolean; conflict?: boolean; course?: { activeRoute?: { reverse?: boolean } | null } | null } | null
+    } : null
+    const onboardStatus = onboard?.status() as { pack?: {
+      available?: boolean; applicable?: boolean; revision?: number | null; ruleSetVersion?: string | null
+      courseId?: string | null; racePlanId?: number | null; courseDefinitionDigest?: string | null
+      validFrom?: string | null; validUntil?: string | null; coverage?: { from: string | null; until: string | null } | null; currentAt?: string
+    } } | undefined
+    const meta = onboardStatus?.pack
+    const pack: ReadinessPackState | null = meta ? {
+      available: meta.available === true,
+      revision: meta.revision ?? null,
+      ruleSetVersion: meta.ruleSetVersion ?? null,
+      courseId: meta.courseId ?? null,
+      racePlanId: meta.racePlanId ?? null,
+      courseDefinitionDigest: meta.courseDefinitionDigest ?? null,
+      validFrom: meta.validFrom ?? null,
+      validUntil: meta.validUntil ?? null,
+      coverage: meta.coverage ?? null,
+      currentAt: meta.currentAt ?? 'unknown'
+    } : null
+    return offlineReadiness({
+      course: courseStatus?.desired ?? null,
+      acknowledgement: courseStatus?.acknowledgement ?? null,
+      native: {
+        available: courseStatus?.native?.available === true,
+        activeMatchesDesired: courseStatus?.native?.activeMatchesDesired === true,
+        conflict: courseStatus?.native?.conflict === true,
+        reverse: courseStatus?.native?.course?.activeRoute?.reverse === true
+      },
+      pack,
+      now: Date.now()
+    })
+  }
+
+  // Reconstruct the current recording's track from the durable onboard archive
+  // so the onboard map does not use page-open time or an in-memory pointer as
+  // the beginning of the trip. Never reads the delivery outbox, so an upload
+  // acknowledgement or segment reclaim cannot remove local map history.
+  let archivedRecordingId: string | null = null
+  async function currentTrack(request: unknown): Promise<object> {
+    const maxPointsValue = Number((request as { query?: { maxPoints?: string } }).query?.maxPoints)
+    const maxPoints = Number.isFinite(maxPointsValue)
+      ? Math.max(50, Math.min(MAX_TRACK_POINTS, Math.floor(maxPointsValue)))
+      : DEFAULT_TRACK_POINTS
+    if (!trackArchive) {
+      return { storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null }
+    }
+    const manifests = tripState?.manifests() ?? []
+    const active = manifests.find((manifest) => manifest.state === 'recording')
+    // The pending-upload manifests are removed after the terminal recording ACK,
+    // so discovery must not depend on them: prefer the active recording, else
+    // the archive's independently persisted current/most-recent recording.
+    const selectedId = active?.id ?? trackArchive.currentRecordingId()
+    if (!selectedId) {
+      return { storageBackend: 'archive', points: [], summary: { fromSequence: null, throughSequence: null, totalSamples: 0, decimated: false }, recording: null, trackingSessionId: null }
+    }
+    // Prune settled older recordings when the selected recording changes, never
+    // on the sample path and never the active file.
+    if (selectedId !== archivedRecordingId) {
+      archivedRecordingId = selectedId
+      void trackArchive.prune(active?.id ?? null).catch(() => undefined)
+    }
+    const meta = trackArchive.recordingMeta(selectedId)
+    const result = await trackArchive.read(selectedId, { maxPoints })
+    const recording = active ?? (meta
+      ? { id: meta.id, state: meta.closed ? 'complete' : 'closed', startedAt: meta.startedAt, endedAt: meta.endedAt, firstSequence: meta.firstSequence, lastSequence: meta.lastSequence }
+      : { id: selectedId, state: 'closed', startedAt: null, endedAt: null, firstSequence: null, lastSequence: null })
+    return { ...result, recording, trackingSessionId: selectedId }
+  }
+
+  function controllerStatus(): import('./race/navigation-control').NavigationControlState {
+    return navigationLease.status()
+  }
+
+  // Structured, allow-listed diagnostic sanitisation. The onboard client
+  // sanitises before sending, but the server must defend independently: raw
+  // responses, quoted JSON credentials and URL query values are never logged.
+  const diagnosticSeen = new Map<string, number>()
+  function redactDiagnosticText(value: string): string {
+    let out = String(value)
+    const key = SENSITIVE_DIAGNOSTIC_KEY
+    // Quoted JSON/JS values under sensitive keys.
+    out = out.replace(new RegExp(`("(?:${key})"\\s*:\\s*)"[^"]*"`, 'gi'), '$1"[redacted]"')
+    out = out.replace(new RegExp(`('(?:${key})'\\s*:\\s*)'[^']*'`, 'gi'), "$1'[redacted]'")
+    // Bearer tokens before unquoted key/value matching.
+    out = out.replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    // Unquoted key=value / key: value, including URL query parameters.
+    out = out.replace(new RegExp(`((?:${key})\\s*[=:]\\s*)(?!\\[redacted\\])[^\\s"'&,}<>]+`, 'gi'), '$1[redacted]')
+    return out.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+  function sanitizeDiagnosticValue(value: unknown, depth = 0): unknown {
+    if (depth > 4) return '[truncated]'
+    if (typeof value === 'string') return redactDiagnosticText(value).slice(0, 1000)
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+    if (Array.isArray(value)) return value.slice(0, 20).map((item) => sanitizeDiagnosticValue(item, depth + 1))
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {}
+      for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 30)) {
+        result[key] = new RegExp(`^(?:${SENSITIVE_DIAGNOSTIC_KEY})$`, 'i').test(key) ? '[redacted]' : sanitizeDiagnosticValue(item, depth + 1)
+      }
+      return result
+    }
+    return undefined
+  }
+  function sanitizeDetail(raw: string): string {
+    const trimmed = raw.slice(0, 4000)
+    if (trimmed.length && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      try { return redactDiagnosticText(JSON.stringify(sanitizeDiagnosticValue(JSON.parse(trimmed)))).slice(0, 500) }
+      catch { /* Fall through to text sanitisation. */ }
+    }
+    return redactDiagnosticText(trimmed).slice(0, 500)
+  }
+  function logWebappDiagnostic(request: unknown): void {
+    const body = (request as { body?: Record<string, unknown> }).body
+    const text = (value: unknown, maximum: number): string => typeof value === 'string' ? value.replace(/[\r\n\t]+/g, ' ').slice(0, maximum) : ''
+    const operation = redactDiagnosticText(text(body?.operation, 80)) || 'unknown'
+    const method = text(body?.method, 10).toUpperCase() || 'GET'
+    // Never log URL query values.
+    const path = redactDiagnosticText(text(body?.path, 300).split('?')[0] ?? '').slice(0, 200)
+    const status = typeof body?.status === 'number' && Number.isSafeInteger(body.status) ? String(body.status) : 'unknown'
+    const errorCode = redactDiagnosticText(text(body?.errorCode, 80))
+    const detail = sanitizeDetail(typeof body?.detail === 'string' ? body.detail : '')
+    const signature = `${operation}|${method}|${path}|${status}|${errorCode}|${detail.slice(0, 120)}`
+    const now = Date.now()
+    const previous = diagnosticSeen.get(signature)
+    if (previous !== undefined && now - previous < DIAGNOSTIC_DEDUPE_MS) return
+    if (diagnosticSeen.size > 500) diagnosticSeen.clear()
+    diagnosticSeen.set(signature, now)
+    const message = `Wake Logger onboard webapp ${operation} ${method} ${path} -> ${status}${errorCode ? ` (${errorCode})` : ''}${detail ? `: ${detail}` : ''}`
+    app.error(redactDiagnosticText(message).slice(0, 900))
   }
 
   async function flushProgressionEvidence(): Promise<void> {
@@ -417,6 +740,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     onboardSnapshots = undefined
     await racePacks?.close()
     racePacks = undefined
+    await trackArchive?.close().catch(() => undefined)
+    trackArchive = undefined
+    archivedRecordingId = null
     racePackReceiver = undefined
     observations = undefined
     onboardCourse = null
@@ -539,6 +865,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
     await trip.open(await readTripSnapshot(tripFile))
     tripState = trip
+    // Durable map history, independent of whether telemetry has been uploaded
+    // and acknowledged. Bounded by age/count/size and pruned off the sample path.
+    trackArchive = new TrackArchive(path.join(dataDirectory, 'track-archive', credentials.deviceId))
+    try { await trackArchive.open() } catch (error) {
+      app.error(`Wake Logger track archive unavailable; map history may be limited: ${safeError(error)}`)
+    }
+    void trackArchive.prune(trip.currentState().trackingSessionId ?? null).catch(() => undefined)
     // Each provisioned device owns an independent sequence space. A replacement
     // device must never replay the retired device's records under new credentials.
     const profileStore = new TelemetryProfileStore(path.join(dataDirectory, 'profiles', credentials.deviceId))
@@ -630,11 +963,24 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       try {
         queued = await outbox.append(credentials.deviceId, draft)
         nextSequence = queued.sequence + 1
+        // Small append off the outbox lock; a failure here must never break
+        // telemetry recording or delivery.
+        if (draft.trackingSessionId && trackArchive) {
+          void trackArchive.append(draft.trackingSessionId, {
+            sequence: queued.sequence, capturedAt: queued.capturedAt,
+            latitude: queued.values.lat, longitude: queued.values.lon
+          }).catch((error) => app.error(`Wake Logger track archive append failed: ${safeError(error)}`))
+        }
       } catch (error) {
         // Append may commit before a later maintenance error. Recover only on
         // failure; scanning the complete offline queue every sample is costly.
         nextSequence = (await outbox.stats()).currentSequence + 1
         throw error
+      }
+      // Close the archive recording when the manifest is terminal so its
+      // metadata is settled even after the upload manifest is acknowledged.
+      if (draft.recording && draft.recording.state !== 'recording' && trackArchive) {
+        void trackArchive.markClosed(draft.recording.id, draft.recording.endedAt ?? null).catch((error) => app.error(`Wake Logger track archive close failed: ${safeError(error)}`))
       }
       transport?.updateCurrent(queued)
       if (config.debugTelemetry) app.debug(`Queued Wake Logger sequence ${queued.sequence}`)
@@ -663,10 +1009,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     queueStatsAt = Date.now()
     await updateHistory(stats, beginHistory)
     const queue = `${stats.messageCount} queued, ${(stats.diskBytes / 1024 / 1024).toFixed(1)} MB`
-    const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped` : ''
+    // Lifetime loss is labelled as lifetime so it is never read as samples lost
+    // from the current trip.
+    const dropped = stats.droppedCount ? `, ${stats.droppedCount} dropped lifetime` : ''
     const sequence = `, seq ${stats.acknowledgedSequence}/${stats.currentSequence}`
     const trip = tripState ? `, trip ${tripState.currentState().state}` : ''
     const extra = detail ? ` — ${detail}` : ''
+    const readiness = await currentOfflineReadiness().catch(() => undefined)
     transport?.updateStatus({
       pluginVersion,
       historicalUpload: history?.current(),
@@ -677,6 +1026,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       queueDiskBytes: stats.diskBytes,
       queueOldestCapturedAt: stats.oldestCapturedAt,
       queueDroppedCount: stats.droppedCount,
+      lifetimeDroppedCount: stats.droppedCount,
+      cohortDroppedSamples: history?.current()?.droppedSamples ?? null,
+      offlineReadiness: readiness,
       acknowledgedSequence: stats.acknowledgedSequence,
       currentSequence: stats.currentSequence,
       trackingState: tripState?.currentState().state,
@@ -707,12 +1059,23 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     // File outbox stats scan the durable queue; browser polls reuse the
     // normal status refresh instead of taking the outbox lock every request.
     const stats = cachedQueueStats
+    const cohort = history?.current() ?? null
     return {
       uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
       persistedUploadMode, persistenceError: persistenceError ?? null,
       paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,
+      trackingSessionId: tripState?.currentState().trackingSessionId ?? null,
+      trackingState: tripState?.currentState().state ?? null,
       available: ready && !!outbox && connectionState !== 'device_revoked',
-      connectionState, historicalUpload: history?.current() ?? null,
+      connectionState, historicalUpload: cohort,
+      // Loss semantics are deliberately separated. `droppedCount` inside the
+      // queue is the cumulative lifetime counter and must never be presented as
+      // samples lost from the current trip. `cohortDroppedSamples` is the loss
+      // observed within the current historical-upload cohort, and
+      // `cohortProgressKnown` is false when attribution is ambiguous.
+      lifetimeDroppedCount: stats?.droppedCount ?? 0,
+      cohortDroppedSamples: cohort?.droppedSamples ?? null,
+      cohortProgressKnown: cohort?.progressKnown ?? null,
       queue: stats ? { messageCount: stats.messageCount, diskBytes: stats.diskBytes,
         oldestCapturedAt: stats.oldestCapturedAt ?? null, acknowledgedSequence: stats.acknowledgedSequence,
         currentSequence: stats.currentSequence, droppedCount: stats.droppedCount } : null,

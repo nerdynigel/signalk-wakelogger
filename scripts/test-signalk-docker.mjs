@@ -210,15 +210,130 @@ try {
   assert.equal(dataEvents(recovered)[0]?.topic, 'wakelogger/v1/devices/dev_docker_e2e/state', 'current state must be first after reconnect')
   assert.ok(recoveredSamples.every((sample) => sample.deviceId === 'dev_docker_e2e'), 'recovered samples must retain their paired device identity')
 
-  const drained = await waitFor('reported empty queue after application ACK', () => {
+  // Read the plugin's own durable queue state rather than waiting for a
+  // particular periodic MQTT status message; the status cadence made this step
+  // flaky under host load even though the queue had already drained.
+  const drained = await waitFor('drained durable queue after application ACK', () => {
     const value = snapshot()
-    const statuses = value.events.filter((event) => event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status')
-    return statuses.some((event) => event.payload?.queueMessageCount === 0 && event.payload?.acknowledgedSequence >= maximumAck(recovered)) ? value : undefined
-  }, 90_000)
+    const tracking = query(trackingUrl)
+    if (tracking?.queue?.messageCount !== 0) return undefined
+    if (maximumAck(value) < maximumAck(recovered)) return undefined
+    return value
+  }, 120_000)
+  // The periodic status must still report the drained queue.
+  await waitFor('status reporting an empty queue', () => snapshot().events.some((event) =>
+    event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status' && event.payload?.queueMessageCount === 0), 60_000)
+
+  // --- Real Signal K native navigation gate ---------------------------------
+  const pluginBase = 'http://signalk:3000/plugins/signalk-wakelogger'
+  const courseUrl = `${pluginBase}/course`
+  const skPut = (path, body) => query(`http://signalk:3000${path}`, 'PUT', body)
+  const courseAckCount = (revision, status) => snapshot().events.filter((event) =>
+    event.topic.endsWith('/course-ack') && event.payload?.revision === revision && event.payload?.status === status).length
+  const waitForCourseAck = (revision, status) => waitFor(`course revision ${revision} ${status} acknowledgement`, () => {
+    const match = snapshot().events.find((event) => event.topic.endsWith('/course-ack') && event.payload?.revision === revision && event.payload?.status === status)
+    return match ? match.payload : undefined
+  }, 30_000)
+  const courseDocument = (revision, points) => ({
+    v: 1, action: 'activate', courseId: 'race-plan-docker', revision, name: 'Docker native course',
+    updatedAt: new Date().toISOString(), start: points[0], marks: points.slice(1, -1), finish: points[points.length - 1], activeWaypointIndex: 1
+  })
+
+  // pointIndex and nextPoint through the actual supported Signal K APIs.
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex', { value: 0 })
+  await waitFor('native pointIndex set to 0', () => query(courseUrl).native.course.activeRoute.pointIndex === 0, 30_000)
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { value: 1 })
+  await waitFor('native nextPoint advances to 1', () => query(courseUrl).native.course.activeRoute.pointIndex === 1, 30_000)
+
+  // Another application's route must stay active until explicit activation.
+  const otherRouteId = '9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f'
+  const otherRouteHref = `/resources/routes/${otherRouteId}`
+  skPut(`/signalk/v2/api/resources/routes/${otherRouteId}`, { name: 'Other app route', description: 'Another application', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[24.8, 60.0], [24.81, 60.01]] }, properties: {} } })
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute', { href: otherRouteHref, pointIndex: 0, reverse: false })
+  await waitFor('native conflict with another application route', () => {
+    const state = query(courseUrl)
+    return state.native.conflict === true && state.native.activeMatchesDesired === false ? state : undefined
+  }, 30_000)
+  assert.equal(query(courseUrl).native.course.activeRoute.href, otherRouteHref, 'Wake Logger must not steal another application route')
+  query(`${pluginBase}/course/activate`, 'POST', {})
+  await waitFor('explicit reclaim of the Wake Logger course', () => query(courseUrl).native.activeMatchesDesired === true, 30_000)
+
+  // A same-course revision while active preserves progress; the resource is
+  // read back so the new geometry is verified.
+  const revisionTwoPoints = [
+    { id: 'start', name: 'Start', latitude: 60.1, longitude: 24.9 },
+    { id: 'mark', name: 'Windward', latitude: 60.11, longitude: 24.91 },
+    { id: 'mark2', name: 'Wing', latitude: 60.105, longitude: 24.92 },
+    { id: 'finish', name: 'Finish', latitude: 60.1, longitude: 24.9 }
+  ]
+  const indexBeforeRevision = query(courseUrl).native.course.activeRoute.pointIndex
+  const revisionTwoDocument = courseDocument(2, revisionTwoPoints)
+  query('https://test-cloud:8443/course', 'POST', revisionTwoDocument)
+  await waitForCourseAck(2, 'applied')
+  const revised = query(courseUrl)
+  assert.equal(revised.desired.revision, 2, 'a same-course revision must be applied')
+  assert.equal(revised.native.course.activeRoute.pointIndex, indexBeforeRevision, 'a same-course revision must preserve progress')
+  const revisedRoute = query(`http://signalk:3000/signalk/v2/api/resources/routes/${nativeRouteId}`)
+  assert.deepEqual(revisedRoute.feature.geometry.coordinates, revisionTwoPoints.map((point) => [point.longitude, point.latitude]), 'the rewritten resource must be read back exactly')
+
+  // A duplicate retained delivery of the same revision must not reset the race.
+  const appliedBeforeDuplicate = courseAckCount(2, 'applied')
+  const startTimeBeforeDuplicate = query(courseUrl).native.course.startTime
+  query('https://test-cloud:8443/course', 'POST', revisionTwoDocument)
+  await waitFor('duplicate same-revision acknowledgement', () => courseAckCount(2, 'applied') > appliedBeforeDuplicate, 30_000)
+  assert.equal(query(courseUrl).native.course.startTime, startTimeBeforeDuplicate, 'duplicate delivery must not reset the native course start time')
+  assert.equal(query(courseUrl).native.course.activeRoute.pointIndex, indexBeforeRevision, 'duplicate delivery must not reset progress')
+  assert.equal(courseAckCount(2, 'rejected'), 0, 'a byte-identical duplicate must not be rejected as a revision conflict')
+
+  // A rejected revision is reported precisely and never replaces the course.
+  const duplicateIdPoints = [
+    { id: 'start', name: 'Start', latitude: 60.1, longitude: 24.9 },
+    { id: 'mark', name: 'Windward', latitude: 60.11, longitude: 24.91 },
+    { id: 'mark', name: 'Windward (duplicate id)', latitude: 60.11, longitude: 24.91 },
+    { id: 'finish', name: 'Finish', latitude: 60.1, longitude: 24.9 }
+  ]
+  query('https://test-cloud:8443/course', 'POST', courseDocument(3, duplicateIdPoints))
+  const rejectedAck = await waitForCourseAck(3, 'rejected')
+  assert.equal(rejectedAck.errorCode, 'course_duplicate_point_id', 'the rejection must expose the precise CourseError')
+  assert.equal(query(courseUrl).cachedCourse.revision, 2, 'a rejected revision must not replace the cached course')
+
+  // Reversed Wake Logger route-point ordering is stored exactly, not reversed.
+  const reversedPoints = [
+    { id: 'finish', name: 'Finish', latitude: 60.1, longitude: 24.9 },
+    { id: 'mark2', name: 'Wing', latitude: 60.105, longitude: 24.92 },
+    { id: 'mark', name: 'Windward', latitude: 60.11, longitude: 24.91 },
+    { id: 'start', name: 'Start', latitude: 60.1, longitude: 24.9 }
+  ]
+  query('https://test-cloud:8443/course', 'POST', courseDocument(4, reversedPoints))
+  await waitForCourseAck(4, 'applied')
+  const reversedRoute = query(`http://signalk:3000/signalk/v2/api/resources/routes/${nativeRouteId}`)
+  assert.deepEqual(reversedRoute.feature.geometry.coordinates, reversedPoints.map((point) => [point.longitude, point.latitude]), 'reversed route-point ordering must be stored exactly, not re-reversed')
+
+  // Restart preserves the latest revision and native progress.
+  compose(['restart', 'signalk'])
+  await waitFor('Signal K restart for the navigation gate', () => {
+    const position = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation/position')
+    return Number.isFinite(position?.value?.latitude) ? true : undefined
+  }, 300_000)
+  const afterNavigationRestart = query(courseUrl)
+  assert.equal(afterNavigationRestart.desired.revision, 4, 'the latest revision must survive restart')
+  assert.equal(afterNavigationRestart.native.course.activeRoute.pointIndex, indexBeforeRevision, 'native progress must survive restart')
+  const signalkInfo = query('http://signalk:3000/signalk')
 
   const result = {
     ok: true,
     signalkSource: 'sample-n2k-data',
+    signalkVersion: signalkInfo?.server?.version ?? signalkInfo?.version ?? 'unknown',
+    nativeNavigationGate: {
+      pointIndexAndNextPoint: true,
+      conflictPreserved: true,
+      explicitReclaim: true,
+      revisionWhileActivePreservedProgress: true,
+      duplicateDeliveryPreservedStart: true,
+      rejectedRevisionErrorCode: rejectedAck.errorCode,
+      reversedRoutePointOrdering: true,
+      restartPreservedRevisionAndProgress: true
+    },
     tlsPairing: true,
     tlsMqtt: true,
     initialAcknowledgedSequence: maximumAck(initial),

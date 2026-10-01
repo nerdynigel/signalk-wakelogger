@@ -347,6 +347,81 @@ outbound Wake Logger transport or pairing traffic.
 - Snapshots queued during `local_only` are not lost and upload after authority
   returns to `automatic`.
 
+## Reverse courses
+
+Wake Logger represents a reversed race by storing the route points in reversed
+order. That is a normal ordered course to the onboard planner: it follows the
+stored order exactly and never reverses it a second time. The separate Signal K
+native `reverse=true` flag (an active route marked reversed) is not supported by
+`race_plan_dynamic_v1`; the onboard scheduler fails closed with
+`reverse_course_unsupported` rather than calculating the course forwards.
+
+## Offline readiness and loss semantics
+
+The coupled offline readiness contract (course applied, native route active and
+not reversed, matching prepared Race Pack with supported rules and a forecast
+valid now) is the only thing that may present `Offline race ready`. Applicability
+is computed from the current course identity and course-definition digest; the
+course revision and the Race Pack revision are separate namespaces and are never
+required to be equal. The contract distinguishes a forecast that is merely valid
+now from one whose declared coverage demonstrably spans the intended race window,
+and reports the difference as an uncertainty note rather than silently claiming
+coverage. An available but mismatched pack is reported as stored, never as ready,
+and its snapshot recommendations are not shown as current. The contract is
+carried to the cloud in the versioned device status payload, where it is stored
+with a report timestamp and surfaced as stale once the report ages.
+
+Only one onboard client at a time may hold navigation control. A leased,
+generation-stamped owner (`POST /plugins/signalk-wakelogger/progression/control`)
+must be claimed explicitly; other pages, including a newly opened tab, are
+viewers and never advance. Advancement goes through two execution boundaries:
+
+- `POST /plugins/signalk-wakelogger/progression/apply` validates the controller
+  and its generation, the selected course identity and revision, the
+  still-current native point and the **actual pending detection** (not merely
+  caller-supplied fields), then returns a permit. A permit is an authorisation,
+  never an application: it does not accept the detection. `already_applied` and
+  `superseded` are returned only from observed native state.
+- `POST /plugins/signalk-wakelogger/progression/apply/confirm` re-reads native
+  state and returns `confirmed`/`superseded` only when the advancement is
+  observed; otherwise `pending`. The onboard app accepts the detection only
+  after `confirmed`/`superseded`, and otherwise leaves it pending and retryable.
+
+Automatic application is **disabled in this candidate**. A detected rounding is
+offered for explicit acceptance by the controlling device rather than
+auto-applied, so no automatic native write is ever outstanding across a control
+handover.
+
+Underlying native-API limitation (stated precisely): Signal K 2.31 exposes no
+plugin API to set the active route point index and no compare-and-set, so the
+plugin cannot perform the native write itself nor fence one performed directly
+against Signal K. The supported native REST `pointIndex` write is the app's, made
+only after the validated permit, and confirmed against native state afterwards.
+The plugin therefore serialises and validates advancement authorisation but does
+not claim an atomic Signal K-side compare-and-set; a client that writes the
+native endpoint outside this flow cannot be prevented by the plugin.
+
+Retention loss is reported with three separate meanings: the cumulative
+**lifetime** `droppedCount` across all uploads, losses observed within the
+current historical-upload **cohort**, and per-recording missing/rejected
+samples. The UI never describes lifetime `droppedCount` as samples lost from the
+current trip, and a recording affected by retention pressure is explicitly
+marked as not complete.
+
+## Standalone vessel instruments
+
+The onboard app exposes an **Instruments** view that is the default when no
+course is selected. It subscribes to local Signal K navigation and environment
+measurements directly and is independent of the desired/cached course,
+`native.activeMatchesDesired`, course activation, Race Pack readiness, the
+onboard scheduler, an active recording, and MQTT/cloud mode. A failed course,
+race-plan or chart request is isolated to that feature and never stops
+instrument updates. Freshness is tracked per measurement from source timestamps;
+stale values show their age, missing values show as unavailable, and forecast
+data is never substituted for live readings. Wind-relative VMG is labelled
+separately from waypoint VMG. Local Signal K connection state is reported
+separately from Wake Logger cloud/upload state.
+
 ## Rule-set version and parity
 
 The pack carries `ruleSetVersion`; every plan and snapshot records the

@@ -85,6 +85,12 @@ export interface PluginStatusMetrics {
   queueDiskBytes: number
   queueOldestCapturedAt?: number
   queueDroppedCount: number
+  /** Cumulative lifetime dropped count across all uploads for this device. */
+  lifetimeDroppedCount?: number
+  /** Loss observed within the current historical-upload cohort, if any. */
+  cohortDroppedSamples?: number | null
+  /** Coupled offline readiness contract as last evaluated onboard. */
+  offlineReadiness?: import('../race/readiness').OfflineReadiness
   acknowledgedSequence: number
   currentSequence: number
   trackingState?: string

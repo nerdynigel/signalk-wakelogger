@@ -215,10 +215,13 @@ export class OnboardRaceService {
         generatedAt: applied.generatedAt,
         validFrom: applied.validFrom,
         validUntil: applied.validUntil,
+        coverage: pack
+          ? (pack.forecast.coverage ?? (pack.validFrom && pack.validUntil ? { from: pack.validFrom, until: pack.validUntil } : null))
+          : null,
         appliedAt: applied.appliedAt,
         applicable: pack ? racePackAppliesToCourse(pack, course) : false,
         currentAt: pack ? packValidityAt(pack, this.now()) : 'unknown'
-      } : { available: false, packId: null, revision: null, sha256: null, ruleSetVersion: null, courseId: null, racePlanId: null, courseDefinitionDigest: null, generatedAt: null, validFrom: null, validUntil: null, appliedAt: null, applicable: false, currentAt: 'unknown' },
+      } : { available: false, packId: null, revision: null, sha256: null, ruleSetVersion: null, courseId: null, racePlanId: null, courseDefinitionDigest: null, generatedAt: null, validFrom: null, validUntil: null, coverage: null, appliedAt: null, applicable: false, currentAt: 'unknown' },
       observations: {
         sampleCount: observations.averages.sampleCount,
         windowSeconds: observations.averages.windowSeconds,

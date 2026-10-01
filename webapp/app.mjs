@@ -4,6 +4,10 @@ import { coursePoints, raceProgress } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
+import { describeNavigationFailure } from './navigation-errors.mjs'
+import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
+import { instrumentReadings, formatReading } from './instruments.mjs'
+import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
 const client = new SignalKClient()
@@ -18,17 +22,123 @@ const vesselLayer = L.layerGroup().addTo(map)
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
-let raceProgression = null, applyingProgression = false
-let racePlan = null
-let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false
+let raceProgression = null
+// A per-tab identity, so two tabs do not share one controller role and a newly
+// opened tab starts as a viewer rather than inheriting control.
+const CLIENT_KEY = 'wakelogger-onboard-client'
+const CONTROL_KEY = 'wakelogger-navigation-control'
+let clientId = sessionStorage.getItem(CLIENT_KEY) || ''
+if (!clientId) {
+  clientId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  try { sessionStorage.setItem(CLIENT_KEY, clientId) } catch { /* storage may be unavailable */ }
+}
+let navigationControl = false
+let navigationControlGeneration = null
+try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
+let racePlan = null, offlineReadiness = null
+let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
+let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
+// History is a bounded state machine, not a boolean: a failed read, an
+// authoritative empty answer, a pending recording and a stale identity are all
+// unresolved and must be reconciled again, while a browser-only tail is never
+// promoted to "complete" history.
+let trackHistoryState = 'idle', trackHistoryEmpty = false, trackRequestSeq = 0, trackGeneration = 0
+let trackRetryAt = 0, trackRetryDelayMs = 0
+// Viewport intent is separate from track availability: a user may pan/zoom or
+// follow the vessel, but the full track stays in the line and is always
+// available through Fit track. Modes: 'auto' | 'track' | 'course' | 'follow' | 'manual'.
+let viewportMode = 'auto', trackUserControlled = false, fittingViewport = false, trackStartSequence = null, trackEndSequence = null
+let lastCourseKey = '', lastChartsAt = 0, busy = false, polling = false, selectedPointDirty = false, defaultPanelChosen = false, instrumentPolling = false, instrumentRequest = 0
 const notice = message => { $('notice').textContent = message || '' }
 const metric = (id, number, suffix, decimals = 1) => { $(id).textContent = number === null ? '—' : `${number.toFixed(decimals)}${suffix}` }
 const safeText = text => { const node = document.createElement('span'); node.textContent = text; return node }
+const attempt = promise => promise.then(value => ({ value }), error => ({ error }))
+
+function reportDiagnostic(error) {
+  if (!error || typeof error.toDiagnostic !== 'function') return
+  const diagnostic = error.toDiagnostic()
+  if (!diagnostic.path) return
+  client.request('/plugins/signalk-wakelogger/diagnostics', { method: 'POST', operation: 'report-diagnostic', body: JSON.stringify(diagnostic) }).catch(() => {})
+}
+
+function publishViewport() {
+  const mapElement = $('map')
+  if (!mapElement || !map.getCenter) return
+  const centre = map.getCenter()
+  mapElement.dataset.viewportCenter = `${centre.lat.toFixed(4)},${centre.lng.toFixed(4)}`
+  mapElement.dataset.viewportZoom = String(map.getZoom())
+  mapElement.dataset.viewportMode = viewportMode
+}
 
 function fitCourse() {
   const points = progress?.points || []
+  fittingViewport = true
   if (points.length) map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 55], maxZoom: 15, animate: false })
   else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], 13)
+  fittingViewport = false
+  publishViewport()
+}
+
+// Fit the whole available sailed track (the real departure through the latest
+// recorded position), independent of when this browser connected.
+function fitTrack() {
+  const bounds = trackBounds(track)
+  fittingViewport = true
+  if (bounds) map.fitBounds([[bounds.south, bounds.west], [bounds.north, bounds.east]], { padding: [35, 55], maxZoom: 15, animate: false })
+  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(13, map.getZoom()))
+  fittingViewport = false
+  publishViewport()
+}
+
+function publishTrack() {
+  const mapElement = $('map')
+  if (!mapElement) return
+  const bounds = trackBounds(track)
+  mapElement.dataset.trackPointCount = String(track.length)
+  mapElement.dataset.trackRecordingId = trackRecordingId || ''
+  mapElement.dataset.trackHistoryState = trackHistoryState
+  mapElement.dataset.trackStartSequence = trackStartSequence === null ? '' : String(trackStartSequence)
+  mapElement.dataset.trackEndSequence = trackEndSequence === null ? '' : String(trackEndSequence)
+  if (bounds) {
+    mapElement.dataset.trackSouth = String(bounds.south)
+    mapElement.dataset.trackWest = String(bounds.west)
+    mapElement.dataset.trackNorth = String(bounds.north)
+    mapElement.dataset.trackEast = String(bounds.east)
+  }
+  const fit = $('fit-track')
+  if (fit) fit.disabled = track.length === 0
+}
+
+// A /tracking identity that differs from the displayed recording is a real
+// transition: invalidate any in-flight /track request immediately, drop the
+// previous passage's geometry so it cannot be shown as the new one, and request
+// the new archive history promptly. A failed /tracking read never calls this.
+// Re-observing the same mismatch does not re-invalidate the retry already under
+// way for it.
+let observedStaleRecordingId = null
+function observeServerRecording(serverSessionId) {
+  if (!serverSessionId) return false
+  if (trackBootstrapped && trackRecordingId && serverSessionId !== trackRecordingId) {
+    if (observedStaleRecordingId === serverSessionId) return true
+    observedStaleRecordingId = serverSessionId
+    // Observable marker so the browser tests can assert that a delayed response
+    // for the superseded recording is discarded after this point.
+    const mapElement = $('map')
+    if (mapElement) mapElement.dataset.trackObservedRecording = serverSessionId
+    trackGeneration += 1
+    // Any response already in flight belongs to the previous generation.
+    trackRequestSeq += 1
+    trackNeedsRebootstrap = true
+    trackHistoryState = 'stale'
+    track = []
+    trackStartSequence = null
+    trackEndSequence = null
+    trackLine.setLatLngs(track)
+    publishTrack()
+    return true
+  }
+  if (serverSessionId === trackRecordingId) observedStaleRecordingId = null
+  return false
 }
 
 function renderCourse() {
@@ -37,7 +147,7 @@ function renderCourse() {
   if (!trackingStatus) $('cloud-state').textContent = 'Signal K connected'
   const ack = status.acknowledgement
   $('active-status').textContent = progress.matches ? `Wake Logger course active · Revision ${course?.revision ?? '—'}` : progress.points.length ? `Wake Logger course not currently active${status.native?.course?.activeRoute?.name ? ` · Signal K: ${status.native.course.activeRoute.name}` : ''}` : 'No course selected in Wake Logger'
-  if (ack?.status === 'rejected') $('active-status').textContent += ' · Update rejected; last usable course retained'
+  if (ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; last usable course retained`
   $('activate-course').disabled = busy || !progress.points.length || !status.native?.available || progress.matches
   $('advance-point').disabled = busy || !progress.matches || progress.index === null || progress.index >= progress.points.length - 1
   $('point-index').disabled = busy || !progress.matches
@@ -81,12 +191,163 @@ function renderCourse() {
       ? L.divIcon({ className: 'mark', html: '●', iconSize: [20, 20], iconAnchor: [10, 10] })
       : L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${progress.direction}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
     L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
-    if (!track.length || track.at(-1)[0] !== point[0] || track.at(-1)[1] !== point[1]) track.push(point)
-    if (track.length > 2000) track = track.slice(-2000)
+    if (trackBootstrapped) {
+      // Never append a live fix from a new recording onto the previous
+      // recording still on screen; refresh the archive identity first.
+      const serverSessionId = trackingStatus?.trackingSessionId ?? null
+      if (!observeServerRecording(serverSessionId)) {
+        const before = track.length
+        track = appendTrackPoint(track, point)
+        fixesSinceBootstrap += 1
+        if (track.length === before && before >= MAX_DISPLAY_TRACK_POINTS) trackNeedsRebootstrap = true
+      }
+    }
     trackLine.setLatLngs(track)
   }
+  publishTrack()
   $('centre-vessel').disabled = !progress.position
-  if (courseChanged) { fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
+  // A course change re-frames the course only before any explicit viewport
+  // choice, or when the viewer deliberately chose Fit course; an independently
+  // selected track view is preserved.
+  if (courseChanged) { if (viewportMode === 'course' || viewportMode === 'auto') fitCourse(); lastCourseKey = key; renderChartReadiness(); reportMap('unknown') }
+}
+
+// The onboard map track comes from a durable onboard archive, not from
+// page-open time and not from the delivery outbox. Bootstrap from the bounded
+// local API on load and again whenever the recording changes, the page resumes,
+// or enough new fixes have arrived that the whole-trip geometry should be
+// recomputed (which preserves the departure instead of dropping it).
+// Each request is bound to the recording identity/generation it was started
+// for, so a delayed response for a superseded recording is discarded.
+async function bootstrapTrackFromDurable() {
+  if (trackLoading) return
+  trackLoading = true
+  const generation = trackGeneration
+  const requestSeq = ++trackRequestSeq
+  if (track.length === 0 && trackHistoryState !== 'loaded') trackHistoryState = 'loading'
+  publishTrack()
+  try {
+    const response = await client.request(`/plugins/signalk-wakelogger/track?maxPoints=${MAX_DISPLAY_TRACK_POINTS}`, { operation: 'read-track' })
+    // Discard a superseded response (a newer request started or the observed
+    // recording changed while this request was in flight).
+    if (requestSeq !== trackRequestSeq || generation !== trackGeneration) return
+    if (response && Array.isArray(response.points)) {
+      const nextRecordingId = response.trackingSessionId || response.recording?.id || null
+      const serverSessionId = trackingStatus?.trackingSessionId ?? null
+      // Once a different recording was observed, that identity is authoritative
+      // until its own archive history is accepted, even if a tracking poll is
+      // momentarily in flight. A response for any other recording is not the
+      // current passage and must never be displayed as it.
+      const unresolvedIdentity = observedStaleRecordingId || serverSessionId
+      if (unresolvedIdentity && nextRecordingId && unresolvedIdentity !== nextRecordingId) {
+        trackHistoryState = 'stale'
+        trackNeedsRebootstrap = true
+        publishTrack()
+        return
+      }
+      const recordingChanged = trackBootstrapped && nextRecordingId !== trackRecordingId
+      track = bootstrapTrack(response)
+      trackBootstrapped = true
+      trackRecordingId = nextRecordingId
+      observedStaleRecordingId = null
+      fixesSinceBootstrap = 0
+      trackNeedsRebootstrap = false
+      trackHistoryEmpty = track.length === 0
+      const recordingState = response.recording?.state ?? null
+      if (track.length > 0) trackHistoryState = 'loaded'
+      else if (recordingState === 'recording') trackHistoryState = 'pending'
+      else trackHistoryState = 'empty'
+      if (trackHistoryState === 'loaded') {
+        trackRetryAt = 0
+        trackRetryDelayMs = 0
+      } else {
+        // An empty or still-pending recording is unresolved, not complete
+        // history: reconcile again promptly but with a bounded backoff.
+        trackRetryDelayMs = trackRetryDelayMs ? Math.min(trackRetryDelayMs * 2, 30000) : 3000
+        trackRetryAt = Date.now() + trackRetryDelayMs
+      }
+      const sequences = response.points.map(point => point?.sequence).filter(Number.isFinite)
+      trackStartSequence = sequences.length ? Math.min(...sequences) : null
+      trackEndSequence = sequences.length ? Math.max(...sequences) : null
+      // A new passage re-enables auto-fit; a reload/reconnect with existing
+      // manual control never yanks the viewport.
+      if (recordingChanged) { trackUserControlled = false; viewportMode = 'auto' }
+      trackLine.setLatLngs(track)
+      publishTrack()
+      if (shouldAutoFitTrack({ hasTrack: track.length > 0, recordingChanged, userControlled: trackUserControlled, mode: viewportMode })) {
+        fitTrack()
+        viewportMode = 'track'
+        publishViewport()
+      }
+    }
+  } catch {
+    // A failed read is not proof the recording is empty; keep the state
+    // unresolved and reconcile again with a bounded exponential backoff.
+    if (requestSeq === trackRequestSeq && generation === trackGeneration) {
+      trackHistoryState = trackHistoryState === 'loaded' ? 'stale' : 'failed'
+      trackHistoryEmpty = true
+      trackNeedsRebootstrap = true
+      trackRetryDelayMs = trackRetryDelayMs ? Math.min(trackRetryDelayMs * 2, 30000) : 3000
+      trackRetryAt = Date.now() + trackRetryDelayMs
+      publishTrack()
+    }
+  }
+  finally {
+    trackLoading = false
+    // A transition observed while this request was in flight deserves a prompt
+    // follow-up rather than waiting a full poll interval.
+    if (trackNeedsRebootstrap && trackGeneration !== generation) {
+      window.setTimeout(() => { if (trackNeedsRebootstrap && !trackLoading) void bootstrapTrackFromDurable() }, 50)
+    }
+  }
+}
+
+function renderInstruments() {
+  const grid = $('instruments-grid')
+  if (!grid) return
+  const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
+  grid.replaceChildren(...view.readings.map(instrumentTile))
+  const state = $('signal-k-state')
+  if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
+  else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
+  else state.textContent = `Signal K connected · ${view.available}/${view.total} readings live`
+}
+
+function instrumentTile(reading) {
+  const tile = document.createElement('div')
+  tile.className = 'instrument'
+  tile.dataset.available = String(reading.available)
+  tile.dataset.freshness = reading.freshness
+  tile.dataset.stale = String(reading.freshness === 'stale')
+  if (reading.freshness === 'stale' && reading.ageSeconds !== null) tile.dataset.age = String(reading.ageSeconds)
+  const label = document.createElement('span')
+  label.className = 'label'
+  label.textContent = reading.label
+  const value = document.createElement('span')
+  value.className = 'value'
+  value.textContent = formatReading(reading)
+  const meta = document.createElement('span')
+  meta.className = 'meta'
+  const bits = []
+  bits.push(reading.source === 'derived' ? 'derived' : 'measured')
+  if (reading.reference) bits.push(reading.reference)
+  if (reading.freshness === 'unknown') bits.push('timestamp unknown')
+  else if (reading.freshness === 'missing') bits.push('no data')
+  else if (reading.freshness === 'stale') bits.push('stale')
+  else if (reading.ageSeconds !== null) bits.push(`${reading.ageSeconds}s ago`)
+  meta.textContent = bits.join(' · ')
+  tile.append(label, value, meta)
+  return tile
+}
+
+function renderOfflineReadiness() {
+  const element = $('offline-readiness')
+  if (!element) return
+  const view = offlineReadinessPresentation(offlineReadiness)
+  if (!view.known) { element.textContent = ''; element.dataset.ready = 'unknown'; return }
+  element.dataset.ready = String(view.ready)
+  element.textContent = view.ready ? 'Offline race ready' : `Offline race not ready — ${view.missing.length} item${view.missing.length === 1 ? '' : 's'} missing`
+  element.title = view.detail
 }
 
 function renderChartReadiness() {
@@ -127,55 +388,133 @@ async function discoverCharts() {
   lastChartsAt = Date.now()
 }
 
+// Instruments are polled on their own bounded loop, independent of the course,
+// Race Pack, trip and track requests. A stalled or failed course/pack request
+// therefore never freezes instrument updates or their freshness.
+async function refreshInstruments() {
+  if (instrumentPolling) return
+  instrumentPolling = true
+  const thisRequest = ++instrumentRequest
+  try {
+    const [navigationResult, environmentResult] = await Promise.all([
+      attempt(client.request('/signalk/v1/api/vessels/self/navigation', { operation: 'read-navigation', timeoutMs: 2500 })),
+      attempt(client.request('/signalk/v1/api/vessels/self/environment', { operation: 'read-environment', timeoutMs: 2500 })),
+    ])
+    if (thisRequest !== instrumentRequest) return
+    if (!navigationResult.error) {
+      navigationData = navigationResult.value || {}
+      signalKAvailable = true
+    } else {
+      signalKAvailable = false
+      if ([401, 403].includes(navigationResult.error?.status)) $('login').hidden = false
+    }
+    if (!environmentResult.error) { environmentData = environmentResult.value || {}; environmentUnavailable = false }
+    else environmentUnavailable = true
+    renderInstruments()
+  } finally { instrumentPolling = false }
+}
+
 async function poll() {
   if (polling) return
   polling = true
+  const thisPoll = ++pollSequence
   try {
-    const [nextStatus, navigation, calculated, nextProgression, nextRacePlan] = await Promise.all([
-      client.request('/plugins/signalk-wakelogger/course'),
-      client.request('/signalk/v1/api/vessels/self/navigation').catch(() => ({})),
-      client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues').catch(() => ({})),
-      client.request('/plugins/signalk-wakelogger/progression').catch(() => null),
-      client.request('/plugins/signalk-wakelogger/race-plan').catch(() => null),
+    const [statusResult, calcResult, progressionResult, racePlanResult, readinessResult] = await Promise.all([
+      attempt(client.request('/plugins/signalk-wakelogger/course', { operation: 'read-course', timeoutMs: 4000 })),
+      attempt(client.request('/signalk/v2/api/vessels/self/navigation/course/calcValues', { operation: 'read-calc-values', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/progression', { operation: 'read-progression', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/race-plan', { operation: 'read-race-plan', timeoutMs: 4000 })),
+      attempt(client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness', timeoutMs: 4000 })),
     ])
-    status = nextStatus
-    raceProgression = nextProgression
-    racePlan = nextRacePlan
-    const nativeRoute = status.native?.ownedRouteId
-      ? await client.request(`/signalk/v2/api/resources/routes/${encodeURIComponent(status.native.ownedRouteId)}`).catch(() => null)
-      : null
-    progress = raceProgress(status, navigation, calculated, nativeRoute)
-    $('login').hidden = true
-    renderCourse()
+
+    if (readinessResult.value) offlineReadiness = readinessResult.value
+    raceProgression = progressionResult.value ?? null
+    racePlan = racePlanResult.value ?? null
+
+    if (statusResult.value) {
+      status = statusResult.value
+      if (statusResult.value.offlineReadiness) offlineReadiness = statusResult.value.offlineReadiness
+      const nativeRoute = status.native?.ownedRouteId
+        ? await client.request(`/signalk/v2/api/resources/routes/${encodeURIComponent(status.native.ownedRouteId)}`).catch(() => null)
+        : null
+      progress = raceProgress(status, navigationData, calcResult.value ?? {}, nativeRoute)
+      $('login').hidden = true
+      renderCourse()
+      if (!defaultPanelChosen) { selectPanel(progress.points.length ? 'race' : 'instruments'); defaultPanelChosen = true }
+    } else {
+      const error = statusResult.error
+      if ([401, 403].includes(error?.status)) $('login').hidden = false
+      notice(error?.message || 'Signal K course state unavailable.')
+      $('cloud-state').textContent = 'Signal K unavailable'
+      reportDiagnostic(error)
+    }
+
+    renderOfflineReadiness()
     renderProgression()
     renderRacePlan()
-    if (raceProgression?.mode === 'auto' && raceProgression.pending && !raceProgression.pending.wrongSide) await applyProgression()
+    if (navigationControl) {
+      const result = await claimControl(false)
+      if (result && !result.held) {
+        navigationControlGeneration = result.generation ?? null
+        raceProgression = { ...(raceProgression ?? {}), control: result }
+      } else {
+        // Renewal failure/expiry or handover stops automatic application immediately.
+        clearControl()
+        notice(result?.held ? 'Navigation control moved to another device; this page is now a viewer.' : 'Navigation control renewal failed; automatic advancement is paused.')
+      }
+    }
+    // Reconcile a lost write response against actual native state: if the native
+    // point already advanced past the detection, confirm it from native state and
+    // only then accept it, without writing again.
+    if (navigationControl && raceProgression?.pending && !raceProgression.pending.wrongSide && progress?.matches
+      && progress.index === raceProgression.pending.pointIndex + 1) {
+      const confirmation = await confirmAdvance(raceProgression.pending, progress.index)
+      if (confirmation === 'confirmed' || confirmation === 'superseded') {
+        await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex).catch(() => undefined)
+      }
+    }
+    // Automatic application is disabled in this candidate (Signal K 2.31 cannot
+    // fence a client-performed native pointIndex write), so a detected rounding
+    // is offered to the crew for explicit acceptance rather than auto-applied.
+    const serverSessionId = trackingStatus?.trackingSessionId ?? null
+    observeServerRecording(serverSessionId)
+    const retryDue = trackRetryAt > 0 && Date.now() >= trackRetryAt
+    if (trackNeedsRebootstrap || needsRebootstrap({ trackLength: track.length, fixesSinceBootstrap, resumed: trackResumeRequested, historyEmpty: trackHistoryEmpty, historyState: trackHistoryState, retryDue })) {
+      trackResumeRequested = false
+      await bootstrapTrackFromDurable()
+    }
     if (Date.now() - lastChartsAt > 60_000) await discoverCharts()
-  } catch (error) {
-    if ([401, 403].includes(error.status)) $('login').hidden = false
-    notice(error.message)
-    $('cloud-state').textContent = 'Signal K unavailable'
-  } finally { polling = false }
+  } finally { if (thisPoll === pollSequence) polling = false }
 }
 
-async function command(action) {
+async function command(action, context = {}) {
   if (busy) return
   busy = true
   try { await action(); selectedPointDirty = false; notice('Navigation updated.'); await poll() }
-  catch (error) { notice(error.message) }
+  catch (error) { notice(describeNavigationFailure(error, context)); reportDiagnostic(error) }
   finally { busy = false; if (progress) renderCourse() }
 }
 
 function renderProgression() {
   const element = $('progression-status')
   if (!element) return
+  const control = $('navigation-control')
+  if (control) {
+    const heldByOther = raceProgression?.control?.active === true && raceProgression.control.clientId !== clientId
+    control.setAttribute('aria-pressed', String(navigationControl))
+    control.textContent = navigationControl ? 'Navigation control: this device' : 'Take navigation control'
+    control.disabled = heldByOther && !navigationControl
+    control.title = heldByOther ? 'Another onboard device is controlling navigation' : 'Only the controlling device may accept or advance the course'
+  }
   const labels = { auto: 'Automatic', suggest: 'Suggest', off: 'Off' }
   const mode = raceProgression?.mode
   const pending = raceProgression?.pending
   if (!mode) { element.textContent = ''; $('progression-actions').hidden = true; return }
   const detail = pending && !pending.wrongSide ? ` · ${pending.type} detected at point ${pending.pointIndex + 1}` : ''
+  // Automatic application is disabled in this candidate; every detection is
+  // offered for explicit acceptance by the controlling device.
   element.textContent = `Mark detection: ${labels[mode] ?? mode}${detail}`
-  $('progression-actions').hidden = !(mode === 'suggest' && pending && !pending.wrongSide)
+  $('progression-actions').hidden = !(pending && !pending.wrongSide && navigationControl)
 }
 
 function renderRacePlan() {
@@ -247,39 +586,133 @@ function racePlanLeg(leg, eyebrow) {
   return fragment
 }
 
-async function applyProgression() {
-  if (applyingProgression) return
-  const pending = raceProgression?.pending
-  const href = status?.native?.course?.activeRoute?.href
-  if (!pending || pending.wrongSide || !href) return
-  applyingProgression = true
+// Only the leased navigation controller may auto-apply a detection, and the
+// advancement is an idempotent absolute point index bound to the selected
+// course revision and the still-current native point. A second client (or a
+// retry after a lost response) therefore cannot advance twice, and a viewer
+// never advances at all.
+async function claimControl(release = false) {
   try {
-    await progression.advance(href)
-    await raceProgressionClient.resolve('accepted', pending.pointIndex)
-    notice(`Mark detection advanced past point ${pending.pointIndex + 1}.`)
+    const result = await client.request('/plugins/signalk-wakelogger/progression/control', { method: 'POST', operation: 'navigation-control', timeoutMs: 3000, body: JSON.stringify({ clientId, release }) })
+    return release ? { released: true } : (result?.control ?? null)
   } catch (error) {
-    notice(`${error.message} Set the point manually if the rounding was missed.`)
-  } finally { applyingProgression = false }
+    if (error?.status === 409) return { held: true }
+    reportDiagnostic(error)
+    return null
+  }
 }
 
-$('progression-accept').onclick = () => command(async () => {
-  await progression.advance(status.native.course.activeRoute.href)
-  await raceProgressionClient.resolve('accepted', raceProgression.pending.pointIndex)
-})
+function clearControl() {
+  navigationControl = false
+  navigationControlGeneration = null
+  try { sessionStorage.setItem(CONTROL_KEY, '0') } catch { /* ignore */ }
+}
+
+// Confirm from observed native state that a permitted advancement happened.
+// Returns 'confirmed', 'superseded' or 'pending'; only the first two accept the
+// detection. A permit alone never does.
+async function confirmAdvance(pending, targetPointIndex) {
+  const courseId = status?.desired?.courseId
+  const revision = status?.desired?.revision
+  if (!pending || !courseId || navigationControlGeneration === null) return 'pending'
+  const confirmation = await client.request('/plugins/signalk-wakelogger/progression/apply/confirm', {
+    method: 'POST', operation: 'confirm-progression', timeoutMs: 4000,
+    body: JSON.stringify({ clientId, generation: navigationControlGeneration, courseId, revision, targetPointIndex })
+  })
+  return confirmation?.status ?? 'pending'
+}
+
+// The plugin is the execution boundary: it validates the lease generation,
+// course revision, native point and the actual pending detection and returns a
+// permit. Only then does this client perform the supported native pointIndex
+// write, and the detection is accepted only after native state confirms it.
+// `already_applied`/`superseded` require observed native state, so a retry after
+// a lost response is idempotent while a merely permitted-but-unexecuted attempt
+// stays unresolved.
+async function requestAdvance(pending) {
+  const href = status?.native?.course?.activeRoute?.href
+  const revision = status?.desired?.revision
+  const courseId = status?.desired?.courseId
+  if (!pending || !href || !courseId || !navigationControl || navigationControlGeneration === null) return false
+  const permit = await client.request('/plugins/signalk-wakelogger/progression/apply', {
+    method: 'POST', operation: 'apply-progression', timeoutMs: 4000,
+    body: JSON.stringify({
+      clientId, generation: navigationControlGeneration, courseId, revision,
+      expectedPointIndex: progress?.index, detectionPointIndex: pending.pointIndex, detectionRevision: pending.revision
+    })
+  })
+  if (permit?.status === 'already_applied' || permit?.status === 'superseded') {
+    await raceProgressionClient.resolve('accepted', pending.pointIndex).catch(() => undefined)
+    return true
+  }
+  if (permit?.status !== 'apply' || permit.generation !== navigationControlGeneration) return false
+  await progression.setPoint(permit.targetPointIndex, progress.points.length, href)
+  const confirmation = await confirmAdvance(pending, permit.targetPointIndex)
+  if (confirmation === 'confirmed' || confirmation === 'superseded') {
+    await raceProgressionClient.resolve('accepted', pending.pointIndex)
+    return true
+  }
+  // The native write was not observed: leave the detection unresolved so it can
+  // be retried rather than falsely accepting it.
+  return false
+}
+
+$('navigation-control').onclick = async () => {
+  if (navigationControl) {
+    clearControl()
+    await claimControl(true)
+    notice('Navigation control released. This device is now a viewer.')
+  } else {
+    const control = await claimControl(false)
+    if (control?.clientId === clientId) {
+      navigationControl = true
+      navigationControlGeneration = control.generation ?? null
+      try { sessionStorage.setItem(CONTROL_KEY, '1') } catch { /* ignore */ }
+      notice('Navigation control enabled on this device.')
+    } else {
+      clearControl()
+      notice('Another device is already controlling navigation for this course.')
+    }
+  }
+  renderProgression()
+}
+
+$('progression-accept').onclick = async () => {
+  if (busy) return
+  if (!navigationControl) { notice('Enable navigation control on this device before accepting a rounding.'); return }
+  const pending = raceProgression?.pending
+  if (!pending) return
+  busy = true
+  try {
+    const applied = await requestAdvance(pending)
+    notice(applied
+      ? `Mark ${pending.pointIndex + 1} rounding accepted.`
+      : 'Signal K has not confirmed the advancement yet. It remains pending and will be retried.')
+    await poll()
+  } catch (error) {
+    notice(`${describeNavigationFailure(error, { markNumber: pending.pointIndex + 1 })} Set the point manually if the rounding was missed.`)
+    reportDiagnostic(error)
+  } finally { busy = false }
+}
 $('progression-dismiss').onclick = async () => {
   try {
     await raceProgressionClient.resolve('dismissed', raceProgression.pending.pointIndex)
     raceProgression = { ...raceProgression, pending: null }
     renderProgression()
     notice('Rounding dismissed.')
-  } catch (error) { notice(error.message) }
+  } catch (error) { notice(error.message); reportDiagnostic(error) }
 }
-$('fit-course').onclick = fitCourse
-$('centre-vessel').onclick = () => { if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) }
+$('fit-course').onclick = () => { viewportMode = 'course'; fitCourse() }
+$('fit-track').onclick = () => { viewportMode = 'track'; fitTrack() }
+$('centre-vessel').onclick = () => { if (progress?.position) { viewportMode = 'follow'; map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) } }
+// A deliberate pan/zoom takes viewport control; programmatic fits and resizes
+// do not (they have no originalEvent and/or run under fittingViewport).
+map.on('dragstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
+map.on('zoomstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
 $('activate-course').onclick = () => command(() => progression.activate())
-$('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href))
+$('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name })
 $('point-index').onchange = () => { selectedPointDirty = true }
-$('set-point').onclick = () => command(() => progression.setPoint(Number($('point-index').value), progress.points.length, status.native.course.activeRoute.href))
+$('set-point').onclick = () => command(() => progression.setPoint(Number($('point-index').value), progress.points.length, status.native.course.activeRoute.href), { markName: progress?.points[Number($('point-index').value)]?.name })
 $('chart-source').onchange = () => { useChart(sources.find(source => source.id === $('chart-source').value) || null); reportMap('unknown') }
 $('chart-margin').onchange = () => { verifier.cancel(); renderChartReadiness(); reportMap('unknown') }
 $('login').onsubmit = async event => {
@@ -292,7 +725,7 @@ $('sign-out').onclick = () => { client.signOut(); $('login').hidden = false; not
 
 function reportMap(mapStatus, revision = status?.desired?.revision) {
   if (!revision) return Promise.resolve()
-  return client.request('/plugins/signalk-wakelogger/course/map-readiness', { method: 'POST', body: JSON.stringify({ revision, status: mapStatus }) }).catch(() => {})
+  return client.request('/plugins/signalk-wakelogger/course/map-readiness', { method: 'POST', operation: 'set-map-readiness', body: JSON.stringify({ revision, status: mapStatus }) }).catch(() => {})
 }
 $('verify-chart').onclick = async () => {
   const revision = status?.desired?.revision
@@ -321,7 +754,7 @@ $('cache-jobs').onclick = async () => {
     $('cache-status').replaceChildren()
     if (!jobs) { $('cache-status').textContent = 'This Signal K Charts version has no preparation API. Install local MBTiles through Signal K Charts.'; return }
     const entries = Array.isArray(jobs) ? jobs : Object.values(jobs)
-    if (!entries.length) $('cache-status').textContent = 'No chart preparation jobs. Prepare licensed maps in Signal K Charts; verify local coverage before departure.'
+    if (!entries.length) { $('cache-status').textContent = 'No chart preparation jobs. Prepare licensed maps in Signal K Charts; verify local coverage before departure.'; return }
     for (const job of entries) {
       const row = document.createElement('div')
       row.textContent = `${job.chartName || 'Chart'}: ${job.status || job.state || 'unknown'} · ${job.downloadedTiles || 0} downloaded · ${job.failedTiles || 0} failed. Offline coverage unverified.`
@@ -349,7 +782,7 @@ async function refreshTracking() {
   if (trackingChanging) return
   const request = ++trackingRequest
   try {
-    const next = await client.request('/plugins/signalk-wakelogger/tracking')
+    const next = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' })
     if (request !== trackingRequest || trackingChanging) return
     trackingStatus = next
   } catch {
@@ -361,18 +794,26 @@ async function refreshTracking() {
 $('live-tracking').onclick = async () => {
   if (trackingChanging || !trackingPresentation(trackingStatus).available) return
   const uploadMode = trackingStatus.uploadMode === 'automatic' ? 'local_only' : 'automatic'
+  let warning = null
+  if (uploadMode === 'local_only') {
+    // Pre-switch warning: local-only stays possible, but the crew is told
+    // precisely what is missing before onboard sail planning is relied upon.
+    const readiness = await client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' }).catch(() => null)
+    if (readiness) offlineReadiness = readiness
+    warning = localOnlyWarning(readiness)
+    renderOfflineReadiness()
+  }
   trackingChanging = true
   ++trackingRequest
   renderTracking()
   try {
-    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', body: JSON.stringify({ uploadMode }) })
-    notice(uploadMode === 'local_only' ? 'Live tracking off. Your trip continues recording onboard.' : 'Live tracking on. Saved history uploads when connected.')
+    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', operation: 'set-tracking', body: JSON.stringify({ uploadMode }) })
+    notice(warning || (uploadMode === 'local_only' ? 'Live tracking off. Your trip continues recording onboard.' : 'Live tracking on. Saved history uploads when connected.'))
   } catch (error) {
-    // Read the actual mode: a failed settings save can still leave uploads
-    // safely paused. Never show the old toggle as proof of transmission.
-    try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking') }
+    try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) }
     catch { trackingStatus = null }
     notice(error.status === 503 ? 'The setting could not be saved. Current recorder status is shown below.' : error.message)
+    reportDiagnostic(error)
     if ([401, 403].includes(error.status)) {
       if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen().catch(() => {})
       setFullscreen(false)
@@ -381,7 +822,7 @@ $('live-tracking').onclick = async () => {
   } finally { trackingChanging = false; renderTracking() }
 }
 
-const tabNames = ['race', 'course', 'charts']
+const tabNames = ['instruments', 'race', 'course', 'charts']
 function selectPanel(name, focus = false) {
   for (const item of tabNames) {
     const selected = item === name
@@ -397,20 +838,26 @@ for (const name of tabNames) {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const current = tabNames.indexOf(name)
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (current + (event.key === 'ArrowRight' ? 1 : 2)) % 3
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabNames.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : tabNames.length - 1)) % tabNames.length
     selectPanel(tabNames[next], true)
   }
 }
 const chartplotter = $('chartplotter')
 const screen = window.matchMedia('(max-width: 760px)')
+// Resizing, fullscreen and orientation changes preserve the current viewport
+// intent and never silently re-frame the course or the track.
 function resizeMap() {
   chartplotter.dataset.screen = screen.matches ? 'mobile' : 'desktop'
-  requestAnimationFrame(() => map.invalidateSize({ animate: false }))
+  // invalidateSize preserves the current centre/zoom, so the viewport intent and
+  // the selected passage survive resizing, rotation and fullscreen.
+  fittingViewport = true
+  requestAnimationFrame(() => {
+    map.invalidateSize({ animate: false })
+    fittingViewport = false
+    publishViewport()
+  })
 }
-screen.addEventListener('change', () => {
-  resizeMap()
-  requestAnimationFrame(fitCourse)
-})
+screen.addEventListener('change', resizeMap)
 new ResizeObserver(resizeMap).observe(chartplotter)
 resizeMap()
 function setFullscreen(active) {
@@ -420,7 +867,6 @@ function setFullscreen(active) {
   $('fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen')
   $('fullscreen').setAttribute('aria-pressed', String(active))
   resizeMap()
-  requestAnimationFrame(fitCourse)
 }
 $('fullscreen').onclick = async () => {
   const active = chartplotter.classList.contains('is-fullscreen') || document.fullscreenElement === chartplotter
@@ -437,10 +883,17 @@ $('fullscreen').onclick = async () => {
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) setFullscreen(false)
 })
+// A backgrounded mobile browser can suspend timers; on resume, re-request the
+// whole-trip geometry so a gap while suspended cannot leave the map short.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) trackResumeRequested = true })
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !document.fullscreenElement) setFullscreen(false)
 })
 
-await Promise.all([poll(), refreshTracking()])
+let pollSequence = 0
+await Promise.all([poll(), refreshInstruments(), refreshTracking()])
 setInterval(() => { if (!document.hidden) { poll(); refreshTracking() } }, 3000)
-window.addEventListener('online', () => { poll(); refreshTracking() })
+// Instruments refresh on their own cadence so a hanging course/pack request
+// cannot delay live readings or their freshness.
+setInterval(() => { if (!document.hidden) refreshInstruments() }, 2000)
+window.addEventListener('online', () => { poll(); refreshInstruments(); refreshTracking() })

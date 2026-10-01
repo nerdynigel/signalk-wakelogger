@@ -37,8 +37,15 @@ Clear only deactivates the matching owned active course and retains route data.
 The plugin's Signal K router exposes:
 
 - `GET /plugins/signalk-wakelogger/course`: desired and cached course, flattened
-  route points, latest acknowledgement, upload mode, connection state, and native
-  course/route identity, availability and conflict state.
+  route points, latest acknowledgement, upload mode, connection state, native
+  course/route identity, availability and conflict state, and the coupled
+  `offlineReadiness` contract.
+- `GET /plugins/signalk-wakelogger/offline-readiness`: the single readiness
+  contract (see below) for going offline.
+- `GET /plugins/signalk-wakelogger/track`: the current recording's track,
+  reconstructed from durable onboard data (see below).
+- `POST /plugins/signalk-wakelogger/diagnostics`: bounded, credential-safe
+  capture of an onboard webapp request failure into the plugin log.
 - `POST /plugins/signalk-wakelogger/course/activate`: explicitly select the cached
   desired course through Signal K's native activation API.
 - `POST /plugins/signalk-wakelogger/course/map-readiness`: save `{revision,status}`
@@ -57,10 +64,84 @@ progression method; reactivation would reset native start time. The onboard UI
 encapsulates the native progression calls and reads Signal K navigation metrics;
 there is no second navigation engine or assumed race rounding radius.
 
-Course data and chart readiness are separate. Readiness is saved against a course
-revision and included in acknowledgements; it resets to unknown on a new desired
-revision. The onboard map must verify chart coverage before reporting
+Course data and chart readiness are separate. Chart readiness is saved against a
+course revision and included in acknowledgements; it resets to unknown on a new
+desired revision. The onboard map must verify chart coverage before reporting
 `offline_ready`. In `local_only` mode native navigation and local API actions
 remain available, while cloud acknowledgements wait until automatic uploading is
 restored. Signal K persists its active course; the plugin independently persists
 its desired course and acknowledgement with fsynced replacement files.
+
+## Offline race readiness (coupled contract)
+
+`offlineReadiness` is derived, never stored as a toggle, from all of:
+
+- the desired Wake Logger course is `activate` and its acknowledgement is
+  `applied` for the same revision;
+- the expected native Wake Logger route is active, or the reason it is not
+  (`native_course_unavailable`, another app's route, or conflict) is reported;
+- a Race Pack is prepared, transferred and ACKed, and its
+  `racePlanId`/`courseId`/`courseDefinitionDigest` match the currently selected
+  course;
+- the Race Pack forecast validity covers the race (not expired, not not-yet);
+- the Race Pack rule set is supported.
+
+The result is exposed as one status: `Offline race ready` or
+`Offline race not ready` with the exact list of missing items. A course or
+Race Plan change immediately makes the old pack not-applicable, so a retained
+immutable pack can never be presented as ready for a new selected course even
+when each side independently has an ACK. Switching to `local_only` remains
+possible, but an incomplete readiness shows a prominent pre-switch warning; the
+onboard app never silently implies onboard sail planning will work.
+
+## Course update and native activation
+
+A new revision of the same Wake Logger-owned route updates the route resource,
+preserves the active point where still valid, and reactivates the expected route
+without resetting the race. A route owned by another application is never
+stolen: activation reports `conflict` and the acknowledgement exposes the
+precise `CourseError`/`errorCode`. The onboard UI shows the rejected update and
+its error code, so a visually current cached map cannot be paired with an
+unexplained inactive native route.
+
+## Signal K failure diagnostics
+
+Failed Signal K requests preserve the operation name, HTTP method and path,
+status, and a bounded response/error reason. The onboard client never reads back
+authorization headers, redacts bearer tokens and token-like values, and writes
+the bounded detail to the plugin log through `POST /diagnostics`. Activate,
+set-point and next-point failures surface a human-readable message naming the
+action (and target mark where known) plus the Signal K reason.
+
+## Durable onboard track
+
+The onboard webapp must not use page-open time as the beginning of the displayed
+trip. `GET /track` reconstructs the current recording's track from an
+independent durable onboard archive (one bounded binary file per recording,
+`<data>/track-archive/<deviceId>/`), ordered by captured sequence and decimated
+by seeking fixed-size record offsets so memory and work are proportional to the
+display bound rather than the recording length. The archive is deliberately
+separate from the delivery outbox, so an upload acknowledgement or segment
+reclaim never removes local map history. A read is bounded to the recording
+identity; retention prunes settled older recordings but never the active one.
+On open the app loads this track and then appends new fixes; it re-bootstraps
+the whole-trip geometry when the recording changes, the page resumes from
+suspension, or enough new fixes have arrived that the decimated view should be
+recomputed (the departure is never dropped). A multi-hour `local_only` recording
+therefore shows its complete geometry after a browser reload or plugin restart
+with no Wake Logger/cloud connectivity. The archive backend used by `/track` is
+reported as `archive`.
+
+The archive keeps its own `manifest.json` (atomic + fsynced) describing every
+recording and the current/most-recent one, and rebuilds it from the archive
+files if it is ever lost. `GET /track` therefore selects the active recording
+if one exists, otherwise the archive's current/most-recent recording, and is
+independent of the pending-upload manifests that are removed after the terminal
+recording acknowledgement. Appends are serialised and bounded, duplicate/retried
+samples are idempotent, and before appending the archive repairs an interrupted
+write: a partial header is rewritten, a partial final record is trimmed to the
+last aligned boundary, and a corrupt header is quarantined and replaced, so a
+duplicate header or misaligned record cannot occur. Durability guarantee: a
+completed append survives an ordinary process restart; the manifest is fsynced
+on close; per-sample power-loss durability is not claimed, and the last
+unflushed tail is repaired rather than trusted on the next open.

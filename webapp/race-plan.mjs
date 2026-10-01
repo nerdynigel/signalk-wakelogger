@@ -45,14 +45,21 @@ export function racePlanPresentation(racePlan) {
   const pack = racePlan.pack || {}
   const snapshot = racePlan.latestSnapshot || null
   const legs = Array.isArray(snapshot?.plan?.legs) ? snapshot.plan.legs : []
-  const currentLeg = formatLeg(legs[0], 0)
-  const remainingLegs = legs.map((leg, index) => formatLeg(leg, index)).filter(Boolean)
   const packAvailable = pack.available === true
-  const packApplicable = pack.applicable !== false
+  const packApplicable = pack.applicable === true
+  // An available but inapplicable pack is retained ("stored"), never "ready for
+  // this race", and an old snapshot must not be shown as current for a changed
+  // course.
+  const usable = packAvailable && packApplicable
+  const currentLeg = usable ? formatLeg(legs[0], 0) : null
+  const remainingLegs = usable ? legs.map((leg, index) => formatLeg(leg, index)).filter(Boolean) : []
   const revision = pack.revision ?? null
-  const packStatus = packAvailable
-    ? `Race Pack ready · revision ${revision}${pack.ruleSetVersion ? ` · ${pack.ruleSetVersion}` : ''}`
-    : 'No Race Pack synced yet'
+  const rules = pack.ruleSetVersion ? ` · ${pack.ruleSetVersion}` : ''
+  const packStatus = !packAvailable
+    ? 'No Race Pack synced yet'
+    : !packApplicable
+      ? `Race Pack stored · revision ${revision}${rules} · does not match the selected course`
+      : `Race Pack ready · revision ${revision}${rules}`
 
   let warning = null
   let stale = false

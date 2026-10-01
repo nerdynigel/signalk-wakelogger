@@ -2,7 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chartSources, courseBounds, coversBounds } from '../../webapp/chart-sources.mjs'
 import { raceProgress } from '../../webapp/course-progress.mjs'
-import { CourseProgressionService } from '../../webapp/api-client.mjs'
+import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSignalKError } from '../../webapp/api-client.mjs'
+import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
+import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
+import { instrumentReadings, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
+import { trackingPresentation } from '../../webapp/tracking-controls.mjs'
+import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
 const point = (latitude, longitude) => ({ latitude, longitude })
@@ -105,7 +110,7 @@ test('native route changed at another station prevents stale commands', async ()
   await assert.rejects(service.advance('/resources/routes/owned'), /Another course/)
   await assert.rejects(service.setPoint(1, 3, '/resources/routes/owned'), /Another course/)
   assert.equal(requests.length, 2)
-  assert.ok(requests.every(([url, options]) => url.endsWith('/navigation/course') && !options))
+  assert.ok(requests.every(([url, options]) => url.endsWith('/navigation/course') && options?.operation === 'read-active-course'))
 })
 
 test('proxied WMS and WMTS use the native XYZ endpoint', () => {
@@ -225,4 +230,319 @@ test('onboard race plan surfaces observation fallback and forecast expiry warnin
   assert.equal(view.observationsReady, false)
   assert.equal(view.remainingLegs[1].outOfRange, true)
   assert.equal(view.remainingLegs[1].summary, null)
+})
+
+test('Signal K failures preserve bounded, credentialed-safe diagnostics', () => {
+  assert.match(boundedDetail('Bearer abc.def.ghi token=secret-value\nsecond line'), /^\[redacted\] \[redacted\] second line$/)
+  assert.equal(boundedDetail('x'.repeat(5000)).length, 2000)
+  const parsed = parseSignalKError(409, JSON.stringify({ errorCode: 'course_conflict', message: 'Another application owns the active route' }))
+  assert.equal(parsed.errorCode, 'course_conflict')
+  assert.equal(parsed.detail, 'Another application owns the active route')
+  const codeOnly = parseSignalKError(409, JSON.stringify({ errorCode: 'native_route_conflict' }))
+  assert.equal(codeOnly.errorCode, 'native_route_conflict')
+  const error = new SignalKRequestError({ operation: 'next-point', method: 'PUT', path: '/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', status: 409, errorCode: 'native_route_conflict', detail: 'Bearer zzz token=abc rejected' })
+  assert.equal(error.status, 409)
+  assert.equal(error.operation, 'next-point')
+  const diagnostic = error.toDiagnostic()
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['detail', 'errorCode', 'method', 'operation', 'path', 'status'])
+  assert.ok(!JSON.stringify(diagnostic).includes('zzz'))
+  assert.ok(!JSON.stringify(diagnostic).includes('abc rejected'))
+  assert.match(new SignalKRequestError({ status: 403, operation: 'set-point' }).message, /Sign in to Signal K/)
+  assert.match(new SignalKRequestError({ status: 500, operation: 'set-point', detail: 'boom' }).message, /Signal K request failed \(500\): boom/)
+})
+
+test('navigation failures are human-readable and name the target mark', () => {
+  const advance = new SignalKRequestError({ operation: 'next-point', method: 'PUT', path: '/x', status: 409, detail: 'active route update rejected' })
+  assert.equal(describeNavigationFailure(advance, { markName: 'Eastern mark' }), 'Could not advance to the next course point to Eastern mark — Signal K rejected the active route update: active route update rejected.')
+  assert.match(describeNavigationFailure(new SignalKRequestError({ operation: 'set-point', status: 409 }), { markNumber: 3 }), /Could not set the active course point to Mark 3/)
+  assert.match(describeNavigationFailure(new SignalKRequestError({ operation: 'activate-course', status: 409, detail: 'conflict' })), /Could not activate the Wake Logger course — Signal K rejected the course activation: conflict\./)
+  assert.match(describeNavigationFailure(new SignalKRequestError({ status: 401, operation: 'next-point' })), /Sign in to Signal K/)
+})
+
+test('offline readiness presentation drives the pre-switch warning', () => {
+  const notReady = offlineReadinessPresentation({ ready: false, missing: ['the expected Wake Logger route is not active', 'the stored Race Pack does not match the selected course'], detail: 'Missing: ...' })
+  assert.equal(notReady.ready, false)
+  assert.equal(notReady.label, 'Offline race not ready')
+  const warning = localOnlyWarning({ ready: false, missing: notReady.missing })
+  assert.match(warning, /Offline race not ready/)
+  assert.match(warning, /Race Pack does not match/)
+  assert.equal(localOnlyWarning({ ready: true, missing: [] }), null)
+  assert.equal(offlineReadinessPresentation(null).known, false)
+})
+
+test('instruments present RFC 3339 local measurements with references and units', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const view = instrumentReadings({
+    now,
+    navigation: {
+      position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: ts(3000) },
+      speedOverGround: { value: 3.0, timestamp: ts(1000) },
+      courseOverGroundTrue: { value: Math.PI / 2, timestamp: ts(1000) },
+      headingTrue: { value: Math.PI, timestamp: ts(1000) },
+      speedThroughWater: { value: 2.8, timestamp: ts(1000) }
+    },
+    environment: {
+      depth: { belowTransducer: { value: 12.5, timestamp: ts(1000) } },
+      wind: { speedApparent: { value: 8, timestamp: ts(1000) }, angleApparent: { value: 0.5, timestamp: ts(1000) } }
+    }
+  })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId.position.freshness, 'fresh')
+  assert.match(byId.position.formatted, /27\.4000° S, 153\.1700° E/)
+  assert.equal(byId.sog.value.toFixed(1), '5.8')
+  assert.equal(byId.cog.value.toFixed(0), '90')
+  assert.equal(byId.heading.reference, 'true')
+  assert.equal(byId.depth.reference, 'below transducer')
+  assert.equal(byId.awa.reference, 'apparent')
+  assert.equal(byId.tws.source, 'derived')
+  assert.equal(byId.twd.source, 'derived')
+  assert.equal(byId['vmg-wind-ground'].reference, 'wind · ground')
+  assert.equal(formatReading(byId.sog), '5.8 kn')
+})
+
+test('freshness is per measurement and independent sensors survive stale GPS', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const view = instrumentReadings({
+    now,
+    staleSeconds: 30,
+    navigation: { position: { value: { latitude: -27, longitude: 153 }, timestamp: ts(400_000) } },
+    environment: { wind: { speedTrue: { value: 7, timestamp: ts(1000) }, directionTrue: { value: 1, timestamp: ts(1000) } }, depth: { belowKeel: { value: 9, timestamp: ts(1000) } } }
+  })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId.position.freshness, 'stale')
+  assert.equal(byId.position.available, false)
+  assert.equal(byId.position.ageSeconds, 400)
+  // Loss of GPS must not blank valid wind or depth.
+  assert.equal(byId.tws.available, true)
+  assert.equal(byId.twd.available, true)
+  assert.equal(byId.depth.available, true)
+  assert.equal(byId.depth.reference, 'below keel')
+  // Only the stale measurement is marked stale.
+  assert.equal(view.readings.filter((reading) => reading.freshness === 'stale').length, 1)
+})
+
+test('instruments never fabricate wind; missing, invalid and future timestamps are unknown', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const bare = instrumentReadings({ now, environment: { depth: { belowSurface: { value: 4, timestamp: ts() } } } })
+  const b = Object.fromEntries(bare.readings.map((reading) => [reading.id, reading]))
+  assert.equal(b.tws.value, null)
+  assert.equal(b.tws.freshness, 'missing')
+  assert.equal(b.sog.value, null)
+  assert.match(formatReading(b.tws), /Unavailable/)
+
+  // Apparent wind alone, with no boat reference, cannot be turned into true wind.
+  const apparentOnly = instrumentReadings({ now, environment: { wind: { speedApparent: { value: 10, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
+  const ao = Object.fromEntries(apparentOnly.readings.map((reading) => [reading.id, reading]))
+  assert.equal(ao.aws.available, true)
+  assert.equal(ao.tws.value, null)
+
+  assert.equal(instrumentReadings({ now, navigation: { speedOverGround: { value: 3 } } }).readings.find((r) => r.id === 'sog').freshness, 'unknown')
+  assert.equal(instrumentReadings({ now, navigation: { speedOverGround: { value: 3, timestamp: 'not-a-time' } } }).readings.find((r) => r.id === 'sog').freshness, 'unknown')
+  assert.equal(instrumentReadings({ now, navigation: { speedOverGround: { value: 3, timestamp: new Date(now + 60_000).toISOString() } } }).readings.find((r) => r.id === 'sog').freshness, 'unknown')
+})
+
+test('derived wind requires fresh reference-compatible inputs with bounded skew', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const source = (view, id) => view.readings.find((reading) => reading.id === id)
+
+  // Fresh AWS but stale AWA: not usable.
+  const staleAwa = instrumentReadings({ now, navigation: { speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts() } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts(120_000) } } } })
+  assert.equal(source(staleAwa, 'tws').value, null)
+
+  // Fresh apparent but stale motion/heading: not usable.
+  const staleMotion = instrumentReadings({ now, navigation: { speedOverGround: { value: 3, timestamp: ts(120_000) }, courseOverGroundTrue: { value: 1, timestamp: ts(120_000) }, headingTrue: { value: 1, timestamp: ts(120_000) } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(staleMotion, 'tws').value, null)
+
+  // Fresh inputs but time skew beyond the policy: not usable.
+  const skewed = instrumentReadings({ now, skewSeconds: 5, navigation: { speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts(60_000) } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts(60_000) } } } })
+  assert.equal(source(skewed, 'tws').value, null)
+
+  // A magnetic-only heading is never treated as true.
+  const magnetic = instrumentReadings({ now, navigation: { speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingMagnetic: { value: 1, timestamp: ts() } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(magnetic, 'heading').reference, 'magnetic')
+  assert.equal(source(magnetic, 'tws').source, 'direct')
+  assert.equal(source(magnetic, 'tws').value, null)
+})
+
+test('every derivation input participates in freshness and skew', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const source = (view, id) => view.readings.find((reading) => reading.id === id)
+  const ground = (overrides = {}) => {
+    const nav = {
+      speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: 1, timestamp: ts() },
+      headingTrue: { value: 1, timestamp: ts() }
+    }
+    const wind = { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } }
+    for (const [path, value] of Object.entries(overrides.nav ?? {})) nav[path] = value
+    for (const [path, value] of Object.entries(overrides.wind ?? {})) wind[path] = value
+    return instrumentReadings({ now, skewSeconds: overrides.skewSeconds ?? 10, navigation: nav, environment: { wind } })
+  }
+
+  // SOG 25 s old while AWS/AWA/heading/COG are current. It is within the 30 s
+  // freshness limit, so only the 10 s skew policy blocks the derivation; a wider
+  // skew policy accepts it, proving the distinction.
+  const oldSog = { speedOverGround: { value: 3, timestamp: ts(25_000) } }
+  assert.equal(source(ground({ nav: oldSog }), 'tws').value, null)
+  assert.notEqual(source(ground({ nav: oldSog, skewSeconds: 30 }), 'tws').value, null)
+
+  // Water-referenced STW 25 s old with otherwise current inputs.
+  const water = (stwTimestamp) => instrumentReadings({ now, skewSeconds: 10, navigation: { headingTrue: { value: 1, timestamp: ts() }, speedThroughWater: { value: 2.5, timestamp: stwTimestamp } }, environment: { wind: { speedApparent: { value: 9, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(water(ts(25_000)), 'tws').value, null)
+  assert.notEqual(source(water(ts()), 'tws').value, null)
+
+  // Heading 25 s old when converting AWA to an absolute direction.
+  const oldHeading = { headingTrue: { value: 1, timestamp: ts(25_000) } }
+  assert.equal(source(ground({ nav: oldHeading }), 'tws').value, null)
+
+  // Each required input independently stale (older than the freshness limit).
+  for (const overrides of [
+    { nav: { speedOverGround: { value: 3, timestamp: ts(40_000) } } },
+    { nav: { courseOverGroundTrue: { value: 1, timestamp: ts(40_000) } } },
+    { nav: { headingTrue: { value: 1, timestamp: ts(40_000) } } },
+    { wind: { speedApparent: { value: 9, timestamp: ts(40_000) } } },
+    { wind: { angleApparent: { value: 0.5, timestamp: ts(40_000) } } }
+  ]) assert.equal(source(ground(overrides), 'tws').value, null)
+
+  // An unknown or future timestamp on any required input invalidates it.
+  assert.equal(source(ground({ nav: { speedOverGround: { value: 3 } } }), 'tws').value, null)
+  assert.equal(source(ground({ wind: { angleApparent: { value: 0.5, timestamp: new Date(now + 60_000).toISOString() } } }), 'tws').value, null)
+
+  // VMG obeys the same discipline: a stale SOG blocks ground VMG.
+  const vmgInputs = { speedOverGround: { value: 3, timestamp: ts(25_000) }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts() } }
+  const vmgView = instrumentReadings({ now, skewSeconds: 10, navigation: vmgInputs, environment: { wind: { speedTrue: { value: 8, timestamp: ts() }, directionTrue: { value: 0.5, timestamp: ts() } } } })
+  assert.equal(source(vmgView, 'vmg-wind-ground'), undefined)
+})
+
+test('true wind angle references and wind-relative VMG bases are explicit', () => {
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = (offsetMs = 0) => new Date(now - offsetMs).toISOString()
+  const view = instrumentReadings({
+    now,
+    navigation: { speedOverGround: { value: 3, timestamp: ts() }, courseOverGroundTrue: { value: Math.PI / 2, timestamp: ts() }, headingTrue: { value: Math.PI, timestamp: ts() }, speedThroughWater: { value: 2.5, timestamp: ts() } },
+    environment: { wind: { speedTrue: { value: 7, timestamp: ts() }, directionTrue: { value: 0, timestamp: ts() }, angleTrueGround: { value: 1, timestamp: ts() }, angleTrueWater: { value: 1.2, timestamp: ts() } } }
+  })
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  assert.equal(byId['twa-ground'].reference, 'ground')
+  assert.equal(byId['twa-water'].reference, 'water')
+  assert.equal(byId['vmg-wind-ground'].basis, 'ground')
+  assert.equal(byId['vmg-wind-water'].basis, 'water')
+})
+
+test('durable track helpers order, never drop the departure, and request re-bootstrap', () => {
+  const points = trackCoordinates([{ sequence: 3, latitude: -27.2, longitude: 153.2 }, { sequence: 1, latitude: -27.0, longitude: 153.0 }, { sequence: 2, latitude: NaN, longitude: 1 }])
+  assert.deepEqual(points, [[-27, 153], [-27.2, 153.2]])
+  let track = appendTrackPoint([[1, 2]], [1, 2])
+  assert.deepEqual(track, [[1, 2]])
+  track = appendTrackPoint(track, [3, 4])
+  assert.deepEqual(track, [[1, 2], [3, 4]])
+  // At the cap the oldest point is preserved: append refuses and the caller re-bootstraps.
+  const full = [[1, 2], [3, 4], [5, 6]]
+  assert.deepEqual(appendTrackPoint(full, [7, 8], 3), full)
+  // A server bootstrap keeps the departure (no slice(-maxPoints)).
+  assert.deepEqual(bootstrapTrack({ points: [{ sequence: 2, latitude: 2, longitude: 2 }, { sequence: 1, latitude: 1, longitude: 1 }] }), [[1, 1], [2, 2]])
+  assert.deepEqual(bootstrapTrack(null), [])
+  assert.equal(needsRebootstrap({ trackLength: 0, fixesSinceBootstrap: 0 }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 10 }), false)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 250 }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, recordingChanged: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, resumed: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, gapDetected: true }), true)
+  // An unresolved archive history (empty, pending, failed, stale) reconciles on
+  // its bounded retry schedule rather than being treated as complete history.
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true }), false)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyEmpty: true, retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'empty', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'pending', retryDue: false }), false)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'pending', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'failed', retryDue: true }), true)
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'stale', retryDue: true }), true)
+  // A loaded recording only re-bootstraps when the tail has grown materially.
+  assert.equal(needsRebootstrap({ trackLength: 100, fixesSinceBootstrap: 1, historyState: 'loaded' }), false)
+})
+
+test('full-track fitting covers the whole passage and defers to manual viewport control', () => {
+  assert.equal(trackBounds([]), null)
+  assert.equal(trackBounds(null), null)
+  assert.deepEqual(trackBounds([[1, 2], [3, 5], [2, 4]]), { south: 1, west: 2, north: 3, east: 5 })
+  // Non-finite points are ignored rather than corrupting the bounds.
+  assert.deepEqual(trackBounds([[1, 2], [Number.NaN, 9]]), { south: 1, west: 2, north: 1, east: 2 })
+  // A track fit happens on first load and on a new passage, and never fights a
+  // user who has deliberately moved the viewport.
+  assert.equal(shouldAutoFitTrack({ hasTrack: false }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true }), true)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, userControlled: true }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, recordingChanged: true, userControlled: true }), true)
+  // An explicit course/follow choice is respected until the track is chosen.
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'auto' }), true)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'course' }), false)
+  assert.equal(shouldAutoFitTrack({ hasTrack: true, mode: 'manual' }), false)
+})
+
+test('lifetime retention loss is never presented as current-trip loss', () => {
+  const view = trackingPresentation({ paired: true, recording: true, uploadMode: 'automatic', connectionState: 'online', lifetimeDroppedCount: 9830, cohortDroppedSamples: 0, queue: { messageCount: 4 } })
+  assert.equal(view.loss, null)
+  assert.equal(view.lifetimeDroppedCount, 9830)
+  assert.doesNotMatch(view.description, /9830/)
+  const pressure = trackingPresentation({ paired: true, recording: true, uploadMode: 'automatic', lifetimeDroppedCount: 9830, cohortDroppedSamples: 12, cohortProgressKnown: false, queue: { messageCount: 4 } })
+  assert.match(pressure.description, /12 samples in this upload were discarded/)
+  assert.match(pressure.description, /not complete/)
+  assert.equal(pressure.loss.progressKnown, false)
+})
+
+test('an available but inapplicable pack is stored, never shown as current', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const snapshot = { generatedAt: Date.now(), plan: { legs: [
+    { sequence: 1, to: { name: 'Old mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45 }, plan: { summary: 'Old recommendation' } }
+  ] } }
+  const view = racePlanPresentation({ uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: true, revision: 4, applicable: false, ruleSetVersion: 'race_plan_dynamic_v1' }, latestSnapshot: snapshot })
+  assert.equal(view.packAvailable, true)
+  assert.equal(view.packApplicable, false)
+  assert.match(view.packStatus, /stored/)
+  assert.match(view.packStatus, /does not match the selected course/)
+  assert.equal(view.currentLeg, null)
+  assert.deepEqual(view.remainingLegs, [])
+  assert.match(view.warning, /does not match the selected Wake Logger course/)
+})
+
+test('request deadlines stay active through the response body and recover', async () => {
+  const { SignalKClient } = await import('../../webapp/api-client.mjs')
+  const originalFetch = globalThis.fetch
+  const hadSession = 'sessionStorage' in globalThis
+  const originalSession = globalThis.sessionStorage
+  globalThis.sessionStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+  try {
+    // No headers: fetch never settles.
+    globalThis.fetch = () => new Promise(() => {})
+    const client = new SignalKClient()
+    await assert.rejects(client.request('/x', { operation: 'read-navigation', timeoutMs: 40 }), (error) => error.status === 504 && error.errorCode === 'timeout')
+
+    // Headers received but the body stalls.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // Partial JSON followed by a stall.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"a":')) } }), { status: 200 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // A stalled error body is bounded and interrupted by the deadline.
+    globalThis.fetch = () => Promise.resolve(new Response(new ReadableStream({ start() {} }), { status: 500 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 40 }), (error) => error.status === 504)
+
+    // Malformed JSON that completes rejects promptly (a parse error, not a hang).
+    globalThis.fetch = () => Promise.resolve(new Response('{not json', { status: 200 }))
+    await assert.rejects(client.request('/x', { timeoutMs: 1000 }), (error) => error?.errorCode !== 'timeout')
+
+    // The next polling cycle recovers normally.
+    globalThis.fetch = () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    assert.deepEqual(await client.request('/x', { timeoutMs: 1000 }), { ok: true })
+  } finally {
+    globalThis.fetch = originalFetch
+    if (hadSession) globalThis.sessionStorage = originalSession
+    else delete globalThis.sessionStorage
+  }
 })

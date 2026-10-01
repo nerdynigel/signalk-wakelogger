@@ -2,6 +2,59 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [Unreleased] - 2026-09-28
+
+### A new recording never shows the previous trip
+
+- If a fresh recording starts (or the boat records before a browser connects), the onboard map no longer treats a browser-drawn tail as the whole trip: an empty or failed archive read is reconciled on the next poll, so the full recovered track appears promptly instead of after hundreds of fixes.
+- The map keeps an explicit viewport intent. Fullscreen, rotation, resizing and course changes no longer re-frame the map or drop the selected recording, the archive identity is guarded so a delayed response for a previous recording cannot appear, and a new recording's positions are never appended to the recording still on screen. Fit course, Fit track and Centre on vessel stay separate.
+
+### See the whole trip from wherever you open the map
+
+- Opening the onboard map part-way through a passage (or reloading, or connecting a second device) now shows the recorded track from the real departure through the latest position, sourced from the durable onboard archive rather than from page-open time. This works with no internet and with Live tracking off, and it survives a plugin restart without its graceful stop path.
+- A labelled **Fit track** control fits the whole sailed track, independent of any course, and the map automatically fits the full track on first load unless you have already panned or zoomed. Fit course and Centre on vessel stay separate, so course overlays never hide the sailed history.
+
+### Completed trips stay on the map after upload
+
+- The onboard map archive keeps its own recording index, independent of the upload queue. A completed trip remains available on the map after its telemetry has been uploaded and acknowledged and after the pending-upload records are removed, and it survives a reload or plugin restart. Starting a new trip never mixes it with the previous one.
+- The archive repairs an interrupted write when it next opens or appends: a partial header is rewritten, a partial final record is trimmed, and a corrupt file is quarantined, so records stay aligned. Writes are ordered and bounded, and pending writes are flushed on orderly shutdown. Power-loss durability is not claimed per sample; the last flushed data is retained and the tail is repaired.
+
+### Navigation can only be advanced by the controlling device
+
+- Taking navigation control returns a generation. A permit from the plugin is an authorisation, not an application: `already_applied`/`superseded` are reported only from observed native state, the actual pending detection is validated, and the detection is accepted only after a confirm step re-reads native state. A stale point, changed course, expired/handed-over controller, or missing detection is rejected, and a merely permitted-but-unexecuted attempt stays pending and retryable.
+- Automatic application is disabled in this candidate, because Signal K 2.31 has no plugin point-index API or compare-and-set to fence a client-performed native write. Detections are offered for explicit acceptance by the controlling device. Each browser tab has its own identity, so a newly opened tab is a viewer until someone deliberately takes control.
+
+### Trustworthy instrument values
+
+- Every input used by a derived wind or VMG value — including speed over ground/through water and the heading used to convert an apparent angle — now participates in the freshness and time-skew bound, so a stale input cannot be hidden by a fresh one.
+- Signal K request deadlines now stay active while the response body is being read, so a stalled body times out instead of hanging, and the next poll recovers.
+
+### A broken source clock can no longer hide the trip
+
+- A source time more than 30 days before the delta was delivered is treated as a broken clock and replaced by receipt time, instead of being queued and later rejected by Wake Logger as outside the vessel's entitled capture window (for example a GPS reporting a stale 2014 default date).
+- The database outbox now declares sequences skipped by a seed or reset as dropped when it opens, matching the file outbox, so the cloud's contiguous acknowledgement can advance and later trips are not left waiting for history.
+
+## [Unreleased] - 2026-09-27
+
+### Offline race readiness you can trust
+
+- One clear **Offline race ready** status now checks that the selected course is applied, the expected Signal K route is active, and a Race Pack that matches the course (id, race plan and course definition) is prepared with supported rules and a current forecast. Changing the course immediately invalidates readiness for the old pack, even though that pack is kept for history.
+- Switching Live tracking off stays possible for radio silence, but if readiness is incomplete the app now shows a prominent pre-switch warning that names exactly what is missing instead of implying onboard sail planning will work.
+
+### Clearer navigation failures
+
+- Failed Signal K requests now keep the operation, method, path, HTTP status and a bounded, credential-safe reason. Advancing, setting or activating a course shows a human-readable message such as "Could not advance to the next course point to Mark 3 — Signal K rejected the active route update: <reason>", and the bounded detail is written to the plugin log. Tokens and passwords are never logged or displayed.
+
+### A track that survives reload
+
+- The onboard map now rebuilds the current recording's track from an independent durable onboard archive on open or reload, rather than starting at page-open time and rather than depending on whether telemetry has already been uploaded. New fixes append incrementally; long trips are decimated for display without changing the recording; and the complete geometry survives browser reload, page-resume and plugin restart with no Wake Logger/cloud connection. A tail-only cloud trip is marked "Reconstructing trip · N% history received" until its history converges.
+
+### Standalone vessel instruments
+
+- A new **Instruments** tab is the default when no course is selected. It reads position, speed and course over ground, heading (true or magnetic), speed through water, depth (with its reference), and apparent and true wind directly from the local Signal K server.
+- Instruments are independent of the course, Race Pack, recording and Wake Logger connection: a failed course request, a mismatched pack or Live tracking off does not stop them. Freshness is tracked per measurement, stale and missing values are marked, and no wind is invented from forecast data. Wind-relative VMG is labelled as such.
+- "No course selected" is a normal state: the instrument view stays clean, and course controls and race warnings remain in the race panel.
+
 ## [0.2.0-beta.6] - 2026-09-26
 
 ### Onboard race planning matches Wake Logger exactly

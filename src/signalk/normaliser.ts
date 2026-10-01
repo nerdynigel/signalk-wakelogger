@@ -6,6 +6,11 @@ const MS_PER_SECOND = 1000
 const MPS_TO_KNOTS = 1.9438444924406
 const EARLIEST_SOURCE_TIME = Date.UTC(2000, 0, 1)
 const MAX_FUTURE_MS = 5 * 60 * MS_PER_SECOND
+// A live delta is produced moments before it is delivered. A source clock that
+// reports a capture time older than this is broken (for example a GPS booting
+// with a stale default date); trusting it would make the cloud reject every
+// affected sample as outside the vessel's entitled capture window.
+const MAX_SOURCE_AGE_MS = 30 * 24 * 60 * 60 * MS_PER_SECOND
 
 interface PositionValue { latitude: number; longitude: number }
 interface TimedValue<T> { value: T; sourceAt?: number; receivedAt: number }
@@ -88,7 +93,9 @@ export class TelemetryNormaliser {
 function parseSourceTime(value: string | undefined, receivedAt: number): number | undefined {
   if (!value) return undefined
   const parsed = Date.parse(value)
-  return Number.isFinite(parsed) && parsed >= EARLIEST_SOURCE_TIME && parsed <= receivedAt + MAX_FUTURE_MS ? parsed : undefined
+  return Number.isFinite(parsed) && parsed >= Math.max(EARLIEST_SOURCE_TIME, receivedAt - MAX_SOURCE_AGE_MS) && parsed <= receivedAt + MAX_FUTURE_MS
+    ? parsed
+    : undefined
 }
 
 function isSupportedPath(path: string): path is SignalKPath {
