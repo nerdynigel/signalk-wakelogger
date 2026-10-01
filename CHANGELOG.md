@@ -2,7 +2,7 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
-## [Unreleased] - 2026-09-28
+## [0.2.0-beta.7] - 2026-10-01
 
 ### A new recording never shows the previous trip
 
