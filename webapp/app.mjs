@@ -330,10 +330,12 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   const guides = vesselGuideBearings(readings, leg)
   const element = $('map')
   element.dataset.headingGuideBearing = guides.heading === null ? '' : String(guides.heading)
-  element.dataset.oppositeTackBearing = guides.oppositeTack === null ? '' : String(guides.oppositeTack)
-  element.dataset.apparentWindFrom = guides.apparentFrom === null ? '' : String(guides.apparentFrom)
+  element.dataset.oppositeTackBearing = guides.kind === 'tack' ? String(guides.maneuverBearing) : ''
+  element.dataset.oppositeGybeBearing = guides.kind === 'gybe' ? String(guides.maneuverBearing) : ''
+  element.dataset.maneuverGuideKind = guides.kind || ''
+  element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
-  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.oppositeTack === null ? '' : ` · 30° apparent-wind tack guide ${Math.round(guides.oppositeTack)}° true; apparent wind changes after a tack`}`)
+  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated opposite ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
   if (guides.heading === null) return
   const location = L.latLng(guides.position.latitude, guides.position.longitude)
   const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
@@ -347,10 +349,11 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
   const draw = (bearing, options, label) => {
     const end = projectBearing(origin, bearing, distance)
-    L.polyline([start, [end.latitude, end.longitude]], options).bindTooltip(label).addTo(guideLayer)
+    const longitude = end.longitude + Math.round((origin.longitude - end.longitude) / 360) * 360
+    L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer)
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
-  if (guides.oppositeTack !== null) draw(guides.oppositeTack, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: 'opposite-tack-guide' }, `30° apparent-wind tack guide · ${Math.round(guides.oppositeTack)}° true · apparent wind changes after a tack`)
+  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated opposite ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
 }
 
 function instrumentTile(reading) {

@@ -1,4 +1,6 @@
-// Compass bearings are true; apparent wind angle is signed relative to the bow.
+// Mirrored maneuver estimates use ground-relative true wind derived from fresh
+// apparent wind and boat motion. They are not tide/leeway-corrected laylines.
+import { deriveTrueWindSample } from './wind-derivation.mjs'
 const radians = value => value * Math.PI / 180
 const degrees = value => value * 180 / Math.PI
 const normalize = value => ((value % 360) + 360) % 360
@@ -21,22 +23,28 @@ export function bearingBetween(from, to) {
 }
 
 export function vesselGuideBearings(readings, leg = null) {
-  const position = readings.find(reading => reading.id === 'position')
-  const heading = readings.find(reading => reading.id === 'heading')
-  const awa = readings.find(reading => reading.id === 'awa')
+  const byId = id => readings.find(reading => reading.id === id)
+  const position = byId('position'), heading = byId('heading'), awa = byId('awa')
+  const aws = byId('aws'), sog = byId('sog'), cog = byId('cog')
   const coordinate = position?.value
   const validPosition = coordinate && Number.isFinite(coordinate.latitude) && Math.abs(coordinate.latitude) <= 90
     && Number.isFinite(coordinate.longitude) && Math.abs(coordinate.longitude) <= 180
   const freshTogether = inputs => inputs.every(input => input?.freshness === 'fresh' && Number.isFinite(input.timestamp))
     && Math.max(...inputs.map(input => input.timestamp)) - Math.min(...inputs.map(input => input.timestamp)) <= 10000
+  const empty = { position: null, heading: null, maneuverBearing: null, kind: null, trueWindFrom: null, trueWindSpeed: null }
   if (!validPosition || heading?.reference !== 'true' || !Number.isFinite(heading.value)
-    || !freshTogether([position, heading])) return { position: null, heading: null, oppositeTack: null, apparentFrom: null }
-  const result = { position: coordinate, heading: normalize(heading.value), oppositeTack: null, apparentFrom: null }
-  if (!Number.isFinite(awa?.value) || !freshTogether([position, heading, awa])) return result
-  const angle = signed(awa.value), absolute = Math.abs(angle)
-  if (absolute < 20 || absolute >= 60) return result
-  const apparentFrom = normalize(result.heading + angle)
+    || !freshTogether([position, heading])) return empty
+  const result = { ...empty, position: coordinate, heading: normalize(heading.value) }
+  if (![awa, aws, sog, cog].every(input => Number.isFinite(input?.value))
+    || cog.reference !== 'true' || !freshTogether([position, heading, awa, aws, sog, cog])) return result
+  const wind = deriveTrueWindSample({ awsKnots: aws.value, awaDeg: awa.value, headingDeg: heading.value, sogKnots: sog.value, cogDeg: cog.value })
+  if (!wind) return result
+  const twa = Math.abs(signed(wind.twdDeg - result.heading)), apparentAngle = Math.abs(signed(awa.value))
+  const kind = twa > 0 && twa < 90 && apparentAngle >= 20 && apparentAngle < 60 ? 'tack'
+    : twa > 100 && twa < 175 ? 'gybe' : null
+  if (!kind) return result
   const legBearing = leg?.from && leg?.to ? bearingBetween(leg.from, leg.to) : null
-  if (legBearing !== null && Math.abs(signed(apparentFrom - legBearing)) >= 60) return result
-  return { ...result, apparentFrom, oppositeTack: normalize(apparentFrom + Math.sign(angle) * 30) }
+  const legAngle = legBearing === null ? null : Math.abs(signed(wind.twdDeg - legBearing))
+  if (legAngle !== null && (kind === 'tack' ? legAngle >= 90 : legAngle <= 90)) return result
+  return { ...result, kind, trueWindFrom: wind.twdDeg, trueWindSpeed: wind.twsKnots, maneuverBearing: normalize(2 * wind.twdDeg - result.heading) }
 }

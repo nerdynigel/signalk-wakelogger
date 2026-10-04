@@ -566,41 +566,72 @@ test('pack/course identity ordering uses timestamps, never their unrelated revis
 })
 
 
-test('apparent-wind opposite-tack bearings use fresh true heading and handle both sides of north', async () => {
+test('mirrored tack and gybe estimates derive true wind from fresh apparent wind and ground motion', async () => {
   const { vesselGuideBearings, projectBearing, bearingBetween } = await import('../../webapp/vessel-guides.mjs')
   const timestamp = Date.now()
-  const inputs = (heading = 330, awa = 30) => [
+  const inputs = (heading = 0, awa = 30, aws = 10, sog = 5) => [
     { id: 'position', value: { latitude: -27, longitude: 153 }, freshness: 'fresh', timestamp },
     { id: 'heading', value: heading, reference: 'true', freshness: 'fresh', timestamp },
-    { id: 'awa', value: awa, freshness: 'fresh', timestamp }
+    { id: 'awa', value: awa, freshness: 'fresh', timestamp },
+    { id: 'aws', value: aws, freshness: 'fresh', timestamp },
+    { id: 'sog', value: sog, freshness: 'fresh', timestamp },
+    { id: 'cog', value: heading, reference: 'true', freshness: 'fresh', timestamp }
   ]
-  const starboard = vesselGuideBearings(inputs())
-  assert.equal(starboard.heading, 330)
-  assert.equal(starboard.apparentFrom, 0)
-  assert.equal(starboard.oppositeTack, 30)
-  assert.equal(vesselGuideBearings(inputs(30, -30)).oppositeTack, 330)
-  assert.equal(vesselGuideBearings(inputs(350, 30)).oppositeTack, 50)
-  assert.equal(vesselGuideBearings(inputs(10, -30)).oppositeTack, 310)
-  const origin = { latitude: -27, longitude: 153 }
-  const endpoint = projectBearing(origin, 330, 1852)
-  assert.ok(endpoint.latitude > origin.latitude && endpoint.longitude < origin.longitude)
-  assert.ok(Math.abs(bearingBetween(origin, endpoint) - 330) < 1e-8)
-  const dateline = projectBearing({ latitude: 0, longitude: 179.999 }, 90, 1852)
-  assert.ok(dateline.longitude < 0 && dateline.longitude >= -180)
-  for (const angle of [0, 19.9, 60, 90, 170]) assert.equal(vesselGuideBearings(inputs(330, angle)).oppositeTack, null)
-  assert.notEqual(vesselGuideBearings(inputs(330, 20)).oppositeTack, null)
+  const upwind = vesselGuideBearings(inputs())
+  assert.equal(upwind.heading, 0)
+  assert.equal(upwind.kind, 'tack')
+  assert.ok(Math.abs(upwind.trueWindFrom - 53.79397688699688) < 1e-8)
+  assert.ok(Math.abs(upwind.maneuverBearing - 107.58795377399376) < 1e-8)
+  assert.ok(Math.abs(vesselGuideBearings(inputs(330, 30)).maneuverBearing - 77.58795377399376) < 1e-8)
+  assert.ok(Math.abs(vesselGuideBearings(inputs(30, 330)).maneuverBearing - 282.41204622600624) < 1e-8)
+  assert.ok(Math.abs(vesselGuideBearings(inputs(0, 150)).maneuverBearing - 319.79218127796584) < 1e-8)
+  const drift = inputs(330, 30); drift[5].value = 0
+  assert.ok(Math.abs(vesselGuideBearings(drift).maneuverBearing - 30) < 1e-8)
+  const crossCourse = inputs(); crossCourse[5].value = 270
+  assert.ok(Math.abs(vesselGuideBearings(crossCourse).maneuverBearing - 98.21321070173819) < 1e-8)
+  const opposite = vesselGuideBearings(inputs(upwind.maneuverBearing, -30))
+  assert.ok(Math.abs(((opposite.maneuverBearing + 180) % 360) - 180) < 1e-8)
+  assert.equal(vesselGuideBearings(inputs(330, 30, 10, 0)).maneuverBearing, 30)
+  assert.equal(vesselGuideBearings(inputs(30, -30, 10, 0)).maneuverBearing, 330)
+  assert.equal(vesselGuideBearings(inputs(350, 30, 10, 0)).maneuverBearing, 50)
+  assert.equal(vesselGuideBearings(inputs(10, -30, 10, 0)).maneuverBearing, 310)
+  const knownTrueWind = (heading, twd = 0) => {
+    const radians = value => value * Math.PI / 180
+    const east = 10 * Math.sin(radians(twd)) + 5 * Math.sin(radians(heading))
+    const north = 10 * Math.cos(radians(twd)) + 5 * Math.cos(radians(heading))
+    return inputs(heading, ((Math.atan2(east, north) * 180 / Math.PI - heading + 540) % 360) - 180, Math.hypot(east, north))
+  }
+  const gybe = vesselGuideBearings(knownTrueWind(130))
+  assert.equal(gybe.kind, 'gybe')
+  assert.ok(Math.abs(gybe.maneuverBearing - 230) < 1e-8)
+  assert.ok(Math.abs(vesselGuideBearings(knownTrueWind(230)).maneuverBearing - 130) < 1e-8)
+  for (const heading of [90, 99, 176, 180]) assert.equal(vesselGuideBearings(knownTrueWind(heading)).maneuverBearing, null)
+  for (const angle of [0, 19.9, 60]) assert.equal(vesselGuideBearings(inputs(0, angle, 10, 0)).maneuverBearing, null)
   const stale = inputs(); stale[2].freshness = 'stale'
-  assert.equal(vesselGuideBearings(stale).heading, 330)
-  assert.equal(vesselGuideBearings(stale).oppositeTack, null)
-  const skewed = inputs(); skewed[2].timestamp -= 10001
-  assert.equal(vesselGuideBearings(skewed).oppositeTack, null)
+  assert.equal(vesselGuideBearings(stale).heading, 0)
+  assert.equal(vesselGuideBearings(stale).maneuverBearing, null)
+  const skewed = inputs(); skewed[4].timestamp -= 10001
+  assert.equal(vesselGuideBearings(skewed).maneuverBearing, null)
+  for (const missing of ['awa', 'aws', 'sog', 'cog']) {
+    const result = vesselGuideBearings(inputs().filter(input => input.id !== missing))
+    assert.equal(result.heading, 0)
+    assert.equal(result.maneuverBearing, null)
+  }
   const magnetic = inputs(); magnetic[1].reference = 'magnetic'
   assert.equal(vesselGuideBearings(magnetic).heading, null)
   assert.equal(vesselGuideBearings(inputs().filter(input => input.id !== 'heading')).heading, null)
   const unknown = inputs(); unknown[0].freshness = 'unknown'
   assert.equal(vesselGuideBearings(unknown).heading, null)
+  const origin = { latitude: -27, longitude: 153 }
   const downwindLeg = { from: origin, to: { latitude: -27.1, longitude: 153 } }
-  assert.equal(vesselGuideBearings(inputs(), downwindLeg).oppositeTack, null)
   const upwindLeg = { from: origin, to: { latitude: -26.9, longitude: 153 } }
-  assert.equal(vesselGuideBearings(inputs(), upwindLeg).oppositeTack, 30)
+  assert.equal(vesselGuideBearings(inputs(), downwindLeg).maneuverBearing, null)
+  assert.equal(vesselGuideBearings(knownTrueWind(130), upwindLeg).maneuverBearing, null)
+  assert.equal(vesselGuideBearings(inputs(), upwindLeg).kind, 'tack')
+  assert.equal(vesselGuideBearings(knownTrueWind(130), downwindLeg).kind, 'gybe')
+  const endpoint = projectBearing(origin, 330, 1852)
+  assert.ok(endpoint.latitude > origin.latitude && endpoint.longitude < origin.longitude)
+  assert.ok(Math.abs(bearingBetween(origin, endpoint) - 330) < 1e-8)
+  const dateline = projectBearing({ latitude: 0, longitude: 179.999 }, 90, 1852)
+  assert.ok(dateline.longitude < 0 && dateline.longitude >= -180)
 })
