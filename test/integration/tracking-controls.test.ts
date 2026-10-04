@@ -5,6 +5,7 @@ import mqtt from 'mqtt'
 import { afterEach, expect, it, vi } from 'vitest'
 import pluginConstructor from '../../src/index'
 import { CredentialStore } from '../../src/pairing/credentials'
+import { RecordingStore } from '../../src/trips/recording-store'
 import { WakeLoggerTransport } from '../../src/transport/mqtt-client'
 import { FileOutbox } from '../../src/outbox/file-outbox'
 const directories: string[] = []
@@ -204,5 +205,22 @@ it('refuses a prepared but failed tail append rather than silently completing a 
     expect(result.data.error).toBe('recording_not_committed')
     expect(result.data.trackingSessionId).toBe(checkpoint.active.id)
     expect(result.data.finishedTrip).toBeNull()
+  } finally { await f.plugin.stop() }
+})
+
+it('keeps Finish trip available after a recording receipt persistence failure', async () => {
+  const statuses = vi.spyOn(WakeLoggerTransport.prototype, 'updateStatus')
+  const f = await fixture()
+  try {
+    f.ingest()
+    await vi.waitFor(async () => expect((await f.request('GET')).data.trackingSessionId).toBeTruthy())
+    const id = (await f.request('GET')).data.trackingSessionId
+    await f.request('POST', { uploadMode: 'automatic' })
+    const transport = statuses.mock.instances.at(-1) as any
+    vi.spyOn(RecordingStore.prototype, 'acknowledge').mockRejectedValueOnce(new Error('checkpoint unavailable'))
+    await expect(transport.options.onRecordingAcks([{ id, state: 'complete', lastSequence: 1 }])).rejects.toThrow('checkpoint unavailable')
+    const finished = await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')
+    expect(finished.code).toBe(200)
+    expect(finished.data.finishedTrip.manifest.id).toBe(id)
   } finally { await f.plugin.stop() }
 })

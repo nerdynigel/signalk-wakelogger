@@ -961,8 +961,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         await operation
       },
       onRecordingAcks: async (acks) => {
-        sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
-        await sampleOperation
+        const operation = sampleOperation.then(() => trip.acknowledge(acks))
+        sampleOperation = operation.catch(() => undefined)
+        await operation
       },
       onRacePlanSnapshotAcks: async (ids) => {
         await onboardSnapshots?.acknowledge(ids)
