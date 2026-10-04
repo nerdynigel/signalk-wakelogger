@@ -320,9 +320,10 @@ try {
   assert.equal(afterNavigationRestart.native.course.activeRoute.pointIndex, indexBeforeRevision, 'native progress must survive restart')
   // A failed desired delivery replaces cachedCourse before activation. On
   // retry the previous route identity must come from the owned native resource.
-  const { nativeRouteId: routeIdForCourse } = await import('../dist/courses/native-course.js')
   const today = { ...courseDocument(5, revisionTwoPoints), courseId: 'race-plan-19', racePlanId: 19, name: 'SAGS 04/10/2026 · Course H' }
-  const todayRouteId = routeIdForCourse(today.courseId)
+  // Fixed deterministic ID for fixture race-plan-19; this runner builds only
+  // inside Docker, so it must not depend on a host-side dist/ directory.
+  const todayRouteId = '6aaef0e3-6b1b-4a0b-aeb1-fa77cd9ae8a8'
   skPut(`/signalk/v2/api/resources/routes/${todayRouteId}`, { name: 'Foreign ID collision', description: 'Unowned resource', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[24.8, 60], [24.81, 60.01]] }, properties: {} } })
   query('https://test-cloud:8443/course', 'POST', today)
   const failedToday = await waitForCourseAck(5, 'rejected')
