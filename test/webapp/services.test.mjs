@@ -564,3 +564,43 @@ test('pack/course identity ordering uses timestamps, never their unrelated revis
   assert.equal(ready.course, current)
   assert.match(ready.name, /^Club race · /)
 })
+
+
+test('apparent-wind opposite-tack bearings use fresh true heading and handle both sides of north', async () => {
+  const { vesselGuideBearings, projectBearing, bearingBetween } = await import('../../webapp/vessel-guides.mjs')
+  const timestamp = Date.now()
+  const inputs = (heading = 330, awa = 30) => [
+    { id: 'position', value: { latitude: -27, longitude: 153 }, freshness: 'fresh', timestamp },
+    { id: 'heading', value: heading, reference: 'true', freshness: 'fresh', timestamp },
+    { id: 'awa', value: awa, freshness: 'fresh', timestamp }
+  ]
+  const starboard = vesselGuideBearings(inputs())
+  assert.equal(starboard.heading, 330)
+  assert.equal(starboard.apparentFrom, 0)
+  assert.equal(starboard.oppositeTack, 30)
+  assert.equal(vesselGuideBearings(inputs(30, -30)).oppositeTack, 330)
+  assert.equal(vesselGuideBearings(inputs(350, 30)).oppositeTack, 50)
+  assert.equal(vesselGuideBearings(inputs(10, -30)).oppositeTack, 310)
+  const origin = { latitude: -27, longitude: 153 }
+  const endpoint = projectBearing(origin, 330, 1852)
+  assert.ok(endpoint.latitude > origin.latitude && endpoint.longitude < origin.longitude)
+  assert.ok(Math.abs(bearingBetween(origin, endpoint) - 330) < 1e-8)
+  const dateline = projectBearing({ latitude: 0, longitude: 179.999 }, 90, 1852)
+  assert.ok(dateline.longitude < 0 && dateline.longitude >= -180)
+  for (const angle of [0, 19.9, 60, 90, 170]) assert.equal(vesselGuideBearings(inputs(330, angle)).oppositeTack, null)
+  assert.notEqual(vesselGuideBearings(inputs(330, 20)).oppositeTack, null)
+  const stale = inputs(); stale[2].freshness = 'stale'
+  assert.equal(vesselGuideBearings(stale).heading, 330)
+  assert.equal(vesselGuideBearings(stale).oppositeTack, null)
+  const skewed = inputs(); skewed[2].timestamp -= 10001
+  assert.equal(vesselGuideBearings(skewed).oppositeTack, null)
+  const magnetic = inputs(); magnetic[1].reference = 'magnetic'
+  assert.equal(vesselGuideBearings(magnetic).heading, null)
+  assert.equal(vesselGuideBearings(inputs().filter(input => input.id !== 'heading')).heading, null)
+  const unknown = inputs(); unknown[0].freshness = 'unknown'
+  assert.equal(vesselGuideBearings(unknown).heading, null)
+  const downwindLeg = { from: origin, to: { latitude: -27.1, longitude: 153 } }
+  assert.equal(vesselGuideBearings(inputs(), downwindLeg).oppositeTack, null)
+  const upwindLeg = { from: origin, to: { latitude: -26.9, longitude: 153 } }
+  assert.equal(vesselGuideBearings(inputs(), upwindLeg).oppositeTack, 30)
+})

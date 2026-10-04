@@ -1,4 +1,5 @@
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
+import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
@@ -19,6 +20,8 @@ const L = window.L
 const map = L.map('map', { zoomControl: true }).setView([0, 0], 2)
 const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
+const guideLayer = L.layerGroup().addTo(map)
+let vesselMarker = null
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, trackingRequest = 0
@@ -189,12 +192,13 @@ function renderCourse() {
   })
   $('map').dataset.coursePointCount = String(progress.points.length)
   vesselLayer.clearLayers()
+  vesselMarker = null
   if (progress.position) {
     const point = [progress.position.latitude, progress.position.longitude]
     const icon = progress.direction === null
       ? L.divIcon({ className: 'mark', html: '●', iconSize: [20, 20], iconAnchor: [10, 10] })
       : L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${progress.direction}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
-    L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
+    vesselMarker = L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
     if (trackBootstrapped) {
       // Never append a live fix from a new recording onto the previous
       // recording still on screen; refresh the archive identity first.
@@ -208,6 +212,7 @@ function renderCourse() {
     }
     trackLine.setLatLngs(track)
   }
+  renderVesselGuides()
   publishTrack()
   $('centre-vessel').disabled = !progress.position
   // A course change re-frames the course only before any explicit viewport
@@ -310,11 +315,42 @@ function renderInstruments() {
   const grid = $('instruments-grid')
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
+  renderVesselGuides(view)
   grid.replaceChildren(...view.readings.map(instrumentTile))
   const state = $('signal-k-state')
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
   else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
   else state.textContent = `Signal K connected · ${view.available}/${view.total} readings live`
+}
+
+function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
+  guideLayer.clearLayers()
+  const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => reading.id !== 'awa') : view.readings
+  const leg = progress?.matches && progress.previous && progress.next ? { from: progress.previous, to: progress.next } : null
+  const guides = vesselGuideBearings(readings, leg)
+  const element = $('map')
+  element.dataset.headingGuideBearing = guides.heading === null ? '' : String(guides.heading)
+  element.dataset.oppositeTackBearing = guides.oppositeTack === null ? '' : String(guides.oppositeTack)
+  element.dataset.apparentWindFrom = guides.apparentFrom === null ? '' : String(guides.apparentFrom)
+  element.dataset.guideOrigin = ''
+  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.oppositeTack === null ? '' : ` · 30° apparent-wind tack guide ${Math.round(guides.oppositeTack)}° true; apparent wind changes after a tack`}`)
+  if (guides.heading === null) return
+  const location = L.latLng(guides.position.latitude, guides.position.longitude)
+  const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
+  if (vesselMarker) vesselMarker.setLatLng(location).setIcon(icon)
+  else vesselMarker = L.marker(location, { icon }).bindTooltip('Vessel · true heading').addTo(vesselLayer)
+  const pixel = map.latLngToContainerPoint(location)
+  const metresPerPixel = map.distance(location, map.containerPointToLatLng([pixel.x + 1, pixel.y]))
+  const origin = projectBearing(guides.position, guides.heading, metresPerPixel * 14)
+  const distance = Math.min(50000, metresPerPixel * Math.max(map.getSize().x, map.getSize().y) * 2)
+  const start = [origin.latitude, origin.longitude]
+  element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
+  const draw = (bearing, options, label) => {
+    const end = projectBearing(origin, bearing, distance)
+    L.polyline([start, [end.latitude, end.longitude]], options).bindTooltip(label).addTo(guideLayer)
+  }
+  draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
+  if (guides.oppositeTack !== null) draw(guides.oppositeTack, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: 'opposite-tack-guide' }, `30° apparent-wind tack guide · ${Math.round(guides.oppositeTack)}° true · apparent wind changes after a tack`)
 }
 
 function instrumentTile(reading) {
@@ -711,6 +747,7 @@ $('fit-track').onclick = () => { viewportMode = 'track'; fitTrack() }
 $('centre-vessel').onclick = () => { if (progress?.position) { viewportMode = 'follow'; map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) } }
 // A deliberate pan/zoom takes viewport control; programmatic fits and resizes
 // do not (they have no originalEvent and/or run under fittingViewport).
+map.on('zoomend resize', () => renderVesselGuides())
 map.on('dragstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
 map.on('zoomstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
 $('activate-course').onclick = () => command(() => progression.activate())

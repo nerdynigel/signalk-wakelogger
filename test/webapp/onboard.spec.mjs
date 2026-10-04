@@ -145,10 +145,10 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       return json({ state: 'COMPLETED', statusCode: 200 })
     }
     if (pathname === '/signalk/v1/api/vessels/self/navigation') {
-      if (navigationOverride) return json(navigationOverride)
+      if (navigationOverride) return json(typeof navigationOverride === 'function' ? navigationOverride() : navigationOverride)
       return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
     }
-    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(environment)
+    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(typeof environment === 'function' ? environment() : environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
@@ -717,5 +717,46 @@ test('a newer Race Pack announces today before course delivery and cannot activa
   await expect(page.locator('#activate-course')).toHaveText('Waiting for desired course')
   await expect(page.locator('#advance-point')).toBeDisabled()
   await expect(page.locator('#map')).toHaveAttribute('data-course-point-count', '0')
+  expect(writes).toEqual([])
+})
+
+
+test('heading and apparent-wind tack guides refresh without true wind and hide unsafe inputs', async ({ page }, testInfo) => {
+  let heading = 30, awa = 30, awaAge = 0, positionAvailable = true, magneticOnly = false
+  const measurement = value => ({ value, timestamp: new Date().toISOString() })
+  const { writes } = await mockBoat(page, {
+    navigationOverride: () => ({
+      ...(positionAvailable ? { position: measurement({ latitude: -27.395, longitude: 153.18 }) } : {}),
+      [magneticOnly ? 'headingMagnetic' : 'headingTrue']: measurement(heading * Math.PI / 180),
+      courseOverGroundTrue: measurement(150 * Math.PI / 180),
+    }),
+    environment: () => ({ wind: { angleApparent: { value: awa * Math.PI / 180, timestamp: new Date(Date.now() - awaAge).toISOString() } } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '30')
+  await expect(map).toHaveAttribute('data-opposite-tack-bearing', '90')
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(1)
+  await expect(page.locator('.opposite-tack-guide')).toHaveAttribute('stroke-dasharray', '8 6')
+  await expect(map).toHaveAttribute('aria-label', /30° apparent-wind tack guide 90° true/)
+  await page.screenshot({ path: testInfo.outputPath('onboard-tack-guides.png'), fullPage: true })
+  const bow = (await map.getAttribute('data-guide-origin')).split(',').map(Number)
+  expect(bow[0]).toBeGreaterThan(-27.395)
+  expect(bow[1]).toBeGreaterThan(153.18)
+  heading = 90; awa = -30
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '90', { timeout: 10000 })
+  await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
+  awa = 90
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  awa = -30; awaAge = 120000
+  await expect(map).toHaveAttribute('data-opposite-tack-bearing', '')
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  awaAge = 0; magneticOnly = true
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(0)
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
+  magneticOnly = false; positionAvailable = false
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '')
   expect(writes).toEqual([])
 })
