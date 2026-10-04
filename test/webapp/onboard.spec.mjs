@@ -686,7 +686,7 @@ test('a new desired plan supersedes the cached date and displays the foreign act
   await page.locator('#course-tab').click()
   await expect(page.locator('#course-name')).toHaveText(previous.name)
   state = { ...state, desired: today, acknowledgement: { revision: 3, status: 'rejected', errorCode: 'native_route_conflict', activation: 'conflict' } }
-  await expect(page.locator('#course-name')).toHaveText(today.name, { timeout: 10000 })
+  await expect(page.locator('#course-name')).toContainText(today.name, { timeout: 10000 })
   await expect(page.locator('#offline-readiness')).toContainText('3 items missing')
   await expect(page.locator('#offline-readiness')).toHaveAttribute('title', /Wake Logger course is not active/)
   await expect(page.locator('#active-status')).toContainText('Update rejected (native_route_conflict)')
@@ -699,4 +699,23 @@ test('a new desired plan supersedes the cached date and displays the foreign act
   expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
   await expect(page.locator('#course-name')).not.toContainText('27/09/2026')
   await expect(page.locator('#race-plan-list')).toContainText('SAGS 04/10/2026 · Course H')
+})
+
+
+test('a newer Race Pack announces today before course delivery and cannot activate the old plan', async ({ page }) => {
+  const previous = { ...desired, revision: 2, courseId: 'race-plan-16', racePlanId: 16, name: 'SAGS 27/09/2026', updatedAt: '2026-09-27T02:00:00Z' }
+  const state = { desired: previous, cachedCourse: previous, acknowledgement: { revision: 2, status: 'applied' }, native: { available: true, activeMatchesDesired: true, conflict: false, course: { activeRoute: { href: ownedHref, pointIndex: 1 } } } }
+  const { writes } = await mockBoat(page, { courseState: state, racePlan: { pack: { available: true, applicable: false, courseId: 'race-plan-19', racePlanId: 19, courseName: 'Course H', revision: 1886, generatedAt: '2026-10-04T02:27:39Z', startTime: '2026-10-04T02:44:00Z' } } })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
+  await expect(page.locator('#course-name')).toContainText('Course H')
+  await expect(page.locator('#course-name')).toContainText('Course delivery pending')
+  await expect(page.locator('#course-name')).toContainText('10/4/2026')
+  await expect(page.locator('#course-name')).not.toContainText('27/09/2026')
+  await expect(page.locator('#active-status')).toContainText('Desired course delivery pending')
+  await expect(page.locator('#activate-course')).toBeDisabled()
+  await expect(page.locator('#activate-course')).toHaveText('Waiting for desired course')
+  await expect(page.locator('#advance-point')).toBeDisabled()
+  await expect(page.locator('#map')).toHaveAttribute('data-course-point-count', '0')
+  expect(writes).toEqual([])
 })

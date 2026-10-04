@@ -1,6 +1,6 @@
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
-import { coursePoints, raceProgress } from './course-progress.mjs'
+import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
@@ -142,14 +142,16 @@ function observeServerRecording(serverSessionId) {
 }
 
 function renderCourse() {
-  const course = status.desired || status.cachedCourse
-  $('course-name').textContent = course?.action !== 'clear' && course?.name ? course.name : 'Onboard navigation'
+  const selection = selectedCoursePresentation(status, racePlan)
+  const course = selection.course
+  $('course-name').textContent = `${selection.name}${selection.pendingPack ? ' · Course delivery pending' : ''}`
   if (!trackingStatus) $('cloud-state').textContent = 'Signal K connected'
   const ack = status.acknowledgement
   $('active-status').textContent = progress.matches ? `Wake Logger course active · Revision ${course?.revision ?? '—'}` : progress.points.length ? `Wake Logger course not currently active${status.native?.course?.activeRoute?.name ? ` · Signal K: ${status.native.course.activeRoute.name}` : ''}` : 'No course selected in Wake Logger'
-  if (ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; desired course awaits activation`
+  if (selection.pendingPack) $('active-status').textContent = 'New Race Pack received · Desired course delivery pending · Previous native navigation has not changed'
+  if (!selection.pendingPack && ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; desired course awaits activation`
   if (status.native?.conflict) $('active-status').textContent += ' · Another Signal K route is active; activate this course to replace it'
-  $('activate-course').textContent = course?.action === 'activate' ? `Activate ${course.name}` : 'Activate course'
+  $('activate-course').textContent = selection.pendingPack ? 'Waiting for desired course' : course?.action === 'activate' ? `Activate ${course.name}` : 'Activate course'
   $('activate-course').disabled = busy || !progress.points.length || !status.native?.available || progress.matches
   $('advance-point').disabled = busy || !progress.matches || progress.index === null || progress.index >= progress.points.length - 1
   $('point-index').disabled = busy || !progress.matches
@@ -439,7 +441,7 @@ async function poll() {
       const nativeRoute = status.native?.ownedRouteId
         ? await client.request(`/signalk/v2/api/resources/routes/${encodeURIComponent(status.native.ownedRouteId)}`).catch(() => null)
         : null
-      progress = raceProgress(status, navigationData, calcResult.value ?? {}, nativeRoute)
+      progress = raceProgress(status, navigationData, calcResult.value ?? {}, nativeRoute, racePlan)
       $('login').hidden = true
       renderCourse()
       if (!defaultPanelChosen) { selectPanel(progress.points.length ? 'race' : 'instruments'); defaultPanelChosen = true }
