@@ -8,11 +8,11 @@ export function coursePoints(course) {
 }
 
 export function raceProgress(status, navigation = {}, calculated = {}, nativeRoute = null) {
-  const desired = status?.desired?.action === 'clear' ? status.desired : status?.cachedCourse || status?.desired
+  const desired = status?.desired || status?.cachedCourse
   const cachedPoints = coursePoints(desired)
   const geometry = nativeRoute?.feature?.geometry
   const nativeCoordinates = geometry?.type === 'LineString' && Array.isArray(geometry.coordinates) ? geometry.coordinates : null
-  const validNative = cachedPoints.length > 0 && nativeCoordinates?.length >= 2 && nativeCoordinates.length <= 200
+  const validNative = status?.native?.activeMatchesDesired === true && cachedPoints.length > 0 && nativeCoordinates?.length >= 2 && nativeCoordinates.length <= 200
     && nativeCoordinates.every(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90)
   const resourcePoints = validNative ? nativeCoordinates.map((point, index) => ({
     ...cachedPoints[index], latitude: point[1], longitude: point[0],

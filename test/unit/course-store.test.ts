@@ -81,6 +81,36 @@ describe('course delivery and native resources', () => {
     expect(await store.status()).toMatchObject({ native: { activeMatchesDesired: true, conflict: false } })
   })
 
+  it('replaces its active owned route when a different race plan arrives', async () => {
+    const { store, app } = await fixture()
+    await store.receive(encoded({ ...document(2), courseId: 'race-plan-16', racePlanId: 16, name: 'SAGS 27/09/2026' }))
+    expect(await store.receive(encoded({ ...document(3), courseId: 'race-plan-19', racePlanId: 19, name: 'SAGS 04/10/2026' })))
+      .toMatchObject({ revision: 3, status: 'applied', activation: 'active' })
+    expect(app.activateRoute).toHaveBeenLastCalledWith({ href: nativeRouteHref('race-plan-19'), pointIndex: 1, reverse: false })
+  })
+
+  it('reconciles its owned previous route after failed desired delivery and restart', async () => {
+    const { store, target, native, app } = await fixture()
+    await store.receive(encoded({ ...document(2), courseId: 'race-plan-16', racePlanId: 16, name: 'SAGS 27/09/2026' }))
+    const today = { ...document(3), courseId: 'race-plan-19', racePlanId: 19, name: 'SAGS 04/10/2026' }
+    vi.mocked(app.resourcesApi!.setResource).mockImplementationOnce(() => { throw new Error('write failed') })
+    expect(await store.receive(encoded(today))).toMatchObject({ status: 'rejected', revision: 3 })
+    const restarted = new CourseStore(target, native)
+    await restarted.open()
+    expect(await restarted.receive(encoded(today))).toMatchObject({ status: 'applied', activation: 'active', revision: 3 })
+    expect(await restarted.status()).toMatchObject({ desired: { racePlanId: 19 }, native: { activeMatchesDesired: true } })
+  })
+
+  it('does not trust ownership metadata on an arbitrary foreign route ID', async () => {
+    const { store, resources, setNative, app } = await fixture()
+    resources.set('foreign', { feature: { properties: { wakelogger: { courseId: 'race-plan-16' } } } })
+    setNative({ activeRoute: { href: '/resources/routes/foreign' } })
+    expect(await store.receive(encoded(document(3)))).toMatchObject({ status: 'applied', activation: 'conflict' })
+    expect(app.activateRoute).not.toHaveBeenCalled()
+    await store.activate()
+    expect(await store.acknowledgement()).toMatchObject({ status: 'applied', activation: 'active' })
+  })
+
   it('does not overwrite an unrelated resource even at the deterministic ID', async () => {
     const { store, resources, app } = await fixture()
     resources.set(nativeRouteId('race-plan-123'), { name: 'Unrelated route', feature: { properties: {} } })

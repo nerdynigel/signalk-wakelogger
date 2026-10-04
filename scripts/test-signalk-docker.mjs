@@ -318,6 +318,31 @@ try {
   const afterNavigationRestart = query(courseUrl)
   assert.equal(afterNavigationRestart.desired.revision, 4, 'the latest revision must survive restart')
   assert.equal(afterNavigationRestart.native.course.activeRoute.pointIndex, indexBeforeRevision, 'native progress must survive restart')
+  // A failed desired delivery replaces cachedCourse before activation. On
+  // retry the previous route identity must come from the owned native resource.
+  const { nativeRouteId: routeIdForCourse } = await import('../dist/courses/native-course.js')
+  const today = { ...courseDocument(5, revisionTwoPoints), courseId: 'race-plan-19', racePlanId: 19, name: 'SAGS 04/10/2026 · Course H' }
+  const todayRouteId = routeIdForCourse(today.courseId)
+  skPut(`/signalk/v2/api/resources/routes/${todayRouteId}`, { name: 'Foreign ID collision', description: 'Unowned resource', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[24.8, 60], [24.81, 60.01]] }, properties: {} } })
+  query('https://test-cloud:8443/course', 'POST', today)
+  const failedToday = await waitForCourseAck(5, 'rejected')
+  assert.equal(failedToday.errorCode, 'native_route_conflict')
+  assert.equal(query(courseUrl).native.course.activeRoute.href, `/resources/routes/${nativeRouteId}`)
+  query(`http://signalk:3000/signalk/v2/api/resources/routes/${todayRouteId}`, 'DELETE')
+  query('https://test-cloud:8443/course', 'POST', today)
+  const appliedToday = await waitForCourseAck(5, 'applied')
+  assert.equal(appliedToday.activation, 'active', 'retry must replace the plugin-owned previous route')
+  assert.equal(query(courseUrl).native.course.activeRoute.href, `/resources/routes/${todayRouteId}`)
+  assert.equal(query(courseUrl).desired.racePlanId, 19)
+
+  // Deliver a newer desired revision while a genuinely foreign route is active.
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute', { href: otherRouteHref, pointIndex: 0, reverse: false })
+  query('https://test-cloud:8443/course', 'POST', { ...today, revision: 6 })
+  const foreignAck = await waitForCourseAck(6, 'applied')
+  assert.equal(foreignAck.activation, 'conflict')
+  assert.equal(query(courseUrl).native.course.activeRoute.href, otherRouteHref)
+  query(`${pluginBase}/course/activate`, 'POST', {})
+  assert.equal(query(courseUrl).native.activeMatchesDesired, true)
   const signalkInfo = query('http://signalk:3000/signalk')
 
   const result = {
@@ -325,6 +350,8 @@ try {
     signalkSource: 'sample-n2k-data',
     signalkVersion: signalkInfo?.server?.version ?? signalkInfo?.version ?? 'unknown',
     nativeNavigationGate: {
+      ownedPreviousRouteRetry: { racePlanId: 19, revision: 5, activation: appliedToday.activation },
+      foreignNewRevision: { revision: 6, activationBeforeExplicit: foreignAck.activation },
       pointIndexAndNextPoint: true,
       conflictPreserved: true,
       explicitReclaim: true,

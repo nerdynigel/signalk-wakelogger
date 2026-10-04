@@ -142,12 +142,14 @@ function observeServerRecording(serverSessionId) {
 }
 
 function renderCourse() {
-  const course = status.desired?.action === 'clear' ? status.desired : status.cachedCourse || status.desired
+  const course = status.desired || status.cachedCourse
   $('course-name').textContent = course?.action !== 'clear' && course?.name ? course.name : 'Onboard navigation'
   if (!trackingStatus) $('cloud-state').textContent = 'Signal K connected'
   const ack = status.acknowledgement
   $('active-status').textContent = progress.matches ? `Wake Logger course active · Revision ${course?.revision ?? '—'}` : progress.points.length ? `Wake Logger course not currently active${status.native?.course?.activeRoute?.name ? ` · Signal K: ${status.native.course.activeRoute.name}` : ''}` : 'No course selected in Wake Logger'
-  if (ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; last usable course retained`
+  if (ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; desired course awaits activation`
+  if (status.native?.conflict) $('active-status').textContent += ' · Another Signal K route is active; activate this course to replace it'
+  $('activate-course').textContent = course?.action === 'activate' ? `Activate ${course.name}` : 'Activate course'
   $('activate-course').disabled = busy || !progress.points.length || !status.native?.available || progress.matches
   $('advance-point').disabled = busy || !progress.matches || progress.index === null || progress.index >= progress.points.length - 1
   $('point-index').disabled = busy || !progress.matches

@@ -66,9 +66,15 @@ export class NativeCourseService {
     const current = (await this.current())?.activeRoute?.href
     const target = nativeRouteHref(course.courseId)
     if (!explicit && current && current !== target) {
-      if (!previousCourse || current !== nativeRouteHref(previousCourse.courseId)) return 'conflict'
-      const previousResource = await this.readRoute(nativeRouteId(previousCourse.courseId))
-      if (!previousResource || !ownedBy(previousResource, previousCourse.courseId)) return 'conflict'
+      // cachedCourse is the accepted desired document, so a failed delivery or
+      // restart can already have replaced the previous identity. Establish
+      // ownership from the native resource and deterministic ID instead.
+      const activeId = current.match(/^\/resources\/routes\/([^/]+)$/)?.[1]
+      if (!activeId) return 'conflict'
+      const activeResource = await this.readRoute(activeId)
+      const ownedCourseId = (activeResource as Partial<RouteResource>)?.feature?.properties?.wakelogger?.courseId
+      if (typeof ownedCourseId !== 'string' || current !== nativeRouteHref(ownedCourseId)
+        || !ownedBy(activeResource, ownedCourseId)) return 'conflict'
     }
     // Replayed desired state must not reset an ongoing native course's progress.
     if (current === target && !explicit && previousCourse?.revision === course.revision) return 'active'
