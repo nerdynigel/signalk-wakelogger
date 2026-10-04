@@ -3,7 +3,7 @@ import mqtt, { type IClientOptions, type MqttClient } from 'mqtt'
 import type { DeviceCredentials } from '../pairing/credentials'
 import type { RacePackAck } from '../race/race-pack-protocol'
 import { parseTelemetryProfile, type ProfileAcknowledgement, type TelemetryProfile } from '../telemetry/profile'
-import type { ApplicationAck, RecordingAcknowledgement, NetworkMode, PluginStatusMetrics, TelemetryBatch, TelemetrySample } from '../telemetry/types'
+import type { ApplicationAck, RecordingAcknowledgement, RecordingStatus, NetworkMode, PluginStatusMetrics, TelemetryBatch, TelemetrySample } from '../telemetry/types'
 import type { OutboxStore } from '../outbox/interface'
 import { AdaptiveModeMonitor } from './adaptive-mode'
 import { deviceTopics } from './topics'
@@ -19,6 +19,7 @@ interface TransportOptions {
   onRacePackManifest?: (payload: Buffer) => Promise<RacePackAck | null>
   onRacePackChunk?: (payload: Buffer, topicIndex: number) => Promise<RacePackAck | null>
   getRacePackAck?: () => RacePackAck | null
+  onRecordingStatuses?: (statuses: RecordingStatus[]) => Promise<void>
   onRecordingAcks?: (acks: RecordingAcknowledgement[]) => Promise<void>
   onRacePlanSnapshotAcks?: (ids: string[]) => Promise<void>
   onProfile?: (profile: TelemetryProfile) => Promise<void>
@@ -329,6 +330,17 @@ export class WakeLoggerTransport {
       const committed = await this.outbox.stats()
       if (Array.isArray(ack.recordingAcks) && ack.recordingAcks.length <= 25) {
         await this.options.onRecordingAcks?.(ack.recordingAcks.filter((entry) => entry && typeof entry.id === 'string' && Number.isSafeInteger(entry.lastSequence) && ['complete', 'cancelled', 'interrupted'].includes(entry.state)))
+      }
+      if (Array.isArray(ack.recordingStatuses) && ack.recordingStatuses.length <= 25) {
+        const statuses = ack.recordingStatuses.filter((entry) => entry && typeof entry.id === 'string'
+          && Number.isSafeInteger(entry.lastSequence) && entry.lastSequence > 0
+          && ['uploading', 'waiting_for_history', 'processing', 'incomplete', 'error', 'interrupted', 'cancelled', 'not_a_trip', 'ready'].includes(entry.state)
+          && (entry.environmentPending === undefined || typeof entry.environmentPending === 'boolean')
+          && (entry.voyageId === null || (Number.isSafeInteger(entry.voyageId) && entry.voyageId > 0))
+          && [entry.expectedSamples, entry.receivedSamples, entry.missingSamples, entry.rejectedSamples].every((count) => Number.isSafeInteger(count) && count >= 0)
+          && entry.receivedSamples <= entry.expectedSamples && entry.missingSamples === Math.max(0, entry.expectedSamples - entry.receivedSamples - entry.rejectedSamples) && entry.rejectedSamples <= entry.expectedSamples
+          && (entry.state !== 'ready' || (entry.voyageId !== null && entry.expectedSamples > 0 && entry.receivedSamples === entry.expectedSamples && entry.missingSamples === 0 && entry.rejectedSamples === 0)))
+        if (statuses.length) await this.options.onRecordingStatuses?.(statuses)
       }
       if (Array.isArray(ack.racePlanSnapshotAcks) && ack.racePlanSnapshotAcks.length <= 25) {
         const ids = ack.racePlanSnapshotAcks.filter((entry) => entry && typeof entry.id === 'string' && entry.id.length > 0 && entry.id.length <= 200).map((entry) => entry.id)

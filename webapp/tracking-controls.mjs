@@ -34,3 +34,20 @@ export function trackingPresentation(status) {
     lifetimeDroppedCount: lifetimeDropped
   }
 }
+
+// Recording metadata ACK and empty telemetry queue do not confirm processing.
+export function finishedTripPresentation(status) {
+  const finished = status?.finishedTrip
+  if (!finished) return ''
+  const label = status.trackingSessionId ? 'Previous trip' : 'Trip'
+  const cloud = finished.cloudStatus
+  const connection = status.uploadMode === 'local_only' ? ' · Live tracking off' : status.connectionState !== 'online' ? ' · cloud offline' : ''
+  if (cloud?.state === 'ready' && finished.confirmationPending === false) return `${label} confirmed ready by cloud${cloud.environmentPending ? ' · weather enrichment pending' : ''}`
+  if (cloud) {
+    const reason = cloud.state.replaceAll('_', ' ')
+    const missing = cloud.missingSamples > 0 ? ` · ${cloud.missingSamples} samples missing` : ''
+    const rejected = cloud.rejectedSamples > 0 ? ` · ${cloud.rejectedSamples} samples rejected` : ''
+    return `${label} saved onboard · cloud ${reason}${missing}${rejected} · confirmation pending${connection}`
+  }
+  return `${label} saved onboard · ${finished.uploadPending ? 'upload pending · ' : ''}awaiting cloud confirmation${connection}`
+}

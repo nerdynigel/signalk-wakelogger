@@ -3,7 +3,7 @@ import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
-import { trackingPresentation } from './tracking-controls.mjs'
+import { trackingPresentation, finishedTripPresentation } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
@@ -24,7 +24,7 @@ const guideLayer = L.layerGroup().addTo(map)
 let vesselMarker = null
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
-let trackingStatus = null, trackingChanging = false, trackingRequest = 0
+let trackingStatus = null, trackingChanging = false, finishingTrip = false, trackingRequest = 0
 let raceProgression = null
 // A per-tab identity, so two tabs do not share one controller role and a newly
 // opened tab starts as a viewer rather than inheriting control.
@@ -815,25 +815,44 @@ $('cache-jobs').onclick = async () => {
 function renderTracking() {
   const view = trackingPresentation(trackingStatus)
   $('live-tracking').setAttribute('aria-checked', String(view.enabled))
-  $('live-tracking').disabled = trackingChanging || !view.available
+  $('live-tracking').disabled = trackingChanging || finishingTrip || !view.available
   $('live-tracking').setAttribute('aria-busy', String(trackingChanging))
   $('tracking-mode').textContent = trackingChanging ? 'Saving…' : view.mode
   $('tracking-description').textContent = view.description
   $('upload-queue').textContent = view.queue
+  const retryConfirmation = !trackingStatus?.trackingSessionId && trackingStatus?.finishedTrip?.confirmationPending !== false && !!trackingStatus?.finishedTrip?.manifest?.id
+  $('finish-trip').disabled = trackingChanging || finishingTrip || !view.available || (!trackingStatus?.trackingSessionId && !retryConfirmation)
+  $('finish-trip').setAttribute('aria-busy', String(finishingTrip))
+  $('finish-trip').textContent = finishingTrip ? retryConfirmation ? 'Checking confirmation…' : 'Saving trip…' : retryConfirmation ? 'Retry confirmation' : 'Finish trip'
+  $('finished-trip').textContent = finishedTripPresentation(trackingStatus)
   if (trackingStatus) $('cloud-state').textContent = !view.available ? 'Not paired' : !view.enabled ? 'Recording locally' : trackingStatus.connectionState === 'online' ? 'Live connected' : 'Cloud offline'
 }
 async function refreshTracking() {
-  if (trackingChanging) return
+  if (trackingChanging || finishingTrip) return
   const request = ++trackingRequest
   try {
     const next = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' })
-    if (request !== trackingRequest || trackingChanging) return
+    if (request !== trackingRequest || trackingChanging || finishingTrip) return
     trackingStatus = next
   } catch {
-    if (request !== trackingRequest || trackingChanging) return
+    if (request !== trackingRequest || trackingChanging || finishingTrip) return
     trackingStatus = null
   }
   renderTracking()
+}
+$('finish-trip').onclick = async () => {
+  const expectedRecordingId = trackingStatus?.trackingSessionId ?? (trackingStatus?.finishedTrip?.confirmationPending !== false ? trackingStatus?.finishedTrip?.manifest?.id : null)
+  if (finishingTrip || trackingChanging || !expectedRecordingId || !trackingPresentation(trackingStatus).available) return
+  finishingTrip = true
+  ++trackingRequest
+  renderTracking()
+  try {
+    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking/finish', { method: 'POST', operation: 'finish-trip', body: JSON.stringify({ expectedRecordingId }) })
+    $('notice').textContent = ''
+  } catch {
+    $('notice').textContent = 'Trip could not be finished. Check recorder status and try again.'
+    try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) } catch { trackingStatus = null }
+  } finally { finishingTrip = false; renderTracking() }
 }
 $('live-tracking').onclick = async () => {
   if (trackingChanging || !trackingPresentation(trackingStatus).available) return

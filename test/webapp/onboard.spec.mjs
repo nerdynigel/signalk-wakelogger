@@ -26,6 +26,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     trackFailuresRemaining: 0,
     trackRequests: [],
     emptyRecordingId: null,
+    finishedTrip: null,
   }
   let navigation = {
     startTime: '2026-09-13T01:00:00Z', arrivalCircle: 50,
@@ -47,6 +48,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       return json({
         uploadMode, paired: true, recording: true,
         trackingSessionId: control.trackingSessionId,
+        finishedTrip: control.finishedTrip,
         connectionState: uploadMode === 'automatic' ? 'online' : 'recording_locally',
         queue: { messageCount: 123, currentSequence: 200, acknowledgedSequence: 77 }
       })
@@ -782,5 +784,67 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
   magneticOnly = false; positionAvailable = false
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '')
+  expect(writes).toEqual([])
+})
+
+test('Finish trip saves onboard immediately and sends the visible recording identity without native route writes', async ({ page }, testInfo) => {
+  const { writes, control } = await mockBoat(page)
+  const recordingId = '00000000-0000-0000-0000-000000000075'
+  control.trackingSessionId = recordingId
+  let release
+  let body
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    body = route.request().postDataJSON()
+    await new Promise(resolve => { release = resolve })
+    control.trackingSessionId = null
+    control.finishedTrip = { uploadPending: true, confirmationPending: true, cloudStatus: null, manifest: { id: recordingId, firstSequence: 1, lastSequence: 6, startedAt: 1000, endedAt: 6000, state: 'complete' } }
+    await route.fulfill({ json: { uploadMode: 'local_only', paired: true, available: true, recording: true,
+      trackingSessionId: null, trackingState: 'STOPPED', connectionState: 'recording_locally', queue: { messageCount: 6 },
+      finishedTrip: control.finishedTrip } })
+  })
+  await page.goto('/')
+  const finish = page.getByRole('button', { name: 'Finish trip', exact: true })
+  await expect(finish).toBeEnabled()
+  await finish.click()
+  await expect(page.getByRole('button', { name: 'Saving trip…' })).toBeDisabled()
+  expect(body).toEqual({ expectedRecordingId: recordingId })
+  expect(writes).toEqual([])
+  release()
+  await expect(page.locator('#finished-trip')).toHaveText('Trip saved onboard · upload pending · awaiting cloud confirmation · Live tracking off')
+  await expect(page.getByRole('button', { name: 'Retry confirmation', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Retry confirmation', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Checking confirmation…' })).toBeDisabled()
+  expect(body).toEqual({ expectedRecordingId: recordingId })
+  release()
+  await expect(page.getByRole('button', { name: 'Retry confirmation', exact: true })).toBeEnabled()
+  await expect(page.locator('#finished-trip')).not.toContainText('ready')
+  await page.screenshot({ path: testInfo.outputPath('finish-trip-saved-pending.png'), fullPage: true })
+  control.finishedTrip.uploadPending = false
+  control.finishedTrip.cloudStatus = { id: recordingId, lastSequence: 6, state: 'processing', voyageId: 75, expectedSamples: 6, receivedSamples: 6, missingSamples: 0, rejectedSamples: 0 }
+  await expect(page.locator('#finished-trip')).toContainText('cloud processing')
+  await expect(page.locator('#finished-trip')).toContainText('confirmation pending')
+  control.finishedTrip.cloudStatus.state = 'ready'
+  control.finishedTrip.confirmationPending = false
+  await expect(page.locator('#finished-trip')).toHaveText('Trip confirmed ready by cloud')
+  await page.screenshot({ path: testInfo.outputPath('finish-trip-cloud-confirmed.png'), fullPage: true })
+  await expect(page.getByRole('button', { name: 'Finish trip', exact: true })).toBeDisabled()
+  expect(writes).toEqual([])
+})
+
+test('Finish trip refreshes after a stale recording conflict without closing the new trip', async ({ page }) => {
+  const { control, writes } = await mockBoat(page)
+  control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
+  let submitted
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    submitted = route.request().postDataJSON()
+    control.trackingSessionId = '00000000-0000-0000-0000-000000000076'
+    await route.fulfill({ status: 409, json: { error: 'recording_changed' } })
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Finish trip', exact: true }).click()
+  await expect(page.locator('#notice')).toContainText('Trip could not be finished')
+  await expect(page.getByRole('button', { name: 'Finish trip', exact: true })).toBeEnabled()
+  expect(submitted.expectedRecordingId).toBe('00000000-0000-0000-0000-000000000075')
+  expect(control.trackingSessionId).toBe('00000000-0000-0000-0000-000000000076')
   expect(writes).toEqual([])
 })

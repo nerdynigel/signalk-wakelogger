@@ -77,3 +77,17 @@ describe('TelemetryNormaliser', () => {
     expect(normaliser.takeSample()).toBeUndefined()
   })
 })
+
+it('requires a new position after explicit finish rather than sampling cached navigation', () => {
+  const normaliser = new TelemetryNormaliser()
+  const now = Date.parse('2026-08-31T01:02:03Z')
+  normaliser.ingest(delta('2026-08-31T01:02:03Z', [
+    { path: 'navigation.position', value: { latitude: -27.4, longitude: 153.1 } },
+    { path: 'navigation.speedOverGround', value: 2 }
+  ]), now)
+  normaliser.forgetPosition()
+  normaliser.ingest(delta('2026-08-31T01:02:04Z', [{ path: 'navigation.speedOverGround', value: 2 }]), now + 1000)
+  expect(normaliser.takeSample(now + 1000)).toBeUndefined()
+  normaliser.ingest(delta('2026-08-31T01:02:05Z', [{ path: 'navigation.position', value: { latitude: -27.4, longitude: 153.1 } }]), now + 2000)
+  expect(normaliser.takeSample(now + 2000)?.capturedAt).toBe(now + 2000)
+})

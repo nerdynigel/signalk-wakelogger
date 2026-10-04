@@ -38,6 +38,18 @@ export interface RecordingManifest {
   lastSequence?: number
 }
 
+export interface RecordingStatus {
+  id: string
+  lastSequence: number
+  state: 'uploading' | 'waiting_for_history' | 'processing' | 'incomplete' | 'error' | 'interrupted' | 'cancelled' | 'not_a_trip' | 'ready'
+  voyageId: number | null
+  expectedSamples: number
+  receivedSamples: number
+  missingSamples: number
+  rejectedSamples: number
+  environmentPending?: boolean
+}
+
 export interface TelemetryDraft {
   recording?: RecordingManifest
   capturedAt: number
@@ -66,6 +78,7 @@ export type RecordingAcknowledgement = Pick<RecordingManifest, 'id' | 'lastSeque
 
 export interface ApplicationAck {
   recordingAcks?: RecordingAcknowledgement[]
+  recordingStatuses?: RecordingStatus[]
   racePlanSnapshotAcks?: Array<{ id: string }>
   v: 1
   deviceId: string
