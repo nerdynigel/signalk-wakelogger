@@ -2,6 +2,21 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.8] - 2026-10-06
+
+### Finish a trip onboard
+
+- A new **Finish trip** control closes the recording cleanly and asks Wake Logger to confirm it on the current connection, so the finished trip is processed and marked ready without waiting for the next reconnect.
+- The onboard recorder keeps serialising samples if persisting a receipt fails, so a momentary storage error cannot stall the upload queue.
+
+### The right course, every time
+
+- Wake Logger's own Signal K course is reconciled without treating it as a foreign route, and a newer Race Pack identity is surfaced before the course is delivered, so a previous race's course cannot silently win.
+
+### Guides on the onboard map
+
+- True heading and mirrored apparent-wind tack/gybe guides are drawn on the chartplotter, so the tack or gybe angle is visible against the boat's heading.
+
 ## [0.2.0-beta.7] - 2026-10-01
 
 ### A new recording never shows the previous trip
