@@ -145,10 +145,10 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
       return json({ state: 'COMPLETED', statusCode: 200 })
     }
     if (pathname === '/signalk/v1/api/vessels/self/navigation') {
-      if (navigationOverride) return json(navigationOverride)
+      if (navigationOverride) return json(typeof navigationOverride === 'function' ? navigationOverride() : navigationOverride)
       return json({ position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() }, speedOverGround: { value: 3.2 }, ...(missingDirection ? {} : { courseOverGroundTrue: { value: 1.1 } }) })
     }
-    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(environment)
+    if (pathname === '/signalk/v1/api/vessels/self/environment') return json(typeof environment === 'function' ? environment() : environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
@@ -717,5 +717,70 @@ test('a newer Race Pack announces today before course delivery and cannot activa
   await expect(page.locator('#activate-course')).toHaveText('Waiting for desired course')
   await expect(page.locator('#advance-point')).toBeDisabled()
   await expect(page.locator('#map')).toHaveAttribute('data-course-point-count', '0')
+  expect(writes).toEqual([])
+})
+
+
+test('mirrored tack and gybe guides refresh from apparent wind and ground motion without native writes', async ({ page }, testInfo) => {
+  let heading = 0, awa = 30, trueWindFrom = null, awaAge = 0, positionAvailable = true, magneticOnly = false, awsAvailable = true
+  const measurement = value => ({ value, timestamp: new Date().toISOString() })
+  const sensorWind = () => {
+    if (trueWindFrom === null) return { aws: 10, awa }
+    const rad = value => value * Math.PI / 180
+    const east = 10 * Math.sin(rad(trueWindFrom)) + 5 * Math.sin(rad(heading))
+    const north = 10 * Math.cos(rad(trueWindFrom)) + 5 * Math.cos(rad(heading))
+    return { aws: Math.hypot(east, north), awa: ((Math.atan2(east, north) * 180 / Math.PI - heading + 540) % 360) - 180 }
+  }
+  const { writes } = await mockBoat(page, {
+    navigationOverride: () => ({
+      ...(positionAvailable ? { position: measurement({ latitude: -27.395, longitude: 153.18 }) } : {}),
+      [magneticOnly ? 'headingMagnetic' : 'headingTrue']: measurement(heading * Math.PI / 180),
+      courseOverGroundTrue: measurement(heading * Math.PI / 180), speedOverGround: measurement(5 * 1852 / 3600),
+    }),
+    environment: () => ({ wind: {
+      ...(awsAvailable ? { speedApparent: measurement(sensorWind().aws * 1852 / 3600) } : {}),
+      angleApparent: { value: sensorWind().awa * Math.PI / 180, timestamp: new Date(Date.now() - awaAge).toISOString() }
+    } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-tack-bearing'))).toBeCloseTo(107.58795377399376, 6)
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(1)
+  await expect(page.locator('.opposite-tack-guide')).toHaveAttribute('stroke-dasharray', '8 6')
+  await expect(map).toHaveAttribute('aria-label', /mirrored current true-wind angle · no tide or leeway correction/)
+  await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-tack-guide.png'), fullPage: true })
+  const bow = (await map.getAttribute('data-guide-origin')).split(',').map(Number)
+  expect(bow[0]).toBeGreaterThan(-27.395)
+  expect(bow[1]).toBeCloseTo(153.18, 8)
+  heading = 107.58795377399376; awa = -30
+  await expect.poll(async () => Number(await map.getAttribute('data-heading-guide-bearing')), { timeout: 10000 }).toBeCloseTo(heading, 6)
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
+  await expect.poll(async () => ((Number(await map.getAttribute('data-opposite-tack-bearing')) + 180) % 360) - 180).toBeCloseTo(0, 6)
+  trueWindFrom = 240; heading = 10
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(110, 6)
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
+  await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+  await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-gybe-guide.png'), fullPage: true })
+  heading = 110
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '110')
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 6)
+  heading = 60 // Dead run: true wind FROM 240°, no safe side to mirror.
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
+  await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  heading = 10; awsAvailable = false
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
+  awsAvailable = true; awaAge = 120000
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  awaAge = 0; magneticOnly = true
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(0)
+  await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
+  magneticOnly = false; positionAvailable = false
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '')
   expect(writes).toEqual([])
 })
