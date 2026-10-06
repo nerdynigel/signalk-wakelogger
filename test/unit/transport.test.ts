@@ -136,16 +136,20 @@ describe('WakeLoggerTransport', () => {
       acknowledge: vi.fn().mockResolvedValue(undefined)
     }
     const onRecordingAcks = vi.fn().mockResolvedValue(undefined)
+    const onRecordingStatuses = vi.fn().mockResolvedValue(undefined)
     const transport = new WakeLoggerTransport({
       version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret',
       mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000
-    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onRecordingAcks })
+    }, outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), onRecordingAcks, onRecordingStatuses })
     const recordingAcks = [{ id: '00000000-0000-4000-8000-000000000001', lastSequence: 2, state: 'interrupted' }]
     await (transport as any).handleAcknowledgement(Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 999, recordingAcks })))
     expect(outbox.acknowledge).not.toHaveBeenCalled()
     expect(onRecordingAcks).not.toHaveBeenCalled()
     await (transport as any).handleAcknowledgement(Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 2, recordingAcks })))
     expect(onRecordingAcks).toHaveBeenCalledWith(recordingAcks)
+    const ready = { id: recordingAcks[0]!.id, lastSequence: 2, state: 'ready', voyageId: 75, expectedSamples: 2, receivedSamples: 2, missingSamples: 0, rejectedSamples: 0 }
+    await (transport as any).handleAcknowledgement(Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 2, recordingStatuses: [ready, { ...ready, missingSamples: 1 }, { ...ready, voyageId: null }, { ...ready, rejectedSamples: 1 }] })))
+    expect(onRecordingStatuses).toHaveBeenCalledWith([ready])
   })
 
   it('uses MQTT 5 verified TLS, prioritises current state and applies cloud acknowledgements', async () => {

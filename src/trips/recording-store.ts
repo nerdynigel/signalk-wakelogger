@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { RecordingAcknowledgement, RecordingManifest, TelemetryDraft } from '../telemetry/types'
+import type { RecordingAcknowledgement, RecordingManifest, TelemetryDraft, TelemetrySample, RecordingStatus } from '../telemetry/types'
 import { TripStateMachine, type TripSnapshot } from './state-machine'
 
 interface RecordingSnapshot {
@@ -10,6 +10,11 @@ interface RecordingSnapshot {
   closed: RecordingManifest[]
   lastCapturedAt?: number
   lastSequence?: number
+  committed?: { id: string; sequence: number; capturedAt: number; latitude: number; longitude: number }
+  lastFinished?: RecordingManifest
+  confirmations?: { manifest: RecordingManifest; status?: RecordingStatus }[]
+  lastFinishedStatus?: RecordingStatus
+  restartAfter?: number
 }
 
 // A gap this long cannot establish that the vessel remained on the same trip.
@@ -45,14 +50,92 @@ export class RecordingStore {
   }
 
   statusManifests(): RecordingManifest[] {
-    const closed = this.snapshot.closed
+    const closed = [...this.snapshot.closed, ...(this.snapshot.confirmations ?? []).map((entry) => entry.manifest).filter((manifest) => !this.snapshot.closed.some((entry) => entry.id === manifest.id))]
     const page: RecordingManifest[] = []
     for (let index = 0; index < Math.min(20, closed.length); index += 1) {
       const manifest = closed[(this.manifestCursor + index) % closed.length]
       if (manifest) page.push(manifest)
     }
     this.manifestCursor = closed.length ? (this.manifestCursor + page.length) % closed.length : 0
+    const finished = this.snapshot.lastFinished
+    if (finished && closed.some((entry) => entry.id === finished.id) && !page.some((entry) => entry.id === finished.id)) page.push(finished)
+    const priority = (manifest: RecordingManifest): number => (this.snapshot.confirmations ?? []).some((entry) => entry.manifest.id === manifest.id) ? manifest.id === finished?.id ? 2 : 1 : 0
+    page.sort((a, b) => priority(b) - priority(a))
     return structuredClone([...page, ...(this.snapshot.active ? [this.snapshot.active] : [])])
+  }
+
+  finishedStatus(): { manifest: RecordingManifest; uploadPending: boolean; confirmationPending: boolean; cloudStatus: RecordingStatus | null } | null {
+    const manifest = this.snapshot.lastFinished
+    return manifest ? { manifest: structuredClone(manifest), uploadPending: this.snapshot.closed.some((entry) => entry.id === manifest.id), confirmationPending: this.snapshot.lastFinishedStatus?.state !== 'ready', cloudStatus: this.snapshot.lastFinishedStatus ? structuredClone(this.snapshot.lastFinishedStatus) : null } : null
+  }
+
+  async confirm(statuses: RecordingStatus[]): Promise<void> {
+    const next = structuredClone(this.snapshot)
+    let changed = false
+    for (const status of statuses) {
+      const pending = next.confirmations?.find((entry) => entry.manifest.id === status.id && entry.manifest.lastSequence === status.lastSequence)
+      if (!pending || status.expectedSamples !== status.lastSequence - pending.manifest.firstSequence + 1) continue
+      if (status.state === 'ready' && (status.missingSamples !== 0 || status.rejectedSamples !== 0 || status.receivedSamples !== status.expectedSamples || !status.voyageId)) continue
+      pending.status = structuredClone(status)
+      if (next.lastFinished?.id === status.id) next.lastFinishedStatus = structuredClone(status)
+      if (status.state === 'ready') next.confirmations = next.confirmations?.filter((entry) => entry !== pending)
+      changed = true
+    }
+    if (!changed) return
+    await this.persist(next)
+    this.snapshot = next
+  }
+
+  // Only a successfully appended sample may establish explicit finish bounds.
+  // This survives telemetry ACK/reclamation independently of the upload queue.
+  async committed(sample: TelemetrySample): Promise<void> {
+    if (!sample.trackingSessionId || sample.trackingSessionId !== this.snapshot.active?.id) return
+    const previous = this.snapshot.committed
+    if (previous?.id === sample.trackingSessionId && previous.sequence >= sample.sequence) return
+    const next = structuredClone(this.snapshot)
+    next.committed = { id: sample.trackingSessionId, sequence: sample.sequence,
+      capturedAt: Math.max(sample.capturedAt, previous?.id === sample.trackingSessionId ? previous.capturedAt : sample.capturedAt),
+      latitude: sample.values.lat, longitude: sample.values.lon }
+    await this.persist(next)
+    this.snapshot = next
+  }
+
+  async finish(expectedRecordingId: string, durableSequence?: number): Promise<RecordingManifest | null> {
+    const active = this.snapshot.active
+    if (active && active.id !== expectedRecordingId) throw new Error('recording_changed')
+    if (!active) {
+      if (this.snapshot.lastFinished?.id === expectedRecordingId) return structuredClone(this.snapshot.lastFinished)
+      // The automatic stop may have won the serialized sampler/finish race.
+      const completed = this.snapshot.closed.find((entry) => entry.id === expectedRecordingId && entry.state === 'complete')
+      if (completed) {
+        if (durableSequence !== undefined && (completed.lastSequence ?? Infinity) > durableSequence) throw new Error('recording_not_committed')
+        const next = structuredClone(this.snapshot)
+        next.lastFinished = structuredClone(completed)
+        next.lastFinishedStatus = undefined
+        next.confirmations = [...(next.confirmations ?? []), { manifest: structuredClone(completed) }]
+        next.restartAfter = next.lastCapturedAt
+        await this.persist(next)
+        this.snapshot = next
+        return structuredClone(completed)
+      }
+      return null
+    }
+    const committed = this.snapshot.committed
+    if (!committed || committed.id !== active.id || committed.sequence < active.firstSequence || (durableSequence !== undefined && committed.sequence !== durableSequence) || (this.snapshot.lastSequence ?? 0) > committed.sequence) throw new Error('recording_not_committed')
+    const closed: RecordingManifest = { ...active, state: 'complete', lastSequence: committed.sequence,
+      endedAt: Math.max(active.startedAt, committed.capturedAt) }
+    const next = structuredClone(this.snapshot)
+    next.closed.push(closed)
+    next.active = undefined
+    next.lastFinished = closed
+    next.lastFinishedStatus = undefined
+    next.confirmations = [...(next.confirmations ?? []), { manifest: closed }]
+    next.restartAfter = Math.max(closed.endedAt!, next.lastCapturedAt ?? closed.endedAt!)
+    next.trip = { state: 'STOPPED', stationaryPosition: { lat: committed.latitude, lon: committed.longitude } }
+    await this.persist(next)
+    this.snapshot = next
+    this.trip = new TripStateMachine(next.trip)
+    return structuredClone(closed)
   }
 
   async acknowledge(acks: RecordingAcknowledgement[]): Promise<void> {
@@ -68,6 +151,7 @@ export class RecordingStore {
   // but can never make an incomplete recording look complete. Cloud receipt
   // counts must match both recording ID and sequence, never sequence alone.
   async prepare(draft: TelemetryDraft, sequence: number): Promise<void> {
+    if (!this.snapshot.active && this.snapshot.restartAfter !== undefined && draft.capturedAt <= this.snapshot.restartAfter) return
     const next = structuredClone(this.snapshot)
     let trip = new TripStateMachine(next.trip)
     if (next.active) {

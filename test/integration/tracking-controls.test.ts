@@ -5,6 +5,8 @@ import mqtt from 'mqtt'
 import { afterEach, expect, it, vi } from 'vitest'
 import pluginConstructor from '../../src/index'
 import { CredentialStore } from '../../src/pairing/credentials'
+import { RecordingStore } from '../../src/trips/recording-store'
+import { WakeLoggerTransport } from '../../src/transport/mqtt-client'
 import { FileOutbox } from '../../src/outbox/file-outbox'
 const directories: string[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
@@ -28,10 +30,10 @@ async function fixture() {
     access: (level: string) => registrar(level),
     post: (route: string, handler: any) => { handlers[`POST ${route}`] = handler; accessLevels[`POST ${route}`] = 'admin' }
   } as any)
-  async function request(method: string, body?: unknown) {
+  async function request(method: string, body?: unknown, route = '/tracking') {
     let code = 0; let data: any
     const response = { status(value: number) { code = value; return this }, json(value: unknown) { data = value } }
-    await handlers[`${method} /tracking`]({ body }, response, (error: unknown) => { throw error })
+    await handlers[`${method} ${route}`]({ body }, response, (error: unknown) => { throw error })
     return { code, data }
   }
   plugin.start(configuration, vi.fn())
@@ -123,5 +125,102 @@ it('opens onboard reads and controls to non-admin users and keeps unpairing admi
       'POST /course/map-readiness': 'readwrite',
       'POST /forget-credentials': 'admin'
     })
+  } finally { await f.plugin.stop() }
+})
+
+it('finishes offline through the local route without samples, navigation writes or lost archive history', async () => {
+  const statuses = vi.spyOn(WakeLoggerTransport.prototype, 'updateStatus')
+  const f = await fixture()
+  try {
+    f.ingest()
+    let checkpoint: any
+    await vi.waitFor(async () => {
+      checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+      expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
+    })
+    const id = checkpoint.active.id
+    const result = await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')
+    expect(result.code).toBe(200)
+    expect(result.data).toMatchObject({ uploadMode: 'local_only', trackingState: 'STOPPED', trackingSessionId: null,
+      finishedTrip: { uploadPending: true, manifest: { id, state: 'complete', lastSequence: checkpoint.committed.sequence, endedAt: checkpoint.committed.capturedAt } } })
+    expect(f.accessLevels['POST /tracking/finish']).toBe('readwrite')
+    expect(statuses.mock.calls.at(-1)?.[0].recordings).toContainEqual(result.data.finishedTrip.manifest)
+    expect((await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')).code).toBe(200)
+    const after = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+    expect(after.lastSequence).toBe(checkpoint.lastSequence)
+    expect(after.closed).toHaveLength(1)
+    const archives = await fs.readdir(path.join(f.dir, 'track-archive/dev_controls'))
+    expect(archives.length).toBeGreaterThan(0)
+    const archive = JSON.parse(await fs.readFile(path.join(f.dir, 'track-archive/dev_controls/manifest.json'), 'utf8'))
+    expect(archive.recordings).toContainEqual(expect.objectContaining({ id, closed: true, points: 1, lastSequence: checkpoint.committed.sequence, endedAt: checkpoint.committed.capturedAt }))
+    await f.plugin.stop(); f.plugin.start(f.configuration(), vi.fn())
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    expect((await f.request('GET')).data.finishedTrip.uploadPending).toBe(true)
+    f.ingest()
+    await vi.waitFor(async () => expect((await f.request('GET')).data.trackingSessionId).not.toBeNull())
+    const newId = (await f.request('GET')).data.trackingSessionId
+    expect(newId).not.toBe(id)
+    expect((await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')).code).toBe(409)
+    expect((await f.request('GET')).data.trackingSessionId).toBe(newId)
+  } finally { await f.plugin.stop() }
+})
+
+it('serializes Finish trip behind an in-flight durable append and includes its actual sequence', async () => {
+  const f = await fixture()
+  const append = FileOutbox.prototype.append
+  let release: (() => void) | undefined
+  const held = vi.spyOn(FileOutbox.prototype, 'append').mockImplementationOnce(async function (this: FileOutbox, ...args) {
+    await new Promise<void>((resolve) => { release = resolve })
+    return append.apply(this, args)
+  })
+  try {
+    f.ingest()
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    const checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+    let finished = false
+    const closing = f.request('POST', { expectedRecordingId: checkpoint.active.id }, '/tracking/finish').then(result => { finished = true; return result })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(finished).toBe(false)
+    release!()
+    const result = await closing
+    expect(result.code).toBe(200)
+    expect(result.data.finishedTrip.manifest.lastSequence).toBe(checkpoint.lastSequence)
+    expect(held).toHaveBeenCalledTimes(1)
+  } finally { release?.(); held.mockRestore(); await f.plugin.stop() }
+})
+it('refuses a prepared but failed tail append rather than silently completing a shorter range', async () => {
+  const f = await fixture()
+  try {
+    f.ingest()
+    let checkpoint: any
+    await vi.waitFor(async () => {
+      checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+      expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
+    })
+    vi.spyOn(FileOutbox.prototype, 'append').mockRejectedValueOnce(new Error('append unavailable'))
+    f.ingest()
+    await vi.waitFor(() => expect(f.app.error).toHaveBeenCalledWith(expect.stringContaining('append unavailable')))
+    const result = await f.request('POST', { expectedRecordingId: checkpoint.active.id }, '/tracking/finish')
+    expect(result.code).toBe(409)
+    expect(result.data.error).toBe('recording_not_committed')
+    expect(result.data.trackingSessionId).toBe(checkpoint.active.id)
+    expect(result.data.finishedTrip).toBeNull()
+  } finally { await f.plugin.stop() }
+})
+
+it('keeps Finish trip available after a recording receipt persistence failure', async () => {
+  const statuses = vi.spyOn(WakeLoggerTransport.prototype, 'updateStatus')
+  const f = await fixture()
+  try {
+    f.ingest()
+    await vi.waitFor(async () => expect((await f.request('GET')).data.trackingSessionId).toBeTruthy())
+    const id = (await f.request('GET')).data.trackingSessionId
+    await f.request('POST', { uploadMode: 'automatic' })
+    const transport = statuses.mock.instances.at(-1) as any
+    vi.spyOn(RecordingStore.prototype, 'acknowledge').mockRejectedValueOnce(new Error('checkpoint unavailable'))
+    await expect(transport.options.onRecordingAcks([{ id, state: 'complete', lastSequence: 1 }])).rejects.toThrow('checkpoint unavailable')
+    const finished = await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')
+    expect(finished.code).toBe(200)
+    expect(finished.data.finishedTrip.manifest.id).toBe(id)
   } finally { await f.plugin.stop() }
 })

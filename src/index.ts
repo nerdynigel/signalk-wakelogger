@@ -70,6 +70,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let currentSampler: PathSampler | undefined
   let connectTransport: (() => void) | undefined
   let history: UploadHistory | undefined
+  let forgetTripPosition: (() => void) | undefined
   let sampleOperation: Promise<void> = Promise.resolve()
   let connectionState: ConnectionState | 'unpaired' | 'device_revoked' | 'recording_locally' = 'unpaired'
   let activeProfile: TelemetryProfile | undefined
@@ -187,6 +188,33 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           if (persistenceError) response.status(503).json({ error: 'tracking_persistence_failed', ...await trackingStatus() })
           else if (error instanceof Error && error.message === 'tracking_restarted') response.status(409).json({ error: 'tracking_restarted', ...await trackingStatus() })
           else next(error)
+        }
+      })
+      writeRouter.post('/tracking/finish', async (request, response, next) => {
+        const expected = (request as { body?: { expectedRecordingId?: unknown } }).body?.expectedRecordingId
+        if (typeof expected !== 'string' || !/^[0-9a-f-]{36}$/i.test(expected)) {
+          response.status(400).json({ error: 'invalid_recording_id' }); return
+        }
+        const thisGeneration = generation
+        const operation = sampleOperation.then(async () => {
+          if (!ready || !tripState || generation !== thisGeneration) throw new Error('tracking_unavailable')
+          const latest = await outbox?.latest()
+          if (latest) await tripState.committed(latest)
+          const durableSequence = (await outbox?.stats())?.currentSequence
+          const wasActive = tripState.currentState().trackingSessionId === expected
+          const finished = await tripState.finish(expected, durableSequence)
+          if (finished) {
+            if (wasActive) forgetTripPosition?.()
+            await trackArchive?.markClosed(finished.id, finished.endedAt ?? null)
+          }
+          await updateStatus()
+        })
+        sampleOperation = operation.catch(() => undefined)
+        try { await operation; response.status(200).json(await trackingStatus()) }
+        catch (error) {
+          if (error instanceof Error && ['recording_changed', 'recording_not_committed', 'tracking_unavailable'].includes(error.message)) {
+            response.status(409).json({ error: error.message, ...await trackingStatus() })
+          } else next(error)
         }
       })
       readRouter.get?.('/course', async (_request, response, next) => {
@@ -756,6 +784,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     cachedQueueStats = undefined
     queueStatsAt = undefined
     tripState = undefined
+    forgetTripPosition = undefined
     pairingAbortController = undefined
     associationAbortController = undefined
     associationCheck = undefined
@@ -861,6 +890,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       onCalculated: publishOnboardSnapshot
     })
     const normaliser = new TelemetryNormaliser()
+    forgetTripPosition = () => normaliser.forgetPosition()
     const tripFile = path.join(dataDirectory, 'trip-state.json')
     const trip = new RecordingStore(path.join(dataDirectory, 'recordings', credentials.deviceId, 'state.json'))
     await trip.open(await readTripSnapshot(tripFile))
@@ -887,6 +917,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       segmentBytes: DEFAULTS.segmentBytes
     }, credentials.outboxBinding?.backend)
     outbox = selected.store
+    await selected.store.latest().then(async (sample) => { if (sample) await trip.committed(sample) })
     storageBackend = selected.backend
     history = new UploadHistory(path.join(dataDirectory, 'uploads', credentials.deviceId, 'state.json'))
     try { await history.open() } catch (error) {
@@ -924,9 +955,15 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       onRacePackManifest: async (payload) => racePackReceiver?.acceptManifest(payload) ?? null,
       onRacePackChunk: async (payload, topicIndex) => racePackReceiver?.acceptChunk(payload, topicIndex) ?? null,
       getRacePackAck: () => racePackReceiver?.currentAck() ?? null,
+      onRecordingStatuses: async (statuses) => {
+        const operation = sampleOperation.then(() => trip.confirm(statuses))
+        sampleOperation = operation.catch(() => undefined)
+        await operation
+      },
       onRecordingAcks: async (acks) => {
-        sampleOperation = sampleOperation.then(() => trip.acknowledge(acks))
-        await sampleOperation
+        const operation = sampleOperation.then(() => trip.acknowledge(acks))
+        sampleOperation = operation.catch(() => undefined)
+        await operation
       },
       onRacePlanSnapshotAcks: async (ids) => {
         await onboardSnapshots?.acknowledge(ids)
@@ -963,6 +1000,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       try {
         queued = await outbox.append(credentials.deviceId, draft)
         nextSequence = queued.sequence + 1
+        await trip.committed(queued)
         // Small append off the outbox lock; a failure here must never break
         // telemetry recording or delivery.
         if (draft.trackingSessionId && trackArchive) {
@@ -1066,6 +1104,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,
       trackingSessionId: tripState?.currentState().trackingSessionId ?? null,
       trackingState: tripState?.currentState().state ?? null,
+      finishedTrip: tripState?.finishedStatus() ?? null,
       available: ready && !!outbox && connectionState !== 'device_revoked',
       connectionState, historicalUpload: cohort,
       // Loss semantics are deliberately separated. `droppedCount` inside the

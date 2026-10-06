@@ -635,3 +635,18 @@ test('mirrored tack and gybe estimates derive true wind from fresh apparent wind
   const dateline = projectBearing({ latitude: 0, longitude: 179.999 }, 90, 1852)
   assert.ok(dateline.longitude < 0 && dateline.longitude >= -180)
 })
+
+test('finished trip separates receipt ACK from exact cloud readiness', async () => {
+  const { finishedTripPresentation } = await import('../../webapp/tracking-controls.mjs')
+  const pending = { finishedTrip: { uploadPending: false, confirmationPending: true, cloudStatus: null } }
+  assert.match(finishedTripPresentation(pending), /awaiting cloud confirmation/)
+  const processing = { ...pending, finishedTrip: { ...pending.finishedTrip, cloudStatus: { state: 'processing', missingSamples: 0, rejectedSamples: 0 } } }
+  assert.match(finishedTripPresentation(processing), /cloud processing.*confirmation pending/)
+  assert.match(finishedTripPresentation({ ...processing, trackingSessionId: 'new-trip' }), /^Previous trip.*pending/)
+  const ready = { finishedTrip: { confirmationPending: false, cloudStatus: { state: 'ready' } } }
+  assert.equal(finishedTripPresentation(ready), 'Trip confirmed ready by cloud')
+  assert.match(finishedTripPresentation({ ...pending, uploadMode: 'local_only' }), /Live tracking off/)
+  assert.match(finishedTripPresentation({ ...pending, uploadMode: 'automatic', connectionState: 'offline' }), /cloud offline/)
+  assert.equal(finishedTripPresentation({ finishedTrip: { confirmationPending: false, cloudStatus: { state: 'ready', environmentPending: true } } }), 'Trip confirmed ready by cloud · weather enrichment pending')
+  assert.match(finishedTripPresentation({ finishedTrip: { confirmationPending: true, cloudStatus: { state: 'waiting_for_history', missingSamples: 2, rejectedSamples: 1 } } }), /2 samples missing.*1 samples rejected.*pending/)
+})

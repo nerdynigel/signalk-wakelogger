@@ -36,6 +36,11 @@ export class TelemetryNormaliser {
     }
   }
 
+  forgetPosition(): void {
+    this.values.delete('navigation.position')
+    this.dirty = false
+  }
+
   takeSample(now = Date.now(), fields: Set<TelemetryField> = new Set(['position', 'sog', 'cog', 'heading', 'depth', 'apparentWind'])): TelemetryDraft | undefined {
     if (!this.dirty) return undefined
     const position = this.get<PositionValue>('navigation.position', now)
