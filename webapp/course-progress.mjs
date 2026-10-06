@@ -7,12 +7,33 @@ export function coursePoints(course) {
   return [course.start, ...(course.marks || []), course.finish].filter(Boolean)
 }
 
-export function raceProgress(status, navigation = {}, calculated = {}, nativeRoute = null) {
-  const desired = status?.desired?.action === 'clear' ? status.desired : status?.cachedCourse || status?.desired
+// Course and Race Pack revision numbers belong to separate streams. Use their
+// timestamps and plan identities when a pack arrives before its course.
+export function selectedCoursePresentation(status, racePlan = null) {
+  const desired = status?.desired || status?.cachedCourse
+  const pack = racePlan?.pack
+  const packTime = Date.parse(pack?.generatedAt)
+  const desiredTime = Date.parse(desired?.updatedAt)
+  const different = desired?.action !== 'activate' || pack?.courseId !== desired.courseId
+    || (pack?.racePlanId != null && desired.racePlanId != null && pack.racePlanId !== desired.racePlanId)
+  const pendingPack = pack?.available === true && !!pack.courseName && different && Number.isFinite(packTime)
+    && (!desired || (Number.isFinite(desiredTime) && packTime > desiredTime))
+  const course = pendingPack ? null : desired
+  const name = pendingPack ? pack.courseName : course?.action === 'activate' ? course.name : 'Onboard navigation'
+  const matchingPack = pack?.available === true && !different
+  const startTime = pendingPack || matchingPack ? pack.startTime : null
+  const date = startTime && Number.isFinite(Date.parse(startTime)) ? new Date(startTime).toLocaleDateString() : null
+  // Keep the canonical name intact and show the race date even for names which
+  // do not contain it (for example, "Club race").
+  return { course, pendingPack, name: date ? `${name} · ${date}` : name }
+}
+
+export function raceProgress(status, navigation = {}, calculated = {}, nativeRoute = null, racePlan = null) {
+  const desired = selectedCoursePresentation(status, racePlan).course
   const cachedPoints = coursePoints(desired)
   const geometry = nativeRoute?.feature?.geometry
   const nativeCoordinates = geometry?.type === 'LineString' && Array.isArray(geometry.coordinates) ? geometry.coordinates : null
-  const validNative = cachedPoints.length > 0 && nativeCoordinates?.length >= 2 && nativeCoordinates.length <= 200
+  const validNative = status?.native?.activeMatchesDesired === true && cachedPoints.length > 0 && nativeCoordinates?.length >= 2 && nativeCoordinates.length <= 200
     && nativeCoordinates.every(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]) && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90)
   const resourcePoints = validNative ? nativeCoordinates.map((point, index) => ({
     ...cachedPoints[index], latitude: point[1], longitude: point[0],

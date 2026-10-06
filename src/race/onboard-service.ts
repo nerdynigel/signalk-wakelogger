@@ -210,6 +210,8 @@ export class OnboardRaceService {
         sha256: applied.sha256,
         ruleSetVersion: applied.ruleSetVersion,
         courseId: applied.courseId,
+        courseName: pack?.course.name ?? null,
+        startTime: typeof pack?.payload?.startTime === 'string' ? pack.payload.startTime : null,
         racePlanId: applied.racePlanId,
         courseDefinitionDigest: applied.courseDefinitionDigest,
         generatedAt: applied.generatedAt,

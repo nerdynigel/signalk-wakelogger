@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chartSources, courseBounds, coversBounds } from '../../webapp/chart-sources.mjs'
-import { raceProgress } from '../../webapp/course-progress.mjs'
+import { raceProgress, selectedCoursePresentation } from '../../webapp/course-progress.mjs'
 import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSignalKError } from '../../webapp/api-client.mjs'
 import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
@@ -545,4 +545,22 @@ test('request deadlines stay active through the response body and recover', asyn
     if (hadSession) globalThis.sessionStorage = originalSession
     else delete globalThis.sessionStorage
   }
+})
+
+
+test('pack/course identity ordering uses timestamps, never their unrelated revisions', () => {
+  const desired = { action: 'activate', courseId: 'race-plan-16', racePlanId: 16, revision: 9999, name: 'Previous race', updatedAt: '2026-09-27T02:00:00Z' }
+  const pack = { available: true, courseId: 'race-plan-19', racePlanId: 19, revision: 1, courseName: 'Course H', generatedAt: '2026-10-04T02:27:39Z', startTime: '2026-10-04T02:44:00Z' }
+  const view = selectedCoursePresentation({ desired }, { pack })
+  assert.equal(view.pendingPack, true)
+  assert.equal(view.course, null)
+  assert.match(view.name, /^Course H · /)
+  assert.equal(selectedCoursePresentation({ desired }, { pack: { ...pack, generatedAt: '2026-09-20T02:00:00Z', revision: 99999 } }).pendingPack, false)
+  assert.equal(selectedCoursePresentation({ desired }, { pack: { ...pack, generatedAt: 'invalid' } }).pendingPack, false)
+  assert.equal(selectedCoursePresentation({ desired }, { pack: { ...pack, available: false } }).pendingPack, false)
+  const current = { ...desired, courseId: 'race-plan-19', racePlanId: 19, name: 'Club race', updatedAt: '2026-10-04T02:28:00Z' }
+  const ready = selectedCoursePresentation({ desired: current }, { pack })
+  assert.equal(ready.pendingPack, false)
+  assert.equal(ready.course, current)
+  assert.match(ready.name, /^Club race · /)
 })

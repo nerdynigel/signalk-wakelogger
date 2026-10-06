@@ -54,12 +54,14 @@ export function racePlanPresentation(racePlan) {
   const currentLeg = usable ? formatLeg(legs[0], 0) : null
   const remainingLegs = usable ? legs.map((leg, index) => formatLeg(leg, index)).filter(Boolean) : []
   const revision = pack.revision ?? null
+  const identity = pack.courseName ? ` · ${pack.courseName}` : pack.racePlanId != null ? ` · plan ${pack.racePlanId}` : ''
+  const date = pack.startTime && Number.isFinite(Date.parse(pack.startTime)) ? ` · ${new Date(pack.startTime).toLocaleDateString()}` : ''
   const rules = pack.ruleSetVersion ? ` · ${pack.ruleSetVersion}` : ''
   const packStatus = !packAvailable
     ? 'No Race Pack synced yet'
     : !packApplicable
-      ? `Race Pack stored · revision ${revision}${rules} · does not match the selected course`
-      : `Race Pack ready · revision ${revision}${rules}`
+      ? `Race Pack stored · revision ${revision}${identity}${date}${rules} · does not match the selected course`
+      : `Race Pack ready · revision ${revision}${identity}${date}${rules}`
 
   let warning = null
   let stale = false

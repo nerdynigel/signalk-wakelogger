@@ -11,7 +11,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1' } = {}) {
+async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1', courseState = null, readiness = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -53,13 +53,14 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     if (pathname === '/plugins/signalk-wakelogger/course') {
       if (courseError) return route.fulfill({ status: courseError, json: { error: 'course_unavailable', detail: 'Signal K course provider rejected the request' } })
+      if (courseState) return json(typeof courseState === 'function' ? courseState() : courseState)
       if (!course) return json({ desired: null, cachedCourse: null, acknowledgement: null, routePoints: [], native: { available: false, course: null, ownedRouteId: null, activeMatchesDesired: false, conflict: false } })
       return json({ desired, cachedCourse: desired, acknowledgement: { v: 1, revision: 7, status: 'applied' }, routePoints: points,
         native: { available: true, course: navigation, ownedRouteId, activeMatchesDesired: navigation.activeRoute.href === ownedHref, conflict: navigation.activeRoute.href !== ownedHref },
         credentials: { password: secret },
       })
     }
-    if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json({ ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
+    if (pathname === '/plugins/signalk-wakelogger/offline-readiness') return json(readiness || { ready: false, label: 'Offline race not ready', missing: ['no Wake Logger course is selected'], detail: 'Missing: no Wake Logger course is selected.' })
     if (pathname === '/plugins/signalk-wakelogger/track') {
       const rows = typeof track === 'function' ? track() : track
       const id = typeof trackId === 'function' ? trackId() : trackId
@@ -672,4 +673,49 @@ test('a pending recording with no archive points yet is not complete history', a
   await expect(map).toHaveAttribute('data-track-history-state', 'loaded', { timeout: 20_000 })
   await expect(map).toHaveAttribute('data-track-point-count', '3')
   await expectFittedToTrack(map)
+})
+
+
+test('a new desired plan supersedes the cached date and displays the foreign activation action', async ({ page }) => {
+  const previous = { ...desired, revision: 2, courseId: 'race-plan-16', racePlanId: 16, name: 'SAGS 27/09/2026' }
+  const today = { ...desired, revision: 3, courseId: 'race-plan-19', racePlanId: 19, name: 'SAGS 04/10/2026 · Course H', updatedAt: '2026-10-04T02:27:39Z' }
+  let state = { desired: previous, cachedCourse: previous, acknowledgement: { revision: 2, status: 'applied' },
+    native: { available: true, activeMatchesDesired: false, conflict: true, course: { activeRoute: { href: '/resources/routes/foreign', name: 'Foreign chart route' } } } }
+  const { writes } = await mockBoat(page, { courseState: () => state, readiness: { ready: false, label: 'Offline race not ready', missing: ['Wake Logger course is not active', 'offline charts are not ready', 'vessel observations are not ready'], detail: 'Missing: Wake Logger course is not active; offline charts are not ready; vessel observations are not ready.' }, racePlan: { uploadMode: 'local_only', pack: { available: true, applicable: false, revision: 1886, racePlanId: 19, courseName: 'SAGS 04/10/2026 · Course H', startTime: '2026-10-04T02:44:00Z' } } })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
+  await expect(page.locator('#course-name')).toHaveText(previous.name)
+  state = { ...state, desired: today, acknowledgement: { revision: 3, status: 'rejected', errorCode: 'native_route_conflict', activation: 'conflict' } }
+  await expect(page.locator('#course-name')).toContainText(today.name, { timeout: 10000 })
+  await expect(page.locator('#offline-readiness')).toContainText('3 items missing')
+  await expect(page.locator('#offline-readiness')).toHaveAttribute('title', /Wake Logger course is not active/)
+  await expect(page.locator('#active-status')).toContainText('Update rejected (native_route_conflict)')
+  await expect(page.locator('#active-status')).toContainText('Another Signal K route is active')
+  await expect(page.locator('#activate-course')).toHaveText(`Activate ${today.name}`)
+  await expect(page.locator('#activate-course')).toBeEnabled()
+  expect(writes).toEqual([])
+  await page.locator('#activate-course').click()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
+  await expect(page.locator('#course-name')).not.toContainText('27/09/2026')
+  await expect(page.locator('#race-plan-list')).toContainText('SAGS 04/10/2026 · Course H')
+})
+
+
+test('a newer Race Pack announces today before course delivery and cannot activate the old plan', async ({ page }) => {
+  const previous = { ...desired, revision: 2, courseId: 'race-plan-16', racePlanId: 16, name: 'SAGS 27/09/2026', updatedAt: '2026-09-27T02:00:00Z' }
+  const state = { desired: previous, cachedCourse: previous, acknowledgement: { revision: 2, status: 'applied' }, native: { available: true, activeMatchesDesired: true, conflict: false, course: { activeRoute: { href: ownedHref, pointIndex: 1 } } } }
+  const { writes } = await mockBoat(page, { courseState: state, racePlan: { pack: { available: true, applicable: false, courseId: 'race-plan-19', racePlanId: 19, courseName: 'Course H', revision: 1886, generatedAt: '2026-10-04T02:27:39Z', startTime: '2026-10-04T02:44:00Z' } } })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
+  await expect(page.locator('#course-name')).toContainText('Course H')
+  await expect(page.locator('#course-name')).toContainText('Course delivery pending')
+  await expect(page.locator('#course-name')).toContainText('10/4/2026')
+  await expect(page.locator('#course-name')).not.toContainText('27/09/2026')
+  await expect(page.locator('#active-status')).toContainText('Desired course delivery pending')
+  await expect(page.locator('#activate-course')).toBeDisabled()
+  await expect(page.locator('#activate-course')).toHaveText('Waiting for desired course')
+  await expect(page.locator('#advance-point')).toBeDisabled()
+  await expect(page.locator('#map')).toHaveAttribute('data-course-point-count', '0')
+  expect(writes).toEqual([])
 })
