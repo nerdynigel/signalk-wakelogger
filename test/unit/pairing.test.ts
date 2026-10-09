@@ -8,7 +8,7 @@ import { PairingError, pairDevice, pairDeviceWithRetry } from '../../src/pairing
 import { legacyProfile } from '../../src/telemetry/profile'
 
 const dirs: string[] = []
-afterEach(async () => { vi.unstubAllGlobals(); for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { vi.unstubAllGlobals(); for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 
 describe('pairing', () => {
   it('creates a stable installation identity and owner-only credential file', async () => {

@@ -14,7 +14,7 @@ const directories: string[] = []
 const services: RaceProgressionService[] = []
 afterEach(async () => {
   for (const service of services.splice(0)) await service.close()
-  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function offset(origin: { latitude: number; longitude: number }, northM: number, eastM: number) {
