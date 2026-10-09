@@ -6,7 +6,7 @@ import { OnboardSnapshotStore, type OnboardPlanSnapshot } from '../../src/race/o
 
 const directories: string[] = []
 afterEach(async () => {
-  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function snapshot(id: string): OnboardPlanSnapshot {

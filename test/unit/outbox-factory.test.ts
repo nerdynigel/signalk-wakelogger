@@ -7,7 +7,7 @@ import { createOutbox } from '../../src/outbox/factory'
 const temporaryDirectories: string[] = []
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })))
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
 })
 
 describe('createOutbox', () => {

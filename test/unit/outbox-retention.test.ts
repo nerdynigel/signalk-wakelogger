@@ -59,7 +59,7 @@ class MemoryDatabase implements PluginDatabase {
 }
 
 const directories: string[] = []
-afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 const draft = (capturedAt: number) => ({ capturedAt, receivedAt: capturedAt, values: { lat: -27, lon: 153 }, quality: { timestamp: 'source' as const } })
 
 describe('outbox retention pressure', () => {

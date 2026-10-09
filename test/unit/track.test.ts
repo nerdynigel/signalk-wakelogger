@@ -6,7 +6,7 @@ import { TrackArchive, archiveFileName, decodeTrackRecord, encodeTrackRecord } f
 import { MAX_TRACK_POINTS, selectTrackIndexes, type TrackPoint } from '../../src/tracking/track'
 
 const directories: string[] = []
-afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 
 async function tempDir(prefix = 'track-archive-'): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix))

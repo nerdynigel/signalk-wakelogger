@@ -37,7 +37,7 @@ async function removeDirectory(directory: string): Promise<void> {
   let lastError: unknown
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
-      await fs.rm(directory, { recursive: true, force: true })
+      await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
       return
     } catch (error) {
       lastError = error

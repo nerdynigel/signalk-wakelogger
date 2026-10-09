@@ -17,7 +17,7 @@ function options(overrides: object = {}): any {
   return { maxBytes: 1024 * 1024, maxAgeMs: 7 * 86_400_000, segmentBytes: 1024, now: () => 2000, ...overrides }
 }
 
-afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 
 describe('FileOutbox', () => {
   it('persists sequence and acknowledgement state across restart', async () => {

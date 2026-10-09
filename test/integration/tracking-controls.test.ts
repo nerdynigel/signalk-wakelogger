@@ -9,7 +9,7 @@ import { RecordingStore } from '../../src/trips/recording-store'
 import { WakeLoggerTransport } from '../../src/transport/mqtt-client'
 import { FileOutbox } from '../../src/outbox/file-outbox'
 const directories: string[] = []
-afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 async function fixture() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tracking-controls-')); directories.push(dir)
   await new CredentialStore(path.join(dir, 'identity')).save({ version: 1, deviceId: 'dev_controls', clientId: 'dev_controls', username: 'dev_controls', password: 'long-test-password', mqttHost: 'localhost', mqttPort: 1, tls: false, pairedAt: 1000 })

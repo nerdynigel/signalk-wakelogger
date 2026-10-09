@@ -19,7 +19,7 @@ import { encodeFixturePack, makeFixturePack } from '../helpers/race-pack'
 const directories: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 async function temporaryDirectory(prefix: string): Promise<string> {

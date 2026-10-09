@@ -5,7 +5,7 @@ import { afterEach, expect, it } from 'vitest'
 import { UploadHistory } from '../../src/tracking/history'
 import type { OutboxStats } from '../../src/outbox/interface'
 const directories: string[] = []
-afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 const stats = (overrides: Partial<OutboxStats> = {}): OutboxStats => ({ storageBackend: 'file', messageCount: 10, diskBytes: 1000, acknowledgedSequence: 10, currentSequence: 20, droppedCount: 0, droppedThrough: 0, ...overrides })
 it('persists a fixed historical cohort across restart and excludes later live samples', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-history-')); directories.push(dir)

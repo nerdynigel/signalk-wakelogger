@@ -13,7 +13,7 @@ import { encodeFixturePack, makeFixturePack, FIXTURE_COURSE_DIGEST } from '../he
 const directories: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
-  for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true })
+  for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 const deviceId = 'dev_remediation'

@@ -6,7 +6,7 @@ import { RecordingStore } from '../../src/trips/recording-store'
 import type { TelemetryDraft } from '../../src/telemetry/types'
 
 const directories: string[] = []
-afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true }) })
+afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 async function fixture() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'recordings-'))
   directories.push(directory)

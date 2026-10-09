@@ -7,7 +7,7 @@ import { NativeCourseService, nativeRouteHref, nativeRouteId, type NativeCourse,
 import { parseCourse, type ActiveCourseDocument } from '../../src/courses/protocol'
 
 const directories: string[] = []
-afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true }) })
+afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 function document(revision = 1): ActiveCourseDocument {
   return { v: 1, action: 'activate', revision, courseId: 'race-plan-123', racePlanId: 123, name: 'Club race', updatedAt: '2026-09-13T00:00:00Z',
     start: { id: 'start', name: 'Start', latitude: -27, longitude: 153 },

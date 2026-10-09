@@ -11,7 +11,7 @@ const directories: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true })
+  for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 describe('local recording mode', () => {
