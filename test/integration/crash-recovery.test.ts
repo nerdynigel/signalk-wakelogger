@@ -22,7 +22,11 @@ import { DatabaseOutbox } from '../../src/outbox/database-outbox'
 import { FileOutbox } from '../../src/outbox/file-outbox'
 import type { PluginDatabase } from '../../src/outbox/database-types'
 import { TrackArchive } from '../../src/tracking/archive'
-import { SqlitePluginDatabase } from '../helpers/sqlite-plugin-database'
+import {
+  SqlitePluginDatabase,
+  betterSqlite3Available,
+  betterSqlite3LoadError
+} from '../helpers/sqlite-plugin-database'
 
 const pendingCleanups: Array<() => Promise<void> | void> = []
 function onCleanup(action: () => Promise<void> | void): void {
@@ -77,7 +81,19 @@ function options(overrides: object = {}): any {
   return { maxBytes: 1_000_000, maxAgeMs: 7 * 86_400_000, segmentBytes: 65_536, now: () => 2_000, ...overrides }
 }
 
-describe('abrupt shutdown recovery', () => {
+// The SQLite half of these simulations needs the better-sqlite3 native binding.
+// Environments that install with --ignore-scripts (e.g. the Signal K plugin
+// registry harness) have no binding, so skip there; CI builds it first via
+// `npm run prepare:test-sqlite` and runs the full suite.
+if (!betterSqlite3Available) {
+  console.warn(
+    `[crash-recovery] skipping SQLite durability suite: better-sqlite3 binding unavailable ` +
+      `(${betterSqlite3LoadError() instanceof Error ? (betterSqlite3LoadError() as Error).message : String(betterSqlite3LoadError())}). ` +
+      'Run `npm run prepare:test-sqlite` to enable it.'
+  )
+}
+
+describe.skipIf(!betterSqlite3Available)('abrupt shutdown recovery', () => {
   it('reopens a real SQLite-backed DatabaseOutbox after losing the instance and keeps committed state', async () => {
     const directory = await tempDir('crash-db-')
     const database = openDatabase(directory)

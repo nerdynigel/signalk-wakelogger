@@ -5,13 +5,54 @@
 // via `better-sqlite3`. This is a real supported database engine, not an
 // in-memory dictionary: WAL + synchronous=FULL so a "lost instance" can be
 // reopened and its committed rows recovered.
-import Database from 'better-sqlite3'
+//
+// The native binding is built by install scripts (`npm rebuild better-sqlite3`,
+// see `prepare:test-sqlite`). Environments that install with `--ignore-scripts`
+// (for example the Signal K plugin registry harness) have no binding, so tests
+// that need it must skip gracefully instead of failing. Callers check
+// `betterSqlite3Available` and use `describe.skipIf`.
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import type DatabaseDefault from 'better-sqlite3'
 import type { DatabaseRunResult, PluginDatabase } from '../../src/outbox/database-types'
 
+type DatabaseCtor = typeof DatabaseDefault
+
+// Works under both the CommonJS build and vitest's ESM transform.
+const requireCjs = createRequire(path.join(process.cwd(), 'package.json'))
+
+let Database: DatabaseCtor | null = null
+let loadError: unknown = null
+try {
+  const loaded = requireCjs('better-sqlite3') as DatabaseCtor | { default?: DatabaseCtor }
+  const candidate = (loaded as { default?: DatabaseCtor }).default ?? (loaded as DatabaseCtor)
+  // The JS module always loads; constructing it is what fails when the native
+  // binding was never built. Probe with an in-memory database and close it.
+  const probe = new candidate(':memory:')
+  probe.close()
+  Database = candidate
+} catch (error) {
+  loadError = error
+}
+
+/** True when the `better-sqlite3` native binding can be loaded. */
+export const betterSqlite3Available = Database !== null
+
+/** The load failure, when `betterSqlite3Available` is false. */
+export function betterSqlite3LoadError(): unknown {
+  return loadError
+}
+
 export class SqlitePluginDatabase implements PluginDatabase {
-  private readonly db: InstanceType<typeof Database>
+  private readonly db: InstanceType<DatabaseCtor>
 
   constructor(file: string) {
+    if (!Database) {
+      throw new Error(
+        'better-sqlite3 native binding is not available; run `npm run prepare:test-sqlite` ' +
+          `before this suite. Cause: ${loadError instanceof Error ? loadError.message : String(loadError)}`
+      )
+    }
     this.db = new Database(file)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('synchronous = FULL')
