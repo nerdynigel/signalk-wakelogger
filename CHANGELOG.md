@@ -2,6 +2,12 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.9] - 2026-10-09
+
+### Under the hood
+
+- No user-facing changes. The plugin's test suite now skips the SQLite durability checks when the native module isn't built and retries temporary-directory cleanup, so source installs and the Signal K plugin registry test suite run cleanly without a compiler.
+
 ## [0.2.0-beta.8] - 2026-10-06
 
 ### Finish a trip onboard
