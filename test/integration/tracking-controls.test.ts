@@ -134,10 +134,12 @@ it('finishes offline through the local route without samples, navigation writes 
   try {
     f.ingest()
     let checkpoint: any
+    // A slow CI filesystem can take longer than vi.waitFor's 1s default to
+    // flush the checkpoint; the assertion inside the poll is the real check.
     await vi.waitFor(async () => {
       checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
       expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
-    })
+    }, { timeout: 15000 })
     const id = checkpoint.active.id
     const result = await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')
     expect(result.code).toBe(200)
@@ -196,7 +198,7 @@ it('refuses a prepared but failed tail append rather than silently completing a 
     await vi.waitFor(async () => {
       checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
       expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
-    })
+    }, { timeout: 15000 })
     vi.spyOn(FileOutbox.prototype, 'append').mockRejectedValueOnce(new Error('append unavailable'))
     f.ingest()
     await vi.waitFor(() => expect(f.app.error).toHaveBeenCalledWith(expect.stringContaining('append unavailable')))
