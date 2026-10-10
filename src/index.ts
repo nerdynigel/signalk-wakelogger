@@ -581,6 +581,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const courseStatus = courses ? await courses.status() as {
       desired?: { action?: string; revision?: number; courseId?: string; racePlanId?: number; courseDefinitionDigest?: string | null } | null
       acknowledgement?: { status?: string; revision?: number } | null
+      routePoints?: unknown[]
       native?: { available?: boolean; activeMatchesDesired?: boolean; conflict?: boolean; course?: { activeRoute?: { reverse?: boolean } | null } | null } | null
     } : null
     const onboardStatus = onboard?.status() as { pack?: {
@@ -602,7 +603,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       currentAt: meta.currentAt ?? 'unknown'
     } : null
     return offlineReadiness({
-      course: courseStatus?.desired ?? null,
+      course: courseStatus?.desired
+        ? { ...courseStatus.desired, pointCount: (courseStatus.routePoints ?? []).length }
+        : null,
       acknowledgement: courseStatus?.acknowledgement ?? null,
       native: {
         available: courseStatus?.native?.available === true,

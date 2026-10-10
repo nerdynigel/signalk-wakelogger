@@ -16,6 +16,12 @@ export interface ActiveCourseDocument {
 export interface ClearCourseDocument { v: 1; action: 'clear'; revision: number; courseId: null; updatedAt: string }
 export type CourseDocument = ActiveCourseDocument | ClearCourseDocument
 export type MapReadiness = 'unknown' | 'unavailable' | 'online_only' | 'preparing' | 'offline_ready'
+export interface CourseBlocker {
+  kind: 'occupied_target' | 'malformed_target' | 'foreign_active'
+  resourceId: string
+  name: string | null
+  owner: string | null
+}
 export interface CourseAcknowledgement {
   mapReadiness?: MapReadiness
   v: 1
@@ -23,9 +29,16 @@ export interface CourseAcknowledgement {
   status: 'applied' | 'rejected'
   errorCode?: string
   activation?: 'active' | 'inactive' | 'conflict'
+  /**
+   * Present when activation was rejected or conflicted because another resource
+   * blocked the plugin's deterministic target route. `status`/`revision`/
+   * `activation`/`errorCode` semantics are unchanged, so old clouds are
+   * unaffected; new clouds use `blocker` for exact crew instructions.
+   */
+  blocker?: CourseBlocker
 }
 export class CourseError extends Error {
-  constructor(readonly code: string) { super(code) }
+  constructor(readonly code: string, readonly blocker?: CourseBlocker) { super(code) }
 }
 export function coursePoints(course: ActiveCourseDocument): CoursePoint[] { return [course.start, ...course.marks, course.finish] }
 export function parseCourse(payload: Buffer): CourseDocument {
