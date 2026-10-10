@@ -34,7 +34,9 @@ Owner proof (R. George, 2026-10-10): plugin 0.2.0-beta.8 on a vessel acked `{"st
 
 - [x] Inspect PR, registry tags and release gates.
 - [x] Bump package/lockfile and pinned screenshot URLs to beta.10.
-- [ ] Resolve the failing main CI check.
-- [ ] Verify checks, production dependency audit, onboard browser and packaged Docker recovery.
-- [ ] Inspect the npm tarball and prepare customer-facing release notes.
-- [ ] Prepare the reviewed PR for merge and tagged trusted publication; maintainer passkey promotion follows publication.
+- [x] Resolve the failing main CI check (private vessel name removed; both Node check jobs pass).
+- [x] Verify checks, production dependency audit, onboard browser and packaged Docker recovery (all final-revision GitHub checks pass, including Node 20/22 checks and Signal K Node 22/24 on Linux, ARM64, macOS and Windows).
+- [x] Inspect the npm tarball and prepare customer-facing release notes (187 files; app, artwork and notes present; development files excluded).
+- [x] Prepare PR #21 for merge and tagged trusted publication. Publication still requires a merge to main, the matching tag and the npm environment maintainer review; App Store promotion then uses the maintainer passkey.
+
+Release review: candidate beta.10 contains the race-navigation resilience changes plus release metadata and public customer notes. GitHub verified 278 tests (one opt-in broker test skipped), browser/broker gates, packaged Signal K recovery and reusable plugin compatibility. No npm version or dist-tag was changed during preparation.
