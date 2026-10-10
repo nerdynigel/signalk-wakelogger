@@ -1,6 +1,25 @@
 const value = (input) => input && typeof input === 'object' && 'value' in input ? input.value : input
 const finite = (input) => typeof value(input) === 'number' && Number.isFinite(value(input)) ? value(input) : null
 const radiansToDegrees = (input) => input === null ? null : ((input * 180 / Math.PI) % 360 + 360) % 360
+const signedDegrees = (input) => ((input + 540) % 360) - 180
+const MPS_TO_KNOTS = 1.9438444924406
+const EARTH_RADIUS_M = 6371000
+
+// Great-circle distance and initial bearing between two WGS84 points. Used only
+// for the read-only fallback, so the next-mark bearing/distance stay visible
+// while native activation is unavailable.
+function greatCircle(from, to) {
+  const radians = (degrees) => degrees * Math.PI / 180
+  const latitude1 = radians(from.latitude)
+  const latitude2 = radians(to.latitude)
+  const deltaLatitude = latitude2 - latitude1
+  const deltaLongitude = radians(to.longitude - from.longitude)
+  const haversine = Math.sin(deltaLatitude / 2) ** 2 + Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(deltaLongitude / 2) ** 2
+  const centralAngle = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  const x = Math.sin(deltaLongitude) * Math.cos(latitude2)
+  const y = Math.cos(latitude1) * Math.sin(latitude2) - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(deltaLongitude)
+  return { distanceM: EARTH_RADIUS_M * centralAngle, bearingDeg: (Math.atan2(x, y) * 180 / Math.PI + 360) % 360 }
+}
 
 export function coursePoints(course) {
   if (!course || course.action === 'clear') return []
@@ -44,27 +63,56 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
   const reverse = matches && course?.activeRoute?.reverse === true
   const points = reverse ? [...resourcePoints].reverse() : resourcePoints
   const rawIndex = course?.activeRoute?.pointIndex
-  const index = matches && Number.isInteger(rawIndex) && rawIndex >= 0 && rawIndex < points.length ? rawIndex : null
+  const nativeIndex = matches && Number.isInteger(rawIndex) && rawIndex >= 0 && rawIndex < points.length ? rawIndex : null
+  // Read-only fallback: native activation is unavailable, rejected or
+  // conflicted, but a cached Wake Logger course exists. Navigation stays
+  // visible from the cached points. Control writes remain gated on `matches`.
+  const readOnly = !matches && desired?.action !== 'clear' && points.length >= 2
+  const cachedIndex = Number.isInteger(desired?.activeWaypointIndex) && desired.activeWaypointIndex >= 0 && desired.activeWaypointIndex < points.length
+    ? desired.activeWaypointIndex
+    : Math.min(1, points.length - 1)
+  const index = matches ? nativeIndex : readOnly ? cachedIndex : null
   const previousIndex = index === null ? -1 : index - 1
   const position = value(navigation.position)
   const validPosition = position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
     && Math.abs(position.latitude) <= 90 && Math.abs(position.longitude) <= 180
-  // Signal K supplies the calculations. Only units and presentation change here.
-  const distance = matches ? finite(calculated.distance) : null
-  const bearing = matches ? finite(calculated.bearingTrue) : null
-  const vmg = matches ? finite(calculated.velocityMadeGood) : null
+  const next = index === null ? null : points[index]
+  const fallback = readOnly && validPosition && next ? greatCircle(position, next) : null
+  // Signal K supplies the calculations when the route is active. Only units and
+  // presentation change there; the fallback computes directly from cached
+  // geometry so a missing native route never blanks live navigation.
+  const distanceM = matches ? finite(calculated.distance) : fallback ? fallback.distanceM : null
+  const bearingRad = matches ? finite(calculated.bearingTrue) : null
+  const distanceNm = distanceM === null ? null : distanceM / 1852
+  const bearingDeg = matches ? radiansToDegrees(bearingRad) : fallback ? fallback.bearingDeg : null
+  const cogDeg = radiansToDegrees(finite(navigation.courseOverGroundTrue))
+  const sogMps = finite(navigation.speedOverGround)
+  const sogKnots = sogMps === null ? null : sogMps * MPS_TO_KNOTS
+  const vmgNative = matches ? finite(calculated.velocityMadeGood) : null
+  const vmgKn = vmgNative !== null
+    ? vmgNative / 0.5144444444
+    : fallback && sogKnots !== null && cogDeg !== null && sogKnots > 0
+      ? sogKnots * Math.cos(signedDegrees(fallback.bearingDeg - cogDeg) * Math.PI / 180)
+      : null
+  const timeToGo = matches
+    ? finite(calculated.timeToGo)
+    : distanceNm !== null && vmgKn !== null && vmgKn > 0 ? distanceNm / vmgKn * 3600 : null
+  const eta = matches
+    ? value(calculated.estimatedTimeOfArrival) || null
+    : timeToGo !== null ? new Date(Date.now() + timeToGo * 1000).toISOString() : null
   return {
     points, index, matches, reverse, routeSource: validNative ? 'signalk' : 'cached',
-    next: index === null ? null : points[index],
+    readOnly, navSource: matches ? 'signalk' : readOnly ? 'cached' : 'none',
+    next,
     previous: previousIndex >= 0 && previousIndex < points.length ? points[previousIndex] : null,
     pointPercent: index === null || points.length < 2 ? null : Math.round(index * 100 / (points.length - 1)),
     position: validPosition ? position : null,
     direction: radiansToDegrees(finite(navigation.headingTrue) ?? finite(navigation.courseOverGroundTrue)),
-    distanceNm: distance === null ? null : distance / 1852,
-    bearingDeg: radiansToDegrees(bearing),
+    distanceNm,
+    bearingDeg,
     xteM: matches ? finite(calculated.crossTrackError) : null,
-    vmgKn: vmg === null ? null : vmg / 0.5144444444,
-    timeToGo: matches ? finite(calculated.timeToGo) : null,
-    eta: matches ? value(calculated.estimatedTimeOfArrival) || null : null,
+    vmgKn,
+    timeToGo,
+    eta,
   }
 }

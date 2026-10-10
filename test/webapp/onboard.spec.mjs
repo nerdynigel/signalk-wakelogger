@@ -848,3 +848,51 @@ test('Finish trip refreshes after a stale recording conflict without closing the
   expect(control.trackingSessionId).toBe('00000000-0000-0000-0000-000000000076')
   expect(writes).toEqual([])
 })
+
+test('a rejected course activation still shows live navigation and an informational readiness banner', async ({ page }) => {
+  const blocker = { kind: 'occupied_target', resourceId: ownedRouteId, name: 'Synthetic unowned route', owner: null }
+  const conflictState = {
+    desired, cachedCourse: desired,
+    acknowledgement: { v: 1, revision: 7, status: 'rejected', errorCode: 'native_route_conflict', activation: 'inactive', blocker },
+    routePoints: points,
+    native: { available: true, course: { activeRoute: null }, ownedRouteId, activeMatchesDesired: false, conflict: false, blocker }
+  }
+  const liveNavigation = () => {
+    const timestamp = new Date().toISOString()
+    return {
+      position: { value: { latitude: -27.395, longitude: 153.18 }, timestamp },
+      speedOverGround: { value: 3.2, timestamp },
+      courseOverGroundTrue: { value: 1.1, timestamp },
+      headingTrue: { value: 1.1, timestamp }
+    }
+  }
+  const { writes } = await mockBoat(page, {
+    courseState: conflictState,
+    navigationOverride: liveNavigation,
+    environment: { wind: { speedTrue: { value: 8, timestamp: new Date().toISOString() }, directionTrue: { value: 0.5, timestamp: new Date().toISOString() } } },
+    readiness: {
+      ready: false, missing: ['no Race Pack has been prepared for this course'],
+      detail: 'Missing: no Race Pack has been prepared for this course.',
+      navigation: { ready: true, label: 'Live navigation ready from the cached course', source: 'cached', missing: [], detail: '' }
+    }
+  })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#race-tab').click()
+  // Live navigation is visible even though activation was rejected.
+  await expect(page.locator('#race-live-nav .race-live-nav-item[data-reading="tws"] .value')).toContainText('kn')
+  await expect(page.locator('#race-live-nav .race-live-nav-item[data-reading="heading"]')).toBeVisible()
+  await expect(page.locator('#race-live-nav .race-live-nav-item[data-reading="sog"] .value')).toContainText('kn')
+  // Next-mark bearing and distance come from the cached course in read-only fallback.
+  await expect(page.locator('#next-mark')).toHaveText('Eastern mark')
+  await expect(page.locator('#distance')).not.toHaveText('—')
+  await expect(page.locator('#bearing')).not.toHaveText('—')
+  // The readiness banner is informational and lists exactly what is missing.
+  await expect(page.locator('#race-readiness')).toContainText('Live navigation active from the cached course')
+  await expect(page.locator('#race-readiness')).toContainText('Race Pack')
+  // Explicit activation is confirmed against the occupying resource and clears it.
+  page.on('dialog', (dialog) => dialog.accept())
+  await page.locator('#course-tab').click()
+  await page.locator('#activate-course').click()
+  await expect.poll(() => writes.length).toBeGreaterThanOrEqual(1)
+  expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
+})

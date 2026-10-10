@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import pluginConstructor from '../../src/index'
 import { CredentialStore } from '../../src/pairing/credentials'
-import { nativeRouteHref } from '../../src/courses/native-course'
+import { nativeRouteHref, nativeRouteId } from '../../src/courses/native-course'
 import { RacePackReceiver } from '../../src/race/race-pack-protocol'
 import { RacePackStore } from '../../src/race/race-pack-store'
 import { FileOutbox } from '../../src/outbox/file-outbox'
@@ -48,7 +48,7 @@ async function seedCourse(directory: string): Promise<void> {
   }))
 }
 
-async function fixture(options: { seed?: boolean } = {}) {
+async function fixture(options: { seed?: boolean; occupiedTarget?: unknown; foreignActive?: boolean } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'remediation-integration-'))
   directories.push(directory)
   await new CredentialStore(path.join(directory, 'identity')).save({
@@ -62,6 +62,16 @@ async function fixture(options: { seed?: boolean } = {}) {
   let ingest: any
   const resources = new Map<string, any>()
   let nativeCourse: any = { activeRoute: { href: nativeRouteHref('race-42'), pointIndex: 1, pointTotal: 3, name: 'Field incident course' } }
+  if (options.occupiedTarget !== undefined) {
+    resources.set(nativeRouteId('race-42'), options.occupiedTarget)
+    // The plugin deterministic route id is occupied, but nothing is active:
+    // this is the 10/10 rejected/native_route_conflict incident shape.
+    nativeCourse = { activeRoute: null }
+  }
+  if (options.foreignActive === true) {
+    resources.set('another-app', { name: 'Harbour route', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[153, -27], [153.1, -27.1]] }, properties: {} } })
+    nativeCourse = { activeRoute: { href: '/resources/routes/another-app', pointIndex: 2, pointTotal: 2, name: 'Harbour route' } }
+  }
   const errors: string[] = []
   const app: any = {
     getDataDirPath: () => directory,
@@ -98,6 +108,8 @@ async function fixture(options: { seed?: boolean } = {}) {
   await vi.waitFor(async () => expect((await request('GET', '/tracking')).data.available).toBe(true), { timeout: 10000 })
   return {
     directory, app, plugin, request, accessLevels, errors, configuration: () => configuration,
+    resources,
+    seedResource: (id: string, value: unknown) => { resources.set(id, value) },
     // Simulates a supported native pointIndex change (another client or a manual action).
     setNativePoint: (index: number) => { nativeCourse = { ...nativeCourse, activeRoute: { ...nativeCourse.activeRoute, pointIndex: index } } },
     nativePoint: () => nativeCourse?.activeRoute?.pointIndex ?? null,
@@ -135,6 +147,42 @@ it('exposes one coupled offline readiness status and invalidation for the field 
     expect(ready.data.uncertainty.length).toBeGreaterThan(0)
     // The course endpoint carries the same single status.
     expect((await f.request('GET', '/course')).data.offlineReadiness.ready).toBe(true)
+  } finally { await f.plugin.stop() }
+})
+
+it('explicit activation replaces an unowned resource at the target id; implicit sync never clobbers', async () => {
+  const f = await fixture({ occupiedTarget: { name: 'Synthetic unowned route', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[153.17, -27.4], [153.17, -27.39]] }, properties: {} } } })
+  const targetId = nativeRouteId('race-42')
+  try {
+    // Implicit restore at startup must leave the occupying resource untouched.
+    expect((f.resources.get(targetId) as any).feature.properties.wakelogger).toBeUndefined()
+    const before = await f.request('GET', '/course')
+    expect(before.data.native.activeMatchesDesired).toBe(false)
+    expect(before.data.native.blocker).toMatchObject({ kind: 'occupied_target', resourceId: targetId, name: 'Synthetic unowned route' })
+    expect(before.data.acknowledgement).toMatchObject({ status: 'rejected', errorCode: 'native_route_conflict', blocker: { kind: 'occupied_target' } })
+    expect((f.resources.get(targetId) as any).name).toBe('Synthetic unowned route')
+    // Explicit activation clears the occupied target and progression works.
+    const activated = await f.request('POST', '/course/activate')
+    expect(activated.code).toBe(200)
+    expect(activated.data.native.activeMatchesDesired).toBe(true)
+    expect(activated.data.native.conflict).toBe(false)
+    expect((f.resources.get(targetId) as any).feature.properties.wakelogger.courseId).toBe('race-42')
+    expect((await f.request('GET', '/progression')).data.revision).toBe(7)
+  } finally { await f.plugin.stop() }
+})
+
+it('a foreign active route is classified and still requires explicit activation', async () => {
+  const f = await fixture({ foreignActive: true })
+  try {
+    const before = await f.request('GET', '/course')
+    expect(before.data.native.conflict).toBe(true)
+    expect(before.data.native.blocker).toMatchObject({ kind: 'foreign_active', resourceId: 'another-app', name: 'Harbour route' })
+    // Implicit restore never replaced the foreign active route.
+    expect((await f.request('GET', '/course')).data.native.course.activeRoute.href).toBe('/resources/routes/another-app')
+    expect((f.resources.get('another-app') as any).feature.type).toBe('Feature')
+    const activated = await f.request('POST', '/course/activate')
+    expect(activated.code).toBe(200)
+    expect(activated.data.native.activeMatchesDesired).toBe(true)
   } finally { await f.plugin.stop() }
 })
 
