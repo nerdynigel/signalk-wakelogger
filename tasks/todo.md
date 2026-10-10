@@ -28,4 +28,13 @@ A newer Race Pack arriving before its desired course now supersedes the stale he
 - [x] Read-only fallback progression computes bearing/distance/next-mark from cached course points; control writes stay gated on the active native route.
 - [x] Readiness split into live-navigation and offline maps/forecast; offline never reads as "cannot navigate".
 
-Owner proof (R. George, 2026-10-10): plugin 0.2.0-beta.8 on Callisto acked `{"status":"rejected","code":"native_route_conflict","activation":"inactive","revision":4}` for plan 20; explicit Activate could not clear the occupied target and the Race tab showed no navigation. This change replaces an unowned/malformed resource at our own deterministic route id only on explicit activation and keeps live nav visible regardless of activation. Not independent acceptance; production provenance of the occupying resource remains unproven.
+Owner proof (R. George, 2026-10-10): plugin 0.2.0-beta.8 on a vessel acked `{"status":"rejected","code":"native_route_conflict","activation":"inactive","revision":4}` for plan 20; explicit Activate could not clear the occupied target and the Race tab showed no navigation. This change replaces an unowned/malformed resource at our own deterministic route id only on explicit activation and keeps live nav visible regardless of activation. Not independent acceptance; production provenance of the occupying resource remains unproven.
+
+## Prepare beta.10 for the Signal K App Store
+
+- [x] Inspect PR, registry tags and release gates.
+- [x] Bump package/lockfile and pinned screenshot URLs to beta.10.
+- [ ] Resolve the failing main CI check.
+- [ ] Verify checks, production dependency audit, onboard browser and packaged Docker recovery.
+- [ ] Inspect the npm tarball and prepare customer-facing release notes.
+- [ ] Prepare the reviewed PR for merge and tagged trusted publication; maintainer passkey promotion follows publication.

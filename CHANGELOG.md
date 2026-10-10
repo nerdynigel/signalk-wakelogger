@@ -2,7 +2,7 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
-## [Unreleased]
+## [0.2.0-beta.10] - 2026-10-11
 
 ### Race-day navigation survives course activation failures
 
@@ -10,6 +10,11 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - Readiness is now two separate things: **live navigation** (a selected course with points) and **offline maps/forecast preparation**. A missing Race Pack or unverified chart is reported as an informational banner and never reads as "you cannot navigate".
 - **Activate** now clears a leftover or malformed route parked at the Wake Logger route id, with a confirmation that names the occupying resource. Implicit course delivery still never overwrites a foreign or unowned resource, and another app's active route still needs an explicit activation.
 - Rejections and conflicts report the exact blocker — occupied target, malformed target or foreign active route — with the occupying resource's id, name and owner when readable, so the reason is clear instead of a generic conflict.
+
+### Updating
+
+- Update Wake Logger in the Signal K App Store and restart Signal K if prompted. Existing settings and recorded trips are retained. If a leftover route blocks activation, choose **Activate** and review the named replacement before confirming.
+- Live instrument values still depend on available, current Signal K data. A cached course can show the next mark while activation is blocked, but advancing the native course stays unavailable until activation succeeds. Offline forecast and chart readiness remain separate requirements.
 
 ## [0.2.0-beta.9] - 2026-10-09
 
