@@ -46,7 +46,7 @@ The bootstrap-version tag may be created from its exact merged commit after trus
 
 ## Subsequent betas
 
-1. Change `package.json` and the lockfile to the next beta version and update `CHANGELOG.md`.
+1. Change `package.json` and the lockfile to the next beta version, update `CHANGELOG.md`, and write customer-facing notes in `docs/releases/<package-version>.md`. Include user-visible changes, upgrade steps and relevant limitations. The publish workflow requires this file and uses it for the GitHub prerelease announcement.
 2. Merge only a release candidate that passes the npm beta gate to `main`.
 3. Create and push the exact matching tag, such as `v0.2.0-beta.1`.
 4. Verify the Publish workflow, npm provenance, `beta` dist-tag and GitHub prerelease notes.
