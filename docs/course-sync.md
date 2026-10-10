@@ -18,19 +18,48 @@ are rejected without replacing the cached desired course.
 A namespaced hash of courseId supplies a stable native route UUID, with the
 version/variant shape accepted by the installed Signal K Resources validator.
 The route's GeoJSON properties identify Wake Logger ownership, courseId and
-revision; coordinatesMeta preserves the named marks. The plugin refuses to
-overwrite a resource that lacks matching ownership metadata. Native resource
-writes are read back before activation because Signal K 2.31's plugin wrapper
-can return before its provider finishes writing.
+revision; coordinatesMeta preserves the named marks. Implicit sync (delivery,
+replay, restart) refuses to overwrite a resource that lacks matching ownership
+metadata. Native resource writes are read back before activation because Signal K
+2.31's plugin wrapper can return before its provider finishes writing.
 
 Automatic delivery activates a new course only when no native route is active
 or the active route is the previous Wake Logger-owned course. Another app's
 active route remains active and the acknowledgement reports `conflict`.
 **Activate course** is an explicit local action that selects the cached course.
-Retained duplicate deliveries and restarts do not reset native progress. A new
-revision of the same active course reloads its native route at the current point
-(clamped to the new route length); Signal K supplies the native course behaviour.
-Clear only deactivates the matching owned active course and retains route data.
+When explicit activation finds an unowned or malformed resource parked at the
+plugin's own deterministic route id (`nativeRouteId(courseId)`), it replaces
+that resource; the onboard app confirms first and names the occupying resource.
+Unrelated route ids are never touched, and a foreign active route still requires
+this explicit action. Retained duplicate deliveries and restarts do not reset
+native progress. A new revision of the same active course reloads its native
+route at the current point (clamped to the new route length); Signal K supplies
+the native course behaviour. Clear only deactivates the matching owned active
+course and retains route data.
+
+### Blockers in the acknowledgement
+
+When a desired course cannot become active, the acknowledgement (`/course-ack`
+and `GET /course`) carries an additive `blocker` object so the reason is
+unambiguous. `status`, `revision`, `activation` and `errorCode` semantics are
+unchanged, so older clouds are unaffected. Target conflicts keep
+`errorCode: native_route_conflict`.
+
+```json
+{
+  "v": 1, "revision": 4, "status": "rejected",
+  "errorCode": "native_route_conflict", "activation": "inactive",
+  "blocker": { "kind": "occupied_target", "resourceId": "<route id>", "name": "<resource name | null>", "owner": "<owner label | null>" }
+}
+```
+
+`blocker.kind` is `occupied_target`, `malformed_target` or `foreign_active`.
+`resourceId`, `name` and `owner` are bounded readable strings or `null`. The
+same classification is available at `GET /course` as `native.blocker`. An
+occupied or malformed target never blocks live navigation: the onboard app
+computes progression, bearing and next-mark from the cached course points
+(read-only fallback) while activation is unavailable, and control writes
+(advance/set point) stay gated exactly as before.
 
 ## Local API and course progression
 

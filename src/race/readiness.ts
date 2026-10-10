@@ -15,6 +15,8 @@ export interface ReadinessCourseState {
   courseId?: string | null
   racePlanId?: number | null
   courseDefinitionDigest?: string | null
+  /** Number of cached course points, when known. */
+  pointCount?: number | null
 }
 
 export interface ReadinessAcknowledgement {
@@ -58,6 +60,21 @@ export interface OfflineReadinessChecks {
   ruleSetSupported: boolean
 }
 
+/**
+ * Live-navigation readiness is deliberately separate from offline maps/forecast
+ * readiness. A course with cached points is enough to navigate (read-only
+ * fallback); a missing Race Pack or unverified chart must never read as "you
+ * cannot navigate".
+ */
+export interface NavigationReadiness {
+  ready: boolean
+  label: string
+  /** Where the displayed course geometry comes from. */
+  source: 'native' | 'cached' | 'none'
+  missing: string[]
+  detail: string
+}
+
 export interface OfflineReadiness {
   ready: boolean
   label: 'Offline race ready' | 'Offline race not ready'
@@ -76,6 +93,8 @@ export interface OfflineReadiness {
   packRevision: number | null
   detail: string
   evaluatedAt: number
+  /** Live-navigation readiness, independent of offline preparation. */
+  navigation: NavigationReadiness
 }
 
 // A forecast that remains valid this far past "now" is treated as covering a
@@ -131,6 +150,28 @@ export function offlineReadiness(input: {
     ruleSetSupported
   }
 
+  // Live navigation needs only a selected course with cached points. It is
+  // never gated on native activation, the Race Pack or offline chart readiness.
+  const pointCount = Number.isSafeInteger(course?.pointCount) ? course!.pointCount! : 0
+  const navigationPossible = selected && pointCount >= 2
+  const navigation: NavigationReadiness = navigationPossible
+    ? {
+        ready: true,
+        label: nativeActive ? 'Live navigation ready' : 'Live navigation ready from the cached course',
+        source: nativeActive ? 'native' : 'cached',
+        missing: [],
+        detail: nativeActive
+          ? 'The Wake Logger course is active and live navigation is computing from it.'
+          : 'Live navigation is computing from the cached course while native activation is unavailable.'
+      }
+    : {
+        ready: false,
+        label: 'No course selected',
+        source: 'none',
+        missing: ['no Wake Logger course is selected'],
+        detail: 'Select a course in Wake Logger to show live navigation.'
+      }
+
   const missing: string[] = []
   if (!selected) missing.push('no Wake Logger course is selected')
   else if (!courseApplied) missing.push('the selected course has not been applied')
@@ -176,6 +217,7 @@ export function offlineReadiness(input: {
     detail: ready
       ? `Course applied, native route active, matching Race Pack prepared with supported rules and a forecast valid now.${coverageQualification ? ` ${coverageQualification}` : ''}`
       : `Missing: ${missing.join('; ')}.`,
-    evaluatedAt: input.now
+    evaluatedAt: input.now,
+    navigation
   }
 }

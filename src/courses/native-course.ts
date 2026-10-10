@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { CourseError, coursePoints, type ActiveCourseDocument } from './protocol'
+import { CourseError, coursePoints, type ActiveCourseDocument, type CourseBlocker } from './protocol'
 
 export interface NativeCourse {
   activeRoute?: { href?: string; pointIndex?: number; pointTotal?: number; reverse?: boolean; name?: string } | null
@@ -7,6 +7,15 @@ export interface NativeCourse {
   previousPoint?: unknown
   startTime?: string
   [key: string]: unknown
+}
+
+export interface DescribedResource {
+  id: string
+  name: string | null
+  owner: string | null
+  malformed: boolean
+  /** The Wake Logger course id recorded on the resource, when readable. */
+  courseId: string | null
 }
 interface RouteResource {
   name: string
@@ -35,7 +44,7 @@ export class NativeCourseService {
   async current(): Promise<NativeCourse | null> { return this.app.getCourse ? structuredClone(await this.app.getCourse() ?? null) : null }
   async matches(course: ActiveCourseDocument): Promise<boolean> { return (await this.current())?.activeRoute?.href === nativeRouteHref(course.courseId) }
 
-  async ensureResource(course: ActiveCourseDocument): Promise<void> {
+  async ensureResource(course: ActiveCourseDocument, options: { explicit?: boolean } = {}): Promise<void> {
     this.assertAvailable()
     const id = nativeRouteId(course.courseId)
     const resource: RouteResource = {
@@ -46,7 +55,12 @@ export class NativeCourseService {
       }
     }
     const existing = await this.readRoute(id)
-    if (existing && !ownedBy(existing, course.courseId)) throw new CourseError('native_route_conflict')
+    if (existing && !ownedBy(existing, course.courseId)) {
+      // Implicit sync (delivery/replay/restart) must never clobber a foreign or
+      // unowned resource. Explicit activation is the only path allowed to
+      // replace an unowned or malformed resource parked at our own target id.
+      if (!options.explicit) throw new CourseError('native_route_conflict', targetBlocker(id, existing))
+    }
     if (JSON.stringify(existing) === JSON.stringify(resource)) return
     await this.app.resourcesApi!.setResource('routes', id, resource)
     // Signal K 2.31's wrapper does not return its provider write promise. Read
@@ -95,6 +109,35 @@ export class NativeCourseService {
     }
   }
 
+  // Reads a route resource and yields a bounded, credential-safe description
+  // for diagnostics. Never throws for an ordinary missing resource.
+  async describeResource(id: string): Promise<DescribedResource | null> {
+    if (!this.app.resourcesApi?.getResource) return null
+    let value: unknown
+    try { value = await this.readRoute(id) } catch { return null }
+    if (value === undefined || value === null) return null
+    return describeRoute(id, value)
+  }
+
+  // Classifies why the desired course is not active, so the acknowledgement can
+  // name the exact blocker and occupying resource. Returns null when nothing is
+  // blocking (the route is ready or already active).
+  async classifyConflict(course: ActiveCourseDocument): Promise<CourseBlocker | null> {
+    const current = (await this.current())?.activeRoute?.href
+    const target = nativeRouteHref(course.courseId)
+    if (current && current !== target) {
+      const id = current.match(/^\/resources\/routes\/([^/]+)$/)?.[1] ?? current
+      const described = await this.describeResource(id)
+      return { kind: 'foreign_active', resourceId: id, name: described?.name ?? null, owner: described?.owner ?? null }
+    }
+    const targetId = nativeRouteId(course.courseId)
+    const described = await this.describeResource(targetId)
+    if (described && described.courseId !== course.courseId) {
+      return { kind: described.malformed ? 'malformed_target' : 'occupied_target', resourceId: described.id, name: described.name, owner: described.owner }
+    }
+    return null
+  }
+
   private async readRoute(id: string): Promise<unknown> {
     try { return await this.app.resourcesApi!.getResource('routes', id) }
     catch (error) {
@@ -114,4 +157,27 @@ export class NativeCourseService {
 function ownedBy(value: unknown, courseId: string): boolean {
   const candidate = value as Partial<RouteResource>
   return candidate?.feature?.properties?.wakelogger?.courseId === courseId
+}
+function readableText(value: unknown, maximum: number): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.replace(/[\r\n\t]+/g, ' ').trim()
+  return trimmed ? trimmed.slice(0, maximum) : null
+}
+function describeRoute(id: string, value: unknown): DescribedResource {
+  const candidate = value as {
+    name?: unknown
+    feature?: { geometry?: { type?: unknown; coordinates?: unknown }; properties?: Record<string, unknown> }
+  }
+  const properties = candidate?.feature?.properties ?? {}
+  const wakelogger = properties.wakelogger as { courseId?: unknown } | undefined
+  const courseId = readableText(wakelogger?.courseId, 120)
+  const ownerProp = readableText(properties.owner, 255)
+  const owner = ownerProp ?? (courseId ? `Wake Logger course ${courseId}` : null)
+  const geometry = candidate?.feature?.geometry
+  const malformed = !(geometry?.type === 'LineString' && Array.isArray(geometry.coordinates) && geometry.coordinates.length >= 2)
+  return { id, name: readableText(candidate?.name, 255), owner, malformed, courseId }
+}
+function targetBlocker(id: string, value: unknown): CourseBlocker {
+  const described = describeRoute(id, value)
+  return { kind: described.malformed ? 'malformed_target' : 'occupied_target', resourceId: id, name: described.name, owner: described.owner }
 }

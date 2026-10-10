@@ -202,6 +202,27 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   return { readings, available, total: readings.length, evaluatedAt: now, staleSeconds }
 }
 
+// A compact live-navigation summary embedded in the Race tab, so the crew can
+// always see true wind, boat speed and heading even when native activation is
+// rejected or the Race Pack is missing. It reads stale/missing state verbatim
+// and never substitutes forecast data for a live reading.
+export function liveNavigationStrip(view) {
+  if (!view || !Array.isArray(view.readings)) return []
+  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
+  const wind = byId['twa-ground'] ?? byId['twa-water']
+  const item = (id, label, reading = byId[id]) => reading
+    ? { id, label, value: reading.available ? reading.value : null, formatted: formatReading(reading), unit: reading.unit ?? null, freshness: reading.freshness, available: reading.available === true }
+    : { id, label, value: null, formatted: 'Unavailable', unit: null, freshness: 'missing', available: false }
+  return [
+    item('tws', 'True wind speed'),
+    item('twd', 'True wind direction'),
+    item('twa', wind ? wind.label : 'True wind angle', wind),
+    item('sog', 'Boat speed (SOG)'),
+    item('heading', 'Heading'),
+    item('vmg-wind-ground', 'VMG to wind')
+  ]
+}
+
 export function formatReading(reading) {
   if (!reading) return '—'
   if (reading.id === 'position') return reading.value ? reading.formatted : 'Unavailable'

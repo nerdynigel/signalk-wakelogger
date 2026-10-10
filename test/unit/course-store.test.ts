@@ -114,9 +114,43 @@ describe('course delivery and native resources', () => {
   it('does not overwrite an unrelated resource even at the deterministic ID', async () => {
     const { store, resources, app } = await fixture()
     resources.set(nativeRouteId('race-plan-123'), { name: 'Unrelated route', feature: { properties: {} } })
-    expect(await store.receive(encoded(document()))).toMatchObject({ status: 'rejected', errorCode: 'native_route_conflict' })
+    const ack = await store.receive(encoded(document()))
+    expect(ack).toMatchObject({ status: 'rejected', errorCode: 'native_route_conflict' })
+    expect(ack.blocker).toMatchObject({ kind: 'malformed_target', resourceId: nativeRouteId('race-plan-123'), name: 'Unrelated route' })
     expect(app.resourcesApi?.setResource).not.toHaveBeenCalled()
     expect(app.activateRoute).not.toHaveBeenCalled()
+  })
+
+  it('explicit activation replaces an unowned resource at the deterministic target id', async () => {
+    const { store, resources, app } = await fixture()
+    // A synthetic unowned but well-formed resource parked at our target route id.
+    resources.set(nativeRouteId('race-plan-123'), { name: 'Synthetic unowned route', feature: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[153, -27], [153.01, -27.01]] }, properties: {} } })
+    expect(await store.receive(encoded(document()))).toMatchObject({ status: 'rejected', errorCode: 'native_route_conflict' })
+    expect(app.activateRoute).not.toHaveBeenCalled()
+    // Explicit activation is allowed to replace it.
+    await store.activate()
+    expect(await store.acknowledgement()).toMatchObject({ status: 'applied', activation: 'active' })
+    expect((resources.get(nativeRouteId('race-plan-123')) as any).feature.properties.wakelogger.courseId).toBe('race-plan-123')
+    expect(await store.status()).toMatchObject({ native: { activeMatchesDesired: true, conflict: false, blocker: null } })
+  })
+
+  it('classifies and replaces a malformed resource at the target id', async () => {
+    const { store, resources } = await fixture()
+    resources.set(nativeRouteId('race-plan-123'), { feature: { geometry: { type: 'Point', coordinates: [153, -27] } } })
+    const ack = await store.receive(encoded(document()))
+    expect(ack).toMatchObject({ status: 'rejected' })
+    expect(ack.blocker).toMatchObject({ kind: 'malformed_target', resourceId: nativeRouteId('race-plan-123') })
+    await store.activate()
+    expect(await store.acknowledgement()).toMatchObject({ activation: 'active' })
+  })
+
+  it('classifies a foreign active route and names the occupying resource', async () => {
+    const { store, resources, setNative } = await fixture()
+    resources.set('another-app', { name: 'Harbour route', feature: { geometry: { type: 'LineString', coordinates: [[153, -27], [153.1, -27.1]] } } })
+    setNative({ activeRoute: { href: '/resources/routes/another-app', pointIndex: 3 } })
+    const ack = await store.receive(encoded(document()))
+    expect(ack).toMatchObject({ status: 'applied', activation: 'conflict' })
+    expect(ack.blocker).toMatchObject({ kind: 'foreign_active', resourceId: 'another-app', name: 'Harbour route' })
   })
 
   it('updates its route at the current point and clears only its own active navigation', async () => {

@@ -37,6 +37,22 @@ Implemented:
   recalculation `POST /plugins/signalk-wakelogger/race-plan/recalculate` and
   the onboard Race panel.
 
+## Live navigation is never gated on readiness
+
+The Race tab always shows live navigation — true wind, boat speed, heading and
+VMG from the local Signal K instruments — and computes the next-mark bearing and
+distance from the cached course points (read-only fallback) whenever the native
+route is not active. This holds when activation is rejected or conflicted, when
+offline readiness is not ready, and when the Race Pack is missing.
+
+Readiness is split into two independent states. **Live navigation** needs only a
+selected course with at least two points; it sources geometry from the native
+route when active, otherwise from the cached course. **Offline maps/forecast
+readiness** covers the native route, the applied Race Pack and prepared charts;
+it is presented as an informational banner that lists exactly what is missing
+and never reads as "you cannot navigate". Control writes (advance/set point)
+stay gated on the active native route exactly as before.
+
 Known constraint (unchanged): Signal K publishes no plugin API to change the
 active route point index. `app.activateRoute()` resets the native course start
 time, so the plugin must not use it for advancement. Auto therefore requires

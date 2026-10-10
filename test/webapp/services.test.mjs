@@ -53,9 +53,34 @@ test('native calculations are converted from SI without fabricating missing valu
   assert.equal(progress.pointPercent, 50)
   assert.equal(progress.eta, null)
   const conflict = raceProgress({ ...status, native: { ...status.native, activeMatchesDesired: false } }, {}, { distance: 1852 })
-  assert.equal(conflict.next, null)
+  // Read-only fallback: the cached course keeps navigation visible while native
+  // activation is unavailable. Without a position, bearing/distance stay null.
+  assert.equal(conflict.readOnly, true)
+  assert.equal(conflict.navSource, 'cached')
+  assert.equal(conflict.index, 1)
+  assert.equal(conflict.next.latitude, -27.3)
   assert.equal(conflict.distanceNm, null)
-  assert.equal(conflict.index, null)
+  assert.equal(conflict.bearingDeg, null)
+  assert.equal(conflict.xteM, null)
+})
+
+test('read-only fallback computes next-mark bearing, distance and time while native is conflicted', () => {
+  const cachedCourse = { action: 'activate', activeWaypointIndex: 1, start: { ...point(-27.4, 153.1), name: 'Start' }, marks: [{ ...point(-27.3, 153.1), name: 'Windward' }], finish: { ...point(-27.2, 153.1), name: 'Finish' } }
+  const status = { cachedCourse, native: { activeMatchesDesired: false, conflict: true } }
+  // Position south of the active mark; heading north, moving at 2 m/s.
+  const progress = raceProgress(status, { position: { value: point(-27.32, 153.1) }, headingTrue: { value: 0 }, courseOverGroundTrue: { value: 0 }, speedOverGround: { value: 2 } }, {})
+  assert.equal(progress.matches, false)
+  assert.equal(progress.readOnly, true)
+  assert.equal(progress.next.name, 'Windward')
+  assert.ok(progress.distanceNm > 1 && progress.distanceNm < 1.5)
+  assert.equal(Math.round(progress.bearingDeg), 0)
+  assert.equal(Math.round(progress.direction), 0)
+  // VMG to the mark follows the boat speed because the COG matches the bearing.
+  assert.ok(Math.abs(progress.vmgKn - 2 * 1.9438444924406) < 1e-6)
+  assert.ok(progress.timeToGo > 0)
+  assert.ok(Number.isFinite(Date.parse(progress.eta)))
+  // Control writes stay gated: a fallback course never reports active.
+  assert.equal(progress.xteM, null)
 })
 
 test('invalid native point indices cannot issue a request', async () => {
@@ -268,6 +293,55 @@ test('offline readiness presentation drives the pre-switch warning', () => {
   assert.match(warning, /Race Pack does not match/)
   assert.equal(localOnlyWarning({ ready: true, missing: [] }), null)
   assert.equal(offlineReadinessPresentation(null).known, false)
+})
+
+test('offline readiness and live-navigation readiness are independent', async () => {
+  const { offlineReadinessPresentation, raceNavigationBanner } = await import('../../webapp/offline-readiness.mjs')
+  const readiness = {
+    ready: false, missing: ['the stored Race Pack does not match the selected course'],
+    navigation: { ready: true, label: 'Live navigation ready from the cached course', source: 'cached', missing: [], detail: '' }
+  }
+  const view = offlineReadinessPresentation(readiness)
+  assert.equal(view.offline.ready, false)
+  assert.equal(view.navigation.ready, true)
+  assert.equal(view.navigation.source, 'cached')
+  // The Race banner names the offline gap but never reads as cannot-navigate.
+  const banner = raceNavigationBanner(readiness)
+  assert.match(banner, /Live navigation active from the cached course/)
+  assert.match(banner, /Offline race not ready/)
+  assert.match(banner, /Race Pack does not match/)
+  assert.doesNotMatch(banner, /cannot navigate/i)
+  // When nothing is missing there is no banner.
+  assert.equal(raceNavigationBanner({ ready: true, navigation: { ready: true, source: 'native' } }), null)
+  // With no course selected the banner says exactly that.
+  assert.match(raceNavigationBanner({ ready: false, missing: [], navigation: { ready: false, source: 'none', detail: 'Select a course in Wake Logger to show live navigation.' } }), /Select a course/)
+})
+
+test('live navigation strip always shows wind, speed, heading and VMG', async () => {
+  const { instrumentReadings, liveNavigationStrip } = await import('../../webapp/instruments.mjs')
+  const now = Date.parse('2026-09-17T02:05:00Z')
+  const ts = () => new Date(now).toISOString()
+  const view = instrumentReadings({
+    now,
+    navigation: {
+      position: { value: point(-27.4, 153.17), timestamp: ts() },
+      speedOverGround: { value: 3, timestamp: ts() },
+      courseOverGroundTrue: { value: Math.PI / 2, timestamp: ts() },
+      headingTrue: { value: Math.PI, timestamp: ts() }
+    },
+    environment: { wind: { speedTrue: { value: 7, timestamp: ts() }, directionTrue: { value: 0, timestamp: ts() } } }
+  })
+  const strip = liveNavigationStrip(view)
+  const byId = Object.fromEntries(strip.map((item) => [item.id, item]))
+  assert.equal(byId.tws.available, true)
+  assert.equal(byId.twd.available, true)
+  assert.equal(byId.sog.available, true)
+  assert.equal(byId.heading.available, true)
+  assert.equal(byId['vmg-wind-ground'].available, true)
+  // Missing data is reported honestly, never fabricated.
+  const bare = liveNavigationStrip(instrumentReadings({ now, environment: {} }))
+  assert.equal(bare.find((item) => item.id === 'tws').available, false)
+  assert.match(bare.find((item) => item.id === 'tws').formatted, /Unavailable/)
 })
 
 test('instruments present RFC 3339 local measurements with references and units', () => {

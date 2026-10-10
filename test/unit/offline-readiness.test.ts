@@ -84,4 +84,34 @@ describe('coupled offline readiness', () => {
     expect(offlineReadiness({ course, acknowledgement, native, pack: pack({ ruleSetVersion: 'race_plan_preview_v1' }), now: NOW }).missing.join(' ')).toMatch(/rule set race_plan_preview_v1 is not supported/)
     expect(offlineReadiness({ course, acknowledgement, native, pack: null, now: NOW }).missing).toContain('no Race Pack has been prepared for this course')
   })
+
+  it('reports live-navigation readiness separately from offline preparation', () => {
+    // Cached course with points, but native activation conflicted and no pack.
+    const conflicted = offlineReadiness({
+      course: { ...course, pointCount: 8 },
+      acknowledgement: { status: 'rejected', revision: 7 },
+      native: { available: true, activeMatchesDesired: false, conflict: true },
+      pack: null,
+      now: NOW
+    })
+    expect(conflicted.ready).toBe(false)
+    expect(conflicted.navigation.ready).toBe(true)
+    expect(conflicted.navigation.source).toBe('cached')
+    expect(conflicted.navigation.label).toMatch(/cached course/)
+    expect(conflicted.navigation.missing).toEqual([])
+
+    // Active native route reports the native source.
+    const active = offlineReadiness({ course: { ...course, pointCount: 8 }, acknowledgement, native, pack: pack(), now: NOW })
+    expect(active.navigation.source).toBe('native')
+
+    // No course selected is the only reason live navigation is unavailable.
+    const none = offlineReadiness({ course: null, acknowledgement: null, native, pack: pack(), now: NOW })
+    expect(none.navigation.ready).toBe(false)
+    expect(none.navigation.source).toBe('none')
+    expect(none.navigation.missing).toContain('no Wake Logger course is selected')
+
+    // A single-point course cannot navigate.
+    const single = offlineReadiness({ course: { ...course, pointCount: 1 }, acknowledgement, native, pack: pack(), now: NOW })
+    expect(single.navigation.ready).toBe(false)
+  })
 })

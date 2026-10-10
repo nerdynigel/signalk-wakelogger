@@ -19,3 +19,24 @@ This is owner proof, not independent acceptance. The incident's exact occupied/m
 GitHub initially passed checks and browser but exposed a Docker-runner dependency on host dist/. The fixture now uses its fixed expected native UUID; the packaged plugin still builds only inside Docker.
 
 A newer Race Pack arriving before its desired course now supersedes the stale header using generatedAt versus desired.updatedAt and plan/course identity. It labels course delivery pending in the header, hides old route geometry/progress and disables activation of the previous plan. Matching pack startTime supplies the date for plan names without an embedded date. Service checks cover invalid/stale pack timestamps and unrelated revision counters.
+
+# Race-day navigation resilience (10/10/2026 incident, THE-816)
+
+- [x] Live navigation always visible in the Race tab (TWS/TWD/TWA, SOG, heading, VMG, next-mark bearing/distance) with activation rejected/conflicted, Race Pack missing or readiness not ready.
+- [x] Explicit `/course/activate` replaces an unowned/malformed resource at `nativeRouteId(courseId)`; implicit sync still never clobbers foreign/unowned resources.
+- [x] Ack and status classify the blocker (`occupied_target` | `malformed_target` | `foreign_active`) with the occupying resource id/name/owner when readable; additive `blocker` field preserves `status`/`revision`/`activation`/`errorCode`.
+- [x] Read-only fallback progression computes bearing/distance/next-mark from cached course points; control writes stay gated on the active native route.
+- [x] Readiness split into live-navigation and offline maps/forecast; offline never reads as "cannot navigate".
+
+Owner proof (R. George, 2026-10-10): plugin 0.2.0-beta.8 on a vessel acked `{"status":"rejected","code":"native_route_conflict","activation":"inactive","revision":4}` for plan 20; explicit Activate could not clear the occupied target and the Race tab showed no navigation. This change replaces an unowned/malformed resource at our own deterministic route id only on explicit activation and keeps live nav visible regardless of activation. Not independent acceptance; production provenance of the occupying resource remains unproven.
+
+## Prepare beta.10 for the Signal K App Store
+
+- [x] Inspect PR, registry tags and release gates.
+- [x] Bump package/lockfile and pinned screenshot URLs to beta.10.
+- [x] Resolve the failing main CI check (private vessel name removed; both Node check jobs pass).
+- [x] Verify checks, production dependency audit, onboard browser and packaged Docker recovery (all final-revision GitHub checks pass, including Node 20/22 checks and Signal K Node 22/24 on Linux, ARM64, macOS and Windows).
+- [x] Inspect the npm tarball and prepare customer-facing release notes (187 files; app, artwork and notes present; development files excluded).
+- [x] Prepare PR #21 for merge and tagged trusted publication. Publication still requires a merge to main, the matching tag and the npm environment maintainer review; App Store promotion then uses the maintainer passkey.
+
+Release review: candidate beta.10 contains the race-navigation resilience changes plus release metadata and public customer notes. GitHub verified 278 tests (one opt-in broker test skipped), browser/broker gates, packaged Signal K recovery and reusable plugin compatibility. No npm version or dist-tag was changed during preparation.

@@ -30,7 +30,14 @@ export class CourseStore {
           // clear. Reconcile desired clear even offline after server restart.
           if (stored.desired?.action === 'clear') await this.native.clearOwned(stored.cachedCourse)
         }
-        catch { this.snapshot.acknowledgement = { v: 1, revision: stored.desired?.revision ?? stored.cachedCourse.revision, status: 'rejected', errorCode: 'native_route_restore_failed' } }
+        catch (error) {
+          const courseError = error instanceof CourseError ? error : undefined
+          this.snapshot.acknowledgement = {
+            v: 1, revision: stored.desired?.revision ?? stored.cachedCourse.revision, status: 'rejected',
+            errorCode: courseError?.code ?? 'native_route_restore_failed',
+            ...(courseError?.blocker ? { blocker: courseError.blocker } : {})
+          }
+        }
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -45,6 +52,8 @@ export class CourseStore {
   async status(): Promise<object> {
     const course = this.snapshot.cachedCourse
     const native = await this.native.current()
+    const activation = await this.activation()
+    const activeMatchesDesired = !!course && this.snapshot.desired?.action === 'activate' && await this.native.matches(course)
     return {
       desired: this.snapshot.desired ?? null, cachedCourse: course ?? null,
       acknowledgement: await this.acknowledgement() ?? null,
@@ -52,7 +61,9 @@ export class CourseStore {
       native: {
         available: this.native.available(), course: native,
         ownedRouteId: course ? nativeRouteId(course.courseId) : null,
-        activeMatchesDesired: !!course && this.snapshot.desired?.action === 'activate' && await this.native.matches(course), conflict: await this.activation() === 'conflict'
+        activeMatchesDesired, conflict: activation === 'conflict',
+        blocker: course && this.snapshot.desired?.action === 'activate' && !activeMatchesDesired
+          ? await this.native.classifyConflict(course) : null
       }
     }
   }
@@ -76,12 +87,23 @@ export class CourseStore {
           await this.native.ensureResource(document)
           if (!duplicate) await this.native.activate(document, false, previousCourse)
         }
-        const acknowledgement: CourseAcknowledgement = { v: 1, revision: document.revision, status: 'applied', activation: await this.activation() }
+        const activation = await this.activation()
+        const blocker = activation === 'conflict' && document.action === 'activate'
+          ? await this.native.classifyConflict(document) : null
+        const acknowledgement: CourseAcknowledgement = {
+          v: 1, revision: document.revision, status: 'applied', activation,
+          ...(blocker ? { blocker } : {})
+        }
         await this.persist({ ...this.snapshot, acknowledgement })
         this.snapshot.acknowledgement = acknowledgement
         return acknowledgement
       } catch (error) {
-        const acknowledgement: CourseAcknowledgement = { v: 1, revision: extractRevision(payload), status: 'rejected', errorCode: error instanceof CourseError ? error.code : 'native_course_failed', activation: await this.activation() }
+        const courseError = error instanceof CourseError ? error : undefined
+        const acknowledgement: CourseAcknowledgement = {
+          v: 1, revision: extractRevision(payload), status: 'rejected',
+          errorCode: courseError?.code ?? 'native_course_failed', activation: await this.activation(),
+          ...(courseError?.blocker ? { blocker: courseError.blocker } : {})
+        }
         await this.persist({ ...this.snapshot, acknowledgement })
         this.snapshot.acknowledgement = acknowledgement
         return acknowledgement
@@ -93,7 +115,10 @@ export class CourseStore {
     return this.exclusive(async () => {
       const course = this.snapshot.cachedCourse
       if (!course || this.snapshot.desired?.action !== 'activate') throw new CourseError('no_selected_course')
-      await this.native.ensureResource(course)
+      // Explicit activation replaces an unowned or malformed resource parked at
+      // our own deterministic target id. This is the crew-initiated path; it
+      // never runs implicitly and never touches unrelated route ids.
+      await this.native.ensureResource(course, { explicit: true })
       await this.native.activate(course, true)
       const acknowledgement: CourseAcknowledgement = { v: 1, revision: course.revision, status: 'applied', activation: 'active' }
       await this.persist({ ...this.snapshot, acknowledgement })

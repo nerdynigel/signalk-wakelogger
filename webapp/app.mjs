@@ -6,8 +6,8 @@ import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation, finishedTripPresentation } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
-import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
-import { instrumentReadings, formatReading } from './instruments.mjs'
+import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
+import { instrumentReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
 import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
@@ -155,6 +155,10 @@ function renderCourse() {
   if (!selection.pendingPack && ack?.status === 'rejected') $('active-status').textContent += ` · Update rejected${ack.errorCode ? ` (${ack.errorCode})` : ''}; desired course awaits activation`
   if (status.native?.conflict) $('active-status').textContent += ' · Another Signal K route is active; activate this course to replace it'
   $('activate-course').textContent = selection.pendingPack ? 'Waiting for desired course' : course?.action === 'activate' ? `Activate ${course.name}` : 'Activate course'
+  const blocker = status.native?.blocker ?? ack?.blocker ?? null
+  $('activate-course').title = blocker
+    ? `Explicit activation will replace the ${blocker.kind.replace(/_/g, ' ')}${blocker.name ? ` “${blocker.name}”` : ` (${blocker.resourceId})`} parked at the Wake Logger route id.`
+    : ''
   $('activate-course').disabled = busy || !progress.points.length || !status.native?.available || progress.matches
   $('advance-point').disabled = busy || !progress.matches || progress.index === null || progress.index >= progress.points.length - 1
   $('point-index').disabled = busy || !progress.matches
@@ -321,6 +325,37 @@ function renderInstruments() {
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
   else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
   else state.textContent = `Signal K connected · ${view.available}/${view.total} readings live`
+  renderRaceLiveNav(view)
+}
+
+// The Race tab must always show live navigation: true wind, boat speed,
+// heading and VMG, plus a readiness banner that lists exactly what offline
+// preparation is missing. It is informational, never a data gate — the values
+// render regardless of native activation, offline readiness or Race Pack state.
+function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
+  const banner = $('race-readiness')
+  if (banner) {
+    const message = raceNavigationBanner(offlineReadiness)
+    banner.textContent = message || ''
+    banner.hidden = !message
+    banner.dataset.navigationReady = String(offlineReadiness?.navigation?.ready === true)
+  }
+  const element = $('race-live-nav')
+  if (!element) return
+  element.replaceChildren(...liveNavigationStrip(view).map((item) => {
+    const row = document.createElement('div')
+    row.className = 'race-live-nav-item'
+    row.dataset.reading = item.id
+    row.dataset.available = String(item.available)
+    const label = document.createElement('span')
+    label.className = 'label'
+    label.textContent = item.label
+    const value = document.createElement('span')
+    value.className = 'value'
+    value.textContent = item.formatted
+    row.append(label, value)
+    return row
+  }))
 }
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
@@ -561,6 +596,7 @@ function renderProgression() {
 }
 
 function renderRacePlan() {
+  renderRaceLiveNav()
   const list = $('race-plan-list')
   if (!list) return
   const view = racePlanPresentation(racePlan)
@@ -753,7 +789,17 @@ $('centre-vessel').onclick = () => { if (progress?.position) { viewportMode = 'f
 map.on('zoomend resize', () => renderVesselGuides())
 map.on('dragstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
 map.on('zoomstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
-$('activate-course').onclick = () => command(() => progression.activate())
+$('activate-course').onclick = () => {
+  // Explicit activation is the only path that may replace an unowned/malformed
+  // resource at the Wake Logger target id, so confirm the exact resource first.
+  const blocker = status?.native?.blocker ?? status?.acknowledgement?.blocker ?? null
+  if (blocker) {
+    const label = blocker.name ? `“${blocker.name}”` : blocker.resourceId
+    const confirmed = window.confirm(`A ${blocker.kind.replace(/_/g, ' ')} (${label}) is occupying the Wake Logger route. Replace it with this course? Unrelated Signal K routes are not changed.`)
+    if (!confirmed) return
+  }
+  void command(() => progression.activate())
+}
 $('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name })
 $('point-index').onchange = () => { selectedPointDirty = true }
 $('set-point').onclick = () => command(() => progression.setPoint(Number($('point-index').value), progress.points.length, status.native.course.activeRoute.href), { markName: progress?.points[Number($('point-index').value)]?.name })
