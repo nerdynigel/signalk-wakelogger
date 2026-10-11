@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { raceProgress } from '../webapp/course-progress.mjs'
-import { projectBearing } from '../webapp/vessel-guides.mjs'
+import { projectBearing, vesselGuideBearings } from '../webapp/vessel-guides.mjs'
 import { instrumentReadings, liveNavigationStrip } from '../webapp/instruments.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -148,6 +148,27 @@ try {
   assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'twa-ground').available, false)
   assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
   process.stdout.write(`${JSON.stringify({ nativeWindReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailableAtReplayClock: true, missingHeadingRejected: true, wallClockStaleRejected: true, packagedAssetMatches: true } })}\n`)
+
+  const packagedGuides = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vessel-guides.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedGuides, readFileSync(new URL('../webapp/vessel-guides.mjs', import.meta.url), 'utf8').trim())
+  const nativeGuides = await waitFor('native heading and mirrored maneuver at replay clock', () => {
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const environment = query('http://signalk:3000/signalk/v1/api/vessels/self/environment')
+    const entries = [navigation.position, navigation.headingTrue, navigation.courseOverGroundTrue, navigation.speedOverGround, environment.wind?.speedApparent, environment.wind?.angleApparent]
+    const sourceClock = Math.max(...entries.map(entry => Date.parse(entry?.timestamp)))
+    const view = instrumentReadings({ navigation, environment, now: sourceClock })
+    const guides = vesselGuideBearings(view.readings, null, view.guideWind)
+    return guides.heading !== null && guides.maneuverBearing !== null ? { navigation, environment, sourceClock, guides } : undefined
+  }, 30_000)
+  const resolveNativeGuides = (navigation, environment, now) => {
+    const view = instrumentReadings({ navigation, environment, now })
+    return vesselGuideBearings(view.readings, null, view.guideWind)
+  }
+  assert.ok(Math.abs(nativeGuides.guides.maneuverBearing - ((2 * nativeGuides.guides.trueWindFrom - nativeGuides.guides.heading + 720) % 360)) < 1e-8)
+  assert.equal(resolveNativeGuides({ ...nativeGuides.navigation, headingTrue: undefined }, nativeGuides.environment, nativeGuides.sourceClock).heading, null)
+  assert.equal(resolveNativeGuides(nativeGuides.navigation, nativeGuides.environment, Date.now()).heading, null)
+  assert.notEqual(resolveNativeGuides(nativeGuides.navigation, nativeGuides.environment, nativeGuides.sourceClock).maneuverBearing, null)
+  process.stdout.write(`${JSON.stringify({ nativeOverlayReplayProof: { clock: new Date(nativeGuides.sourceClock).toISOString(), heading: nativeGuides.guides.heading, opposite: nativeGuides.guides.maneuverBearing, kind: nativeGuides.guides.kind, currentTack: nativeGuides.guides.currentTack, missingHeadingRejected: true, wallClockStaleRejected: true, recovery: true, packagedGuidesMatch: true } })}\n`)
 
   const nativeVmg = liveWind.view.readings.find(reading => reading.id === 'vmg-wind-ground')
   const nativeTwd = liveWind.view.readings.find(reading => reading.id === 'twd')

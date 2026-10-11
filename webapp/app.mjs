@@ -360,17 +360,20 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
   guideLayer.clearLayers()
-  const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => reading.id !== 'awa') : view.readings
+  const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => !['awa', 'aws'].includes(reading.id)) : view.readings
   const leg = progress?.matches && progress.previous && progress.next ? { from: progress.previous, to: progress.next } : null
-  const guides = vesselGuideBearings(readings, leg)
+  const guides = vesselGuideBearings(readings, leg, environmentUnavailable ? null : view.guideWind)
   const element = $('map')
   element.dataset.headingGuideBearing = guides.heading === null ? '' : String(guides.heading)
   element.dataset.oppositeTackBearing = guides.kind === 'tack' ? String(guides.maneuverBearing) : ''
   element.dataset.oppositeGybeBearing = guides.kind === 'gybe' ? String(guides.maneuverBearing) : ''
   element.dataset.maneuverGuideKind = guides.kind || ''
+  element.dataset.currentTack = guides.currentTack || ''
+  const oppositeSide = guides.currentTack === 'port' ? 'starboard' : 'port'
+  $('guide-legend').textContent = guides.heading === null ? 'Heading guide unavailable · fresh GPS and true heading required' : `Heading · true${guides.currentTack ? ` · ${guides.currentTack}` : ''}${guides.kind ? ` · Mirrored ${guides.kind} guide · ${oppositeSide} · current true-wind angle; no tide or leeway correction` : ''}`
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
-  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated opposite ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
+  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
   if (guides.heading === null) return
   const location = L.latLng(guides.position.latitude, guides.position.longitude)
   const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
@@ -388,7 +391,7 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
     L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer)
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
-  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated opposite ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
+  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
 }
 
 function instrumentTile(reading) {

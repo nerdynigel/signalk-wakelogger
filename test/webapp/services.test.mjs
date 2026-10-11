@@ -870,3 +870,49 @@ test('known stale invalid and future GPS timestamps suppress progress at the exi
   assert.equal(at(new Date(now + 6000).toISOString()).pointPercent, null)
   assert.equal(at(new Date(now).toISOString()).pointPercent, 50)
 })
+
+
+test('direct fresh ground wind guides work without apparent sensors and never use water or unknown wind', async () => {
+  const { vesselGuideBearings } = await import('../../webapp/vessel-guides.mjs')
+  const timestamp = Date.now()
+  const measurement = (value, extra = {}) => ({ value, freshness: 'fresh', timestamp, source: 'direct', ...extra })
+  const readings = heading => [
+    { id: 'position', ...measurement({ latitude: -27, longitude: 153 }) },
+    { id: 'heading', ...measurement(heading, { reference: 'true' }) }
+  ]
+  const wind = { speed: measurement(12, { basis: 'ground' }), direction: measurement(0, { reference: 'true' }) }
+  const tack = vesselGuideBearings(readings(330), null, wind)
+  assert.equal(tack.maneuverBearing, 30)
+  assert.equal(tack.currentTack, 'starboard')
+  assert.equal(vesselGuideBearings(readings(30), null, wind).currentTack, 'port')
+  const gybe = vesselGuideBearings(readings(130), null, wind)
+  assert.equal(gybe.kind, 'gybe')
+  assert.equal(gybe.maneuverBearing, 230)
+  const angle = { speed: wind.speed, angle: measurement(30, { reference: 'ground', basis: 'ground' }) }
+  assert.equal(vesselGuideBearings(readings(330), null, angle).maneuverBearing, 30)
+  for (const speed of [measurement(0, { basis: 'ground' }), measurement(12, { basis: 'water' }), measurement(12, { basis: 'ground', freshness: 'stale' }), measurement(Infinity, { basis: 'ground' })]) {
+    assert.equal(vesselGuideBearings(readings(330), null, { ...wind, speed }).maneuverBearing, null)
+  }
+  for (const direction of [measurement(NaN), measurement(0, { freshness: 'unknown' }), measurement(0, { reference: 'true', timestamp: timestamp - 10001 })]) {
+    assert.equal(vesselGuideBearings(readings(330), null, { ...wind, direction }).maneuverBearing, null)
+  }
+  for (const heading of [0, 90, 180]) assert.equal(vesselGuideBearings(readings(heading), null, wind).maneuverBearing, null)
+  assert.equal(vesselGuideBearings(readings(330), null, wind).maneuverBearing, 30)
+})
+
+
+test('onboard instrument output supplies direct ground wind even when the displayed TWS is water', async () => {
+  const { instrumentReadings } = await import('../../webapp/instruments.mjs')
+  const { vesselGuideBearings } = await import('../../webapp/vessel-guides.mjs')
+  const now = Date.now(), timestamp = new Date(now).toISOString()
+  const m = value => ({ value, timestamp })
+  const navigation = { position: m({ latitude: -27, longitude: 153 }), headingTrue: m(330 * Math.PI / 180) }
+  const environment = { wind: { speedTrue: m(8 / 1.9438444924406), speedOverGround: m(12 / 1.9438444924406), directionTrue: m(0) } }
+  const view = instrumentReadings({ navigation, environment, now })
+  assert.equal(view.readings.find(reading => reading.id === 'tws').basis, 'water')
+  assert.equal(vesselGuideBearings(view.readings, null, view.guideWind).maneuverBearing, 30)
+  const stale = instrumentReadings({ navigation, environment, now: now + 120000 })
+  assert.equal(vesselGuideBearings(stale.readings, null, stale.guideWind).heading, null)
+  const waterOnly = instrumentReadings({ navigation, environment: { wind: { ...environment.wind, speedOverGround: undefined } }, now })
+  assert.equal(vesselGuideBearings(waterOnly.readings, null, waterOnly.guideWind).maneuverBearing, null)
+})

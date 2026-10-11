@@ -237,7 +237,7 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   }
 
   const available = readings.filter((item) => item.available).length
-  return { readings, available, total: readings.length, evaluatedAt: now, staleSeconds }
+  return { readings, available, total: readings.length, evaluatedAt: now, staleSeconds, guideWind: { speed: groundWindSpeed, direction: trueWindDirection, angle: readings.find(reading => reading.id === 'twa-ground') } }
 }
 
 // A compact live-navigation summary embedded in the Race tab, so the crew can

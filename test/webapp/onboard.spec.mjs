@@ -1112,3 +1112,54 @@ test('course progress changes with positions without leg activation and recovers
   await expect(page.locator('#next-mark')).toHaveText('Race finish')
   expect(writes.filter(write => write.method === 'PUT')).toHaveLength(1)
 })
+
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`direct ground wind overlays survive updates, controls and recovery ${viewport.width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    let heading = 330, twd = 0, timestampAge = 0, unknown = false, envFailure = false
+    const measurement = value => ({ value, timestamp: unknown ? undefined : new Date(Date.now() - timestampAge).toISOString() })
+    const environment = () => ({ wind: { speedOverGround: measurement(12 / 1.9438444924406), directionTrue: measurement(twd * Math.PI / 180) } })
+    const { writes } = await mockBoat(page, {
+      course: false,
+      navigationOverride: () => ({ position: measurement({ latitude: -27.395, longitude: 153.18 }), headingTrue: measurement(heading * Math.PI / 180) }),
+      environment
+    })
+    await page.route('**/signalk/v1/api/vessels/self/environment', route => envFailure ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: environment() }))
+    await page.goto('/signalk-wakelogger/')
+    const map = page.locator('#map'), ray = page.locator('.vessel-heading-guide'), opposite = page.locator('.opposite-tack-guide')
+    await expect(map).toHaveAttribute('data-heading-guide-bearing', '330')
+    await expect(opposite).toHaveCount(1)
+    await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
+    await expect(page.locator('#guide-legend')).toContainText('Mirrored tack guide · port')
+    heading = 30
+    await expect(map).toHaveAttribute('data-current-tack', 'port')
+    await expect(map).toHaveAttribute('data-opposite-tack-bearing', '330')
+    heading = 130
+    await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
+    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '230')
+    twd = 10
+    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '250')
+    await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
+    await page.locator('.leaflet-control-zoom-in').click()
+    await expect(ray).toHaveCount(1)
+    await page.locator('#fullscreen').click()
+    await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    await page.locator('#fullscreen').click()
+    envFailure = true
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
+    await expect(ray).toHaveCount(1)
+    envFailure = false
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    timestampAge = 120000
+    await expect(ray).toHaveCount(0)
+    unknown = true; timestampAge = 0
+    await expect(map).toHaveAttribute('data-heading-guide-bearing', '')
+    unknown = false
+    await expect(ray).toHaveCount(1)
+    await page.reload()
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    expect(writes).toEqual([])
+  })
+}
