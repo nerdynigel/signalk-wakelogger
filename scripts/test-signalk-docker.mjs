@@ -118,6 +118,17 @@ try {
   const leafletAsset = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vendor/leaflet.js'], { capture: true }).stdout
   assert.ok(leafletAsset.includes('Leaflet'), 'the onboard map library must be served locally')
 
+  const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
+  await waitFor('paired recorder starts safely off without a confirmed choice', () => {
+    const status = query(trackingUrl)
+    return status.available && status.recording && status.uploadMode === 'local_only'
+  }, 300_000)
+  assert.equal(telemetrySamples(snapshot()).length, 0, 'pairing and default config cannot enable telemetry')
+  const rejected = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', trackingUrl, 'POST', JSON.stringify({ uploadMode: 'automatic' })], { capture: true, allowFailure: true })
+  assert.notEqual(rejected.status, 0, 'unconfirmed requests must fail')
+  assert.ok(rejected.stderr.includes('tracking_confirmation_required'))
+  query(trackingUrl, 'POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
+
   const initial = await waitFor('three durably acknowledged telemetry samples', () => {
     const value = snapshot()
     return maximumAck(value) >= 3 ? value : undefined
@@ -149,8 +160,7 @@ try {
   query('http://signalk:3000/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex', 'PUT', { value: 2 })
   await waitFor('native next-point update', () => query('http://signalk:3000/plugins/signalk-wakelogger/course').native.course.activeRoute.pointIndex === 2)
 
-  const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
-  const paused = query(trackingUrl, 'POST', { uploadMode: 'local_only' })
+  const paused = query(trackingUrl, 'POST', { uploadMode: 'local_only', confirmed: true, expectedUploadMode: 'automatic' })
   assert.equal(paused.uploadMode, 'local_only')
   assert.equal(paused.persistedUploadMode, 'local_only')
   assert.equal(paused.recording, true)
@@ -170,7 +180,7 @@ try {
     return value.available && value.uploadMode === 'local_only' && value.recording ? value : undefined
   }, 300_000)
   assert.equal(telemetrySamples(snapshot()).length, pausedCloudCount, 'persisted off mode must prevent cloud telemetry after restart')
-  const enabled = query(trackingUrl, 'POST', { uploadMode: 'automatic' })
+  const enabled = query(trackingUrl, 'POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
   assert.equal(enabled.uploadMode, 'automatic')
   assert.equal(enabled.persistedUploadMode, 'automatic')
   assert.ok(enabled.historicalUpload.totalSamples >= 3, 'resume reports the offline upload cohort')
@@ -197,6 +207,7 @@ try {
     const position = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation/position')
     return Number.isFinite(position?.value?.latitude) && Number.isFinite(position?.value?.longitude)
   }, 300_000)
+  assert.equal(query(trackingUrl).uploadMode, 'automatic', 'confirmed ON survives abrupt restart and broker reconnect')
   const restoredCourse = query('http://signalk:3000/plugins/signalk-wakelogger/course')
   assert.equal(restoredCourse.desired.revision, 1, 'cached course survives abrupt restart')
   assert.equal(restoredCourse.native.course.activeRoute.pointIndex, 2, 'retained course replay preserves native progress')

@@ -44,7 +44,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     const json = (body) => route.fulfill({ json: body })
     const pathname = url.pathname
     if (pathname === '/plugins/signalk-wakelogger/tracking') {
-      if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: { uploadMode } }) }
+      if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: request.postDataJSON() }) }
       return json({
         uploadMode, paired: true, recording: true,
         trackingSessionId: control.trackingSessionId,
@@ -238,7 +238,9 @@ test('missing heading and COG show an un-oriented vessel position', async ({ pag
   await expect(page.locator('.leaflet-marker-pane .mark').filter({ hasText: '●' })).toBeVisible()
 })
 
-test('live switch changes upload mode without stopping local recording', async ({ page }) => {
+test('live switch confirms both directions without stopping local recording', async ({ page }) => {
+  const dialogs = []
+  page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.accept() })
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
   const toggle = page.getByRole('switch', { name: 'Live tracking' })
@@ -250,8 +252,12 @@ test('live switch changes upload mode without stopping local recording', async (
   await expect(page.locator('#tracking-mode')).toHaveText('Live + history')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  expect(writes.map((entry) => entry.body)).toEqual([{ uploadMode: 'automatic' }, { uploadMode: 'local_only' }])
+  expect(writes.map((entry) => entry.body)).toEqual([{ uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' }, { uploadMode: 'local_only', confirmed: true, expectedUploadMode: 'automatic' }])
   await expect(page.locator('#tracking-description')).toContainText('Recording locally')
+  expect(dialogs[0]).toContain('currently OFF. Change to ON?')
+  expect(dialogs[1]).toContain('currently ON. Change to OFF?')
+  await page.reload()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
 })
 
 test('fullscreen works on desktop and mobile with tracking controls retained', async ({ page }, testInfo) => {
@@ -279,6 +285,7 @@ test('fullscreen works on desktop and mobile with tracking controls retained', a
 })
 
 test('failed mode save reads back the actual safely paused state', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   await mockBoat(page)
   await page.route('**/plugins/signalk-wakelogger/tracking', async route => {
     if (route.request().method() === 'POST') return route.fulfill({ status: 503, json: { message: 'settings save failed' } })
@@ -895,4 +902,47 @@ test('a rejected course activation still shows live navigation and an informatio
   await page.locator('#activate-course').click()
   await expect.poll(() => writes.length).toBeGreaterThanOrEqual(1)
   expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
+})
+
+
+test('cancel in either direction and reload never change live tracking', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const { writes } = await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toBeEnabled()
+  page.once('dialog', dialog => dialog.dismiss())
+  await toggle.focus()
+  await toggle.press('Space')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  expect(writes).toHaveLength(0)
+  page.once('dialog', dialog => dialog.accept())
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await page.reload()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  page.once('dialog', dialog => dialog.dismiss())
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  expect(writes).toHaveLength(1)
+})
+
+test('stale tracking confirmation reads current state without retrying a write', async ({ page }) => {
+  await mockBoat(page)
+  let writes = 0
+  page.on('dialog', dialog => dialog.accept())
+  await page.route('**/plugins/signalk-wakelogger/tracking', async route => {
+    if (route.request().method() === 'POST') {
+      writes += 1
+      return route.fulfill({ status: 409, json: { error: 'tracking_changed' } })
+    }
+    return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await expect(toggle).toBeEnabled()
+  expect(writes).toBe(1)
 })

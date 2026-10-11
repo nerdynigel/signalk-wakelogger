@@ -901,22 +901,26 @@ $('finish-trip').onclick = async () => {
   } finally { finishingTrip = false; renderTracking() }
 }
 $('live-tracking').onclick = async () => {
-  if (trackingChanging || !trackingPresentation(trackingStatus).available) return
-  const uploadMode = trackingStatus.uploadMode === 'automatic' ? 'local_only' : 'automatic'
-  let warning = null
-  if (uploadMode === 'local_only') {
-    // Pre-switch warning: local-only stays possible, but the crew is told
-    // precisely what is missing before onboard sail planning is relied upon.
-    const readiness = await client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' }).catch(() => null)
-    if (readiness) offlineReadiness = readiness
-    warning = localOnlyWarning(readiness)
-    renderOfflineReadiness()
-  }
+  if (trackingChanging || finishingTrip || !trackingPresentation(trackingStatus).available) return
+  const expectedUploadMode = trackingStatus.uploadMode
+  const uploadMode = expectedUploadMode === 'automatic' ? 'local_only' : 'automatic'
+  // Freeze status polling and other controls before the readiness request/modal.
   trackingChanging = true
   ++trackingRequest
   renderTracking()
   try {
-    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', operation: 'set-tracking', body: JSON.stringify({ uploadMode }) })
+    let warning = null
+    if (uploadMode === 'local_only') {
+      const readiness = await client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' }).catch(() => null)
+      if (readiness) offlineReadiness = readiness
+      warning = localOnlyWarning(readiness)
+      renderOfflineReadiness()
+    }
+    const current = expectedUploadMode === 'automatic' ? 'ON' : 'OFF'
+    const target = uploadMode === 'automatic' ? 'ON' : 'OFF'
+    const effect = uploadMode === 'automatic' ? 'Send live position and saved history when connected.' : 'Pause cloud uploads. Your trip continues recording onboard.'
+    if (!window.confirm(`Live tracking is currently ${current}. Change to ${target}?\n\n${effect}${warning ? `\n\n${warning}` : ''}`)) return
+    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', operation: 'set-tracking', body: JSON.stringify({ uploadMode, confirmed: true, expectedUploadMode }) })
     notice(warning || (uploadMode === 'local_only' ? 'Live tracking off. Your trip continues recording onboard.' : 'Live tracking on. Saved history uploads when connected.'))
   } catch (error) {
     try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) }
@@ -928,7 +932,7 @@ $('live-tracking').onclick = async () => {
       setFullscreen(false)
       $('login').hidden = false
     }
-  } finally { trackingChanging = false; renderTracking() }
+  } finally { trackingChanging = false; renderTracking(); void refreshTracking() }
 }
 
 const tabNames = ['instruments', 'race', 'course', 'charts']

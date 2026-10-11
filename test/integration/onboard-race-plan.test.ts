@@ -133,6 +133,7 @@ describe('onboard race plan integration', () => {
     const config = { uploadMode: 'local_only', samplePeriodMs: 250, debugTelemetry: true }
     try {
       f.start(config)
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
       await vi.waitFor(async () => {
         const data = (await f.request('GET', '/race-plan')).data
         expect(data.pack?.available).toBe(true)
@@ -161,6 +162,7 @@ describe('onboard race plan integration', () => {
 
       await f.stop()
       f.start(config)
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
       await vi.waitFor(async () => {
         const data = (await f.request('GET', '/race-plan')).data
         expect(data.pack?.available).toBe(true)
@@ -188,6 +190,8 @@ describe('onboard race plan integration', () => {
     const f = await fixture()
     try {
       f.start({ uploadMode: 'automatic', samplePeriodMs: 250 })
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
+      expect((await f.request('POST', '/tracking', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })).code).toBe(200)
       await vi.waitFor(async () => expect((await f.request('GET', '/race-plan')).data.connectionState).not.toBe('unpaired'), { timeout: 10000 })
       const racePlan = (await f.request('GET', '/race-plan')).data
       expect(racePlan.calculationAuthority).toBe('cloud')
@@ -212,6 +216,7 @@ describe('onboard race plan integration', () => {
     const config = { uploadMode: 'local_only', samplePeriodMs: 250 }
     try {
       f.start(config)
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
       await vi.waitFor(async () => expect((await f.request('GET', '/race-plan')).data.calculationAuthority).toBe('onboard'), { timeout: 10000 })
       f.ingest(navDelta())
       await f.request('POST', '/race-plan/recalculate')
@@ -219,7 +224,7 @@ describe('onboard race plan integration', () => {
       // local_only produces no transport at all.
       expect(clients).toHaveLength(0)
 
-      const switched = await f.request('POST', '/tracking', { uploadMode: 'automatic' })
+      const switched = await f.request('POST', '/tracking', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
       expect(switched.code).toBe(200)
       await vi.waitFor(() => expect(clients).toHaveLength(1), { timeout: 10000 })
       const client = clients[0]!
@@ -244,6 +249,8 @@ describe('onboard race plan integration', () => {
     const f = await fixture()
     try {
       f.start({ uploadMode: 'automatic', samplePeriodMs: 250 })
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
+      expect((await f.request('POST', '/tracking', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })).code).toBe(200)
       await vi.waitFor(() => expect(clients).toHaveLength(1), { timeout: 10000 })
       const client = clients[0]!
       client.connected = true
@@ -252,7 +259,7 @@ describe('onboard race plan integration', () => {
         expect(client.publications.some((entry) => entry.topic.endsWith('/status') && entry.payload.includes('online'))).toBe(true)
       }, { timeout: 10000 })
 
-      const switched = await f.request('POST', '/tracking', { uploadMode: 'local_only' })
+      const switched = await f.request('POST', '/tracking', { uploadMode: 'local_only', confirmed: true, expectedUploadMode: 'automatic' })
       expect(switched.code).toBe(200)
       const localOnly = client.publications.find((entry) => entry.topic.endsWith('/status') && entry.payload.includes('local_only'))
       expect(localOnly).toBeTruthy()

@@ -39,7 +39,7 @@ Recording and uploading are separate. Keep Signal K and the Wake Logger plugin r
 
 **For normal use:** Leave **Upload mode** set to **Automatic upload**. If internet access drops, the plugin stores readings onboard and uploads them when the connection returns.
 
-**To deliberately defer uploading:** Pair first, then turn **Live tracking** off on the onboard Wake Logger map. The plugin keeps recording locally, up to your storage and age limits. Turn it on when you are ready to send your live position and upload stored history. Changing the switch does not end a trip or restart recording, and the setting survives restarts.
+**To deliberately defer uploading:** Pair first, then confirm **Live tracking** off on the onboard Wake Logger map. The plugin keeps recording locally, up to your storage and age limits. Confirm it on when you are ready to send your live position and upload stored history. Changing the switch does not end a trip or restart recording, and the confirmed setting survives restarts and configuration updates. Both directions require confirmation. New installations and upgrades without a readable confirmed choice start with live tracking off; confirm it on in the onboard app when ready. Saving the legacy upload mode in plugin settings cannot enable live tracking.
 
 You can also choose **Record locally** or **Automatic upload** in the plugin's **Upload mode** setting. These controls change the same setting.
 

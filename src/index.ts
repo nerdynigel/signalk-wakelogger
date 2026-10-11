@@ -60,8 +60,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   // Explicit, leased, generation-stamped navigation-control ownership. Only the
   // owning onboard client may apply a detected rounding; other pages are viewers.
   const navigationLease = new NavigationControlLease()
-  let activeUploadMode: PluginConfig['uploadMode'] = 'automatic'
-  let persistedUploadMode: PluginConfig['uploadMode'] = 'automatic'
+  let activeUploadMode: PluginConfig['uploadMode'] = 'local_only'
+  let persistedUploadMode: PluginConfig['uploadMode'] = 'local_only'
   let persistenceError: string | undefined
   let rawConfiguration: Record<string, unknown> = {}
   let trackingOperation: Promise<void> = Promise.resolve()
@@ -87,6 +87,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     schema: configSchema,
     start(configuration: object): void {
       ready = false
+      activeUploadMode = 'local_only'
+      persistedUploadMode = 'local_only'
       trackingRevision += 1
       rawConfiguration = structuredClone(configuration) as Record<string, unknown>
       pairingAbortController?.abort()
@@ -103,8 +105,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
           await initialise(parseConfig(configuration), thisGeneration)
           ready = thisGeneration === generation
         }
-      })().catch((error: unknown) => {
+      })().catch(async (error: unknown) => {
         if (thisGeneration !== generation) return
+        await pauseTransmission()
         const message = safeError(error)
         app.setPluginError(`Wake Logger initialization failed: ${message}`)
         app.error(`Wake Logger initialization failed: ${message}`)
@@ -148,13 +151,22 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         catch (error) { next(error) }
       })
       writeRouter.post('/tracking', async (request, response, next) => {
-        const mode = (request as { body?: { uploadMode?: unknown } }).body?.uploadMode
+        const body = (request as { body?: { uploadMode?: unknown; confirmed?: unknown; expectedUploadMode?: unknown } }).body
+        const mode = body?.uploadMode
         if (mode !== 'automatic' && mode !== 'local_only') {
           response.status(400).json({ error: 'invalid_upload_mode' })
           return
         }
         if (!ready || !outbox || !transport || connectionState === 'device_revoked') {
           response.status(409).json({ error: 'tracking_unavailable', ...await trackingStatus() })
+          return
+        }
+        if (body?.confirmed !== true) {
+          response.status(400).json({ error: 'tracking_confirmation_required', ...await trackingStatus() })
+          return
+        }
+        if (body.expectedUploadMode !== activeUploadMode) {
+          response.status(409).json({ error: 'tracking_changed', ...await trackingStatus() })
           return
         }
         const revision = ++trackingRevision
@@ -794,9 +806,18 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function initialise(config: PluginConfig, thisGeneration: number): Promise<void> {
-    persistedUploadMode = config.uploadMode
+    // Configuration/defaults are never authority for live transmission. Only a
+    // versioned choice written by the confirmed control route may restore ON.
+    persistedUploadMode = 'local_only'
+    activeUploadMode = 'local_only'
     persistenceError = undefined
-    activeUploadMode = config.uploadMode
+    try {
+      const choice = JSON.parse(await fs.readFile(path.join(app.getDataDirPath(), 'tracking-choice.json'), 'utf8'))
+      if (choice.version !== 1 || choice.confirmed !== true || !['automatic', 'local_only'].includes(choice.uploadMode)) throw new Error('Invalid tracking choice')
+      persistedUploadMode = activeUploadMode = choice.uploadMode
+    } catch {
+      persistenceError = 'No readable confirmed tracking choice; live tracking remains off. Confirm a choice in the onboard app.'
+    }
     try {
       await fs.access(path.join(app.getDataDirPath(), 'tracking-pause.json'))
       activeUploadMode = 'local_only'
@@ -812,7 +833,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const credentialStore = new CredentialStore(path.join(dataDirectory, 'identity'))
     let credentials = await credentialStore.load()
     const lastPairingCodeFingerprint = await credentialStore.lastPairingCodeFingerprint()
-    if (config.uploadMode === 'automatic' && shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
+    if ((config.uploadMode === 'automatic' || !credentials) && shouldExchangePairingCode(credentials, config.pairingCode, lastPairingCodeFingerprint)) {
       const controller = new AbortController()
       pairingAbortController = controller
       try {
@@ -851,7 +872,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     if (!credentials) {
       connectionState = 'unpaired'
-      app.setPluginStatus(config.uploadMode === 'local_only' ? 'Wake Logger: Not paired — switch to automatic and pair before recording locally' : 'Wake Logger: Not paired')
+      app.setPluginStatus('Wake Logger: Not paired')
       return
     }
     if (generation !== thisGeneration) return
@@ -1152,8 +1173,19 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         app.savePluginOptions(configuration, (error) => error ? reject(error) : resolve())
       })
       rawConfiguration = configuration
+      if (revision !== trackingRevision || generation !== thisGeneration) return
+      await durableJson(path.join(app.getDataDirPath(), 'tracking-choice.json'), { version: 1, confirmed: true, uploadMode: mode })
+      if (generation !== thisGeneration) {
+        await durableJson(guard, { paused: true, at: Date.now() })
+        throw new Error('tracking_restarted')
+      }
+      if (revision !== trackingRevision) return
+      await fs.unlink(guard).catch((error) => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error })
+      if (generation !== thisGeneration || revision !== trackingRevision) {
+        await durableJson(guard, { paused: true, at: Date.now() })
+        throw new Error('tracking_restarted')
+      }
       persistedUploadMode = mode
-      if (revision === trackingRevision && generation === thisGeneration) await fs.unlink(guard).catch((error) => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error })
       persistenceError = undefined
     } catch (error) {
       persistenceError = safeError(error)

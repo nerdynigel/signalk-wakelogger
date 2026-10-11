@@ -65,6 +65,9 @@ async function until(description, predicate, timeout = 90_000) {
 let browser
 try {
   plugin.start(configuration, () => {})
+  await until('actual plugin paired recorder', async () => (await tracking()).available)
+  const enable = await fetch(`${base}/plugins/signalk-wakelogger/tracking`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' }) })
+  assert.equal(enable.status, 200)
   await until('actual plugin MQTT connection', async () => (await tracking()).connectionState === 'online')
   const transport = instances.at(-1)
   const client = transport.client
