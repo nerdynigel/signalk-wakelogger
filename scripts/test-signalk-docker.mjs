@@ -445,6 +445,21 @@ try {
     return current.progress.pointPercent > firstMotion.progress.pointPercent ? current : undefined
   }, 45_000)
   assert.equal(raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute).pointPercent, null, '2014 replay is stale at wall clock')
+  // Actual packaged Signal K REST inputs (bundled replay, not owner telemetry).
+  const staleEta = raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute)
+  assert.equal(staleEta.eta, null, 'old replay must never claim a wall-clock ETA')
+  assert.equal(staleEta.timeToGo, null)
+  const cachedStatus = { ...nextMotion.status, native: { ...nextMotion.status.native, activeMatchesDesired: false } }
+  const replayEta = raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock)
+  assert.ok(replayEta.eta, `source-clock cached ETA requires fresh actual sensor envelopes: ${replayEta.etaReason}`)
+  assert.ok(replayEta.timeToGo >= 0 && replayEta.timeToGo <= 86400)
+  const staleMotion = { ...nextMotion.navigation, speedOverGround: { ...nextMotion.navigation.speedOverGround,
+    timestamp: new Date(nextMotion.sourceClock - 31000).toISOString() } }
+  assert.equal(raceProgress(cachedStatus, staleMotion, {}, null, null, nextMotion.sourceClock).eta, null)
+  assert.equal(raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock).eta, replayEta.eta)
+  process.stdout.write(`${JSON.stringify({ nativeEtaProof: { clock: 'bundled N2K replay', nativeWallClockEta: staleEta.eta,
+    nativeReason: staleEta.etaReason, cachedSourceClockEta: replayEta.eta, seconds: replayEta.timeToGo,
+    staleMotionRejected: true, recovery: true } })}\n`)
   skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { value: 1 })
   assert.equal(readMotion().progress.index, 2, 'manual next-leg semantics survive continuous progress')
   process.stdout.write(`${JSON.stringify({ nativeCourseProgress: { clock: 'bundled N2K replay', from: firstMotion.progress.pointPercent, to: nextMotion.progress.pointPercent, fixedIndex: 1, staleWallClock: null, manualNextIndex: 2 } })}\n`)

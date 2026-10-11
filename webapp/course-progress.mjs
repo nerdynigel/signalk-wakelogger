@@ -1,4 +1,4 @@
-import { parseSignalKTimestamp, INSTRUMENT_STALE_SECONDS } from './instruments.mjs'
+import { parseSignalKTimestamp, INSTRUMENT_STALE_SECONDS, MAX_INPUT_SKEW_SECONDS } from './instruments.mjs'
 const value = (input) => input && typeof input === 'object' && 'value' in input ? input.value : input
 const finite = (input) => typeof value(input) === 'number' && Number.isFinite(value(input)) ? value(input) : null
 const radiansToDegrees = (input) => input === null ? null : ((input * 180 / Math.PI) % 360 + 360) % 360
@@ -106,6 +106,9 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
   // Signal K supplies the calculations when the route is active. Only units and
   // presentation change there; the fallback computes directly from cached
   // geometry so a missing native route never blanks live navigation.
+  // The v2 calculation API strips source envelopes. The v1 navigation tree
+  // retains navigation.course.calcValues timestamps when the provider emits them.
+  if (matches && navigation.course?.calcValues) calculated = navigation.course.calcValues
   const distanceM = matches ? finite(calculated.distance) : fallback ? fallback.distanceM : null
   const bearingRad = matches ? finite(calculated.bearingTrue) : null
   const distanceNm = distanceM === null ? null : distanceM / 1852
@@ -119,12 +122,33 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
     : fallback && sogKnots !== null && cogDeg !== null && sogKnots > 0
       ? sogKnots * Math.cos(signedDegrees(fallback.bearingDeg - cogDeg) * Math.PI / 180)
       : null
-  const timeToGo = matches
+  const rawTimeToGo = matches
     ? finite(calculated.timeToGo)
     : distanceNm !== null && vmgKn !== null && vmgKn > 0 ? distanceNm / vmgKn * 3600 : null
-  const eta = matches
-    ? value(calculated.estimatedTimeOfArrival) || null
-    : timeToGo !== null ? new Date(Date.now() + timeToGo * 1000).toISOString() : null
+  // Each required input must carry its own source time. A successful request
+  // or a position update cannot make an older motion/calculation value fresh.
+  const required = matches
+    ? [navigation.position, navigation.speedOverGround, navigation.courseOverGroundTrue, calculated.distance, calculated.bearingTrue, calculated.velocityMadeGood, calculated.timeToGo, calculated.estimatedTimeOfArrival]
+    : [navigation.position, navigation.speedOverGround, navigation.courseOverGroundTrue]
+  const times = required.map(entry => parseSignalKTimestamp(entry?.timestamp))
+  let etaReason = null
+  if (!Number.isFinite(now) || !validPosition || !next || distanceNm === null || distanceNm < 0 || bearingDeg === null || sogMps === null || sogMps < 0 || cogDeg === null) etaReason = 'Navigation inputs unavailable'
+  else if (times.some(time => time === null || time > now + 5000 || now - time > INSTRUMENT_STALE_SECONDS * 1000)) etaReason = 'Fresh navigation inputs unavailable'
+  else if (Math.max(...times) - Math.min(...times) > MAX_INPUT_SKEW_SECONDS * 1000) etaReason = 'Navigation inputs out of sync'
+  else if (!(vmgKn > 0.1)) etaReason = 'Not closing on waypoint'
+  else if (matches && vmgKn > sogKnots + 0.1) etaReason = 'Native speed inconsistent'
+  else if (!Number.isFinite(rawTimeToGo) || rawTimeToGo < 0 || rawTimeToGo > 86400) etaReason = 'ETA outside live horizon'
+  const expectedSeconds = distanceNm / vmgKn * 3600
+  const nativeEta = matches ? parseSignalKTimestamp(value(calculated.estimatedTimeOfArrival)) : null
+  // Accept rounding (5 s) or 1% of the geometric TTG, whichever is larger.
+  // ETA versus now+TTG may differ by at most the 30 s age + 5 s clock tolerance.
+  if (!etaReason && matches && (nativeEta === null || nativeEta < now ||
+    Math.abs(rawTimeToGo - expectedSeconds) > Math.max(5, expectedSeconds * 0.01) + 1e-6 ||
+    Math.abs(nativeEta - (now + rawTimeToGo * 1000)) > 35000)) etaReason = 'Native ETA inconsistent'
+  const etaTime = matches ? nativeEta : now + rawTimeToGo * 1000
+  if (!etaReason && !Number.isFinite(new Date(etaTime).getTime())) etaReason = 'ETA date unavailable'
+  const timeToGo = etaReason ? null : rawTimeToGo
+  const eta = etaReason ? null : new Date(etaTime).toISOString()
   return {
     points, index, matches, reverse, routeSource: validNative ? 'signalk' : 'cached',
     readOnly, navSource: matches ? 'signalk' : readOnly ? 'cached' : 'none',
@@ -138,6 +162,6 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
     xteM: matches ? finite(calculated.crossTrackError) : null,
     vmgKn,
     timeToGo,
-    eta,
+    eta, etaReason,
   }
 }

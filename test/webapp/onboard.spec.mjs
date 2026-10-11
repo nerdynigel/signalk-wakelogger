@@ -1165,3 +1165,29 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     expect(writes).toEqual([])
   })
 }
+
+// Disposable timestamped Signal K API fixtures, not a physical provider capture.
+test('ETA native and cached pages reject tiny/stale input and recover with a date on rollover', async ({ page }) => {
+  let mode = 'normal'
+  let native = true
+  const position = { latitude: -27.395, longitude: 153.18 }
+  const stamp = value => ({ value, timestamp: new Date().toISOString() })
+  const navigation = () => {
+    const calc = Object.fromEntries(Object.entries({ distance: 1852, bearingTrue: 1.1, velocityMadeGood: 1852 / 3600, timeToGo: 3600, estimatedTimeOfArrival: new Date(Date.now() + 3600000).toISOString() }).map(([key,value])=>[key,stamp(value)]))
+    if (mode === 'inconsistent') calc.timeToGo.value = 259200
+    if (mode === 'rollover') { calc.distance.value=1852*24;calc.timeToGo.value=86400;calc.estimatedTimeOfArrival.value=new Date(Date.now()+86400000).toISOString() }
+    const data = { position: stamp(position), speedOverGround: stamp(mode === 'tiny' ? 1e-310 : 3.2), courseOverGroundTrue: stamp(1.1), ...(native ? {course:{calcValues:calc}} : {}) }
+    if (mode === 'stale') data.speedOverGround.timestamp = new Date(Date.now()-31000).toISOString()
+    return data
+  }
+  const fixture = await mockBoat(page, { navigationOverride:navigation, courseState:()=>({desired,native:{activeMatchesDesired:native,course:{activeRoute:{pointIndex:1}}}}) })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#eta')).not.toHaveText('—')
+  mode='inconsistent';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('horizon')
+  mode='rollover';await expect(page.locator('#eta')).toContainText(new Date(Date.now()+86400000).toLocaleDateString([], {month:'short'}))
+  mode='stale';await expect(page.locator('#eta')).toHaveText('—')
+  native=false;mode='tiny';await expect(page.locator('#eta-reason')).toContainText('Not closing')
+  mode='normal';await expect(page.locator('#eta')).not.toHaveText('—')
+  await page.reload();await expect(page.locator('#eta')).not.toHaveText('—')
+  expect(fixture.writes).toEqual([])
+})

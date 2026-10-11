@@ -181,7 +181,9 @@ function renderCourse() {
   metric('xte', progress.xteM, ' m', 0)
   metric('ttg', progress.timeToGo === null ? null : progress.timeToGo / 60, ' min', 0)
   const eta = progress.eta ? new Date(progress.eta) : null
-  $('eta').textContent = eta && Number.isFinite(eta.getTime()) ? eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+  $('eta').textContent = eta && Number.isFinite(eta.getTime()) ? (eta.toDateString() === new Date().toDateString() ? eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : eta.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : '—'
+  $('eta').title = progress.etaReason || ''
+  $('eta-reason').textContent = progress.etaReason || ''
   $('progress-value').textContent = progress.pointPercent === null ? '—' : `${progress.pointPercent}%`
   $('course-progress').value = progress.pointPercent ?? 0
   routeLayer.clearLayers()

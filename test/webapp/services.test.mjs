@@ -49,7 +49,7 @@ test('native calculations are converted from SI without fabricating missing valu
   assert.equal(progress.direction, 90)
   assert.equal(progress.vmgKn, 1)
   assert.equal(progress.xteM, -12)
-  assert.equal(progress.timeToGo, 60)
+  assert.equal(progress.timeToGo, null) // Untimestamped native calculations are unavailable.
   assert.ok(progress.pointPercent > 20 && progress.pointPercent < 30)
   assert.equal(progress.eta, null)
   const conflict = raceProgress({ ...status, native: { ...status.native, activeMatchesDesired: false } }, {}, { distance: 1852 })
@@ -68,7 +68,7 @@ test('read-only fallback computes next-mark bearing, distance and time while nat
   const cachedCourse = { action: 'activate', activeWaypointIndex: 1, start: { ...point(-27.4, 153.1), name: 'Start' }, marks: [{ ...point(-27.3, 153.1), name: 'Windward' }], finish: { ...point(-27.2, 153.1), name: 'Finish' } }
   const status = { cachedCourse, native: { activeMatchesDesired: false, conflict: true } }
   // Position south of the active mark; heading north, moving at 2 m/s.
-  const progress = raceProgress(status, { position: { value: point(-27.32, 153.1) }, headingTrue: { value: 0 }, courseOverGroundTrue: { value: 0 }, speedOverGround: { value: 2 } }, {})
+  const progress = raceProgress(status, { position: { value: point(-27.32, 153.1), timestamp: new Date().toISOString() }, headingTrue: { value: 0 }, courseOverGroundTrue: { value: 0, timestamp: new Date().toISOString() }, speedOverGround: { value: 2, timestamp: new Date().toISOString() } }, {})
   assert.equal(progress.matches, false)
   assert.equal(progress.readOnly, true)
   assert.equal(progress.next.name, 'Windward')
