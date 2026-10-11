@@ -124,21 +124,28 @@ try {
   // not a browser route mock. The packaged asset must match the tested module.
   const packagedInstruments = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/instruments.mjs'], { capture: true }).stdout.trim()
   assert.equal(packagedInstruments, readFileSync(new URL('../webapp/instruments.mjs', import.meta.url), 'utf8').trim())
-  const liveWind = await waitFor('fresh native Signal K true wind angle', () => {
+  // The server's bundled replay deliberately retains 2014 source timestamps.
+  // Evaluate positive derivation at the replay clock; at wall clock these
+  // measurements must be unavailable, even though HTTP is responding live.
+  const liveWind = await waitFor('native replay true wind angle at source clock', () => {
     const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
     const environment = query('http://signalk:3000/signalk/v1/api/vessels/self/environment')
-    const view = instrumentReadings({ navigation, environment })
+    const entries = [navigation.headingTrue, navigation.courseOverGroundTrue, navigation.speedOverGround,
+      environment.wind?.speedApparent, environment.wind?.angleApparent]
+    const sourceClock = Math.max(...entries.map(entry => Date.parse(entry?.timestamp)))
+    if (!Number.isFinite(sourceClock)) return undefined
+    const view = instrumentReadings({ navigation, environment, now: sourceClock })
     const twa = view.readings.find(reading => reading.id === 'twa-ground')
-    return twa?.available ? { navigation, environment, view, twa } : undefined
+    return twa?.available ? { navigation, environment, view, twa, sourceClock } : undefined
   }, 30_000)
   assert.equal(liveWind.twa.reference, 'ground')
   assert.ok(liveWind.twa.value >= -180 && liveWind.twa.value <= 180)
   assert.equal(liveNavigationStrip(liveWind.view).find(reading => reading.id === 'twa').available, true)
   const noHeading = { ...liveWind.navigation, headingTrue: undefined }
   const apparentOnly = { wind: { speedApparent: liveWind.environment.wind.speedApparent, angleApparent: liveWind.environment.wind.angleApparent } }
-  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
-  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly, now: Date.now() + 60_000 }).readings.find(reading => reading.id === 'twa-ground').available, false)
-  process.stdout.write(`${JSON.stringify({ nativeWindProof: { source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailable: true, missingHeadingRejected: true, staleRejected: true, packagedAssetMatches: true } })}\n`)
+  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  process.stdout.write(`${JSON.stringify({ nativeWindReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailableAtReplayClock: true, missingHeadingRejected: true, wallClockStaleRejected: true, packagedAssetMatches: true } })}\n`)
 
   const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
   await waitFor('paired recorder starts safely off without a confirmed choice', () => {
