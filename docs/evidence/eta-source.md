@@ -88,3 +88,44 @@ implementation proof; independent Verification is an additional gate.
 Chief owns review and final disposition. No promotion, production mutation,
 Openclaw switch, merge, npm publication or paid CI. Rollback: revert this scoped
 commit on the release branch; no data migration.
+
+
+## Frozen QA and correction publication — 11 October 2026
+
+Verification's original attributed report and runnable reproduction, previously
+published on review/THE-882-eta-evidence at
+`c6d171363f5df198beb53b6e8999eda8db8dda37`, are integrated unchanged as
+[eta-independent-review.md](eta-independent-review.md) and
+[eta-order-repro.mjs](eta-order-repro.mjs). They record historical changes-requested
+results at plugin49285dd76499428c4676ce7e7a98ed576530eff8 and
+web74454ddc9c38addfa66307cd554b29f3baeb1c4b; the reproduction targets those old
+helper/page semantics, not the corrected timestamp-based helper API.
+Their historical failing finding is not a verdict on the new correction.
+
+Website correction delivered to nerdynigel/wakelogger release/2026-w42-web,
+`d51aedef2fe376e8b6d1d6e757924cfb2aaa83ce`, existing draft PR81.
+`git push origin release/2026-w42-web` exit0 and independent `git ls-remote origin
+refs/heads/release/2026-w42-web` exact match. Only pre-existing untracked
+frontend/node_modules remains. Plugin runtime source remains identical to
+49285dd76499428c4676ce7e7a98ed576530eff8; this plugin commit only integrates
+review and correction evidence. Prior pinned plugin/native/API proof is reused,
+not rerun or promoted to physical-current/Openclaw proof.
+
+Corrected page carries authoritative preceding finish, rejects overlapping
+starts, preserves unknown/recovery/order across gaps, and shares the timeline
+between table, weather notes, detail/print cards and race summary. Valid long
+forecasts remain supported. Website executed18 timing tests (six new
+regressions), fresh Next webpack build and1200x900/390x844 fixture page checks:
+PASS, no page errors/control writes. Initial browser assertion used the wrong
+formatting; corrected assertion passed. Original web committed diff-check PASS
+is superseded by QA exit2; correction's committed diff from
+e6b5e32b4a46df8eace5dd4f7370d5f28e90b1d2 passes exit0. Plugin documentation
+incremental diff-check passes; copied evidence bytes verified against the source
+review commit. Exact commands and changed-behaviour acceptance map are in the
+website eta-source.md at the delivered SHA.
+
+Independent recheck required. Original acceptance remains OPEN: current physical
+native positive proof stays Software-owned, incident attribution unknown,
+owner-Go Openclaw NOT RUN. No candidate promotion or production/release action.
+Rollback: revert website correction; revert this evidence-only plugin commit
+only to remove integration. No migration. Chief retains acceptance holds.
