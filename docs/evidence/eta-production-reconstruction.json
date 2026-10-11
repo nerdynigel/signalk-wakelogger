@@ -1,0 +1,64 @@
+{
+  "scope": "historical reconstruction, cloud target index 1, not captured API responses",
+  "samples": 14210,
+  "over_24h": 2,
+  "maximum_hours": 28.245753702297883,
+  "examples": [
+    {
+      "id": 100246,
+      "sequence": 94359,
+      "captured_at": "2026-10-10T23:22:56.18+00:00",
+      "received_at": "2026-10-10T23:22:56.852214+00:00",
+      "sog_kn": 2.235421,
+      "stored_wind_vmg_kn": -0.48622748090260737,
+      "distance_nm": 3.391,
+      "heading_error_deg": -86.92144499999995,
+      "target_vmg_kn": 0.12005344363404724,
+      "hours": 28.245753702297883,
+      "eta": "2026-10-12T03:37:40.893328+00:00"
+    },
+    {
+      "id": 114640,
+      "sequence": 108542,
+      "captured_at": "2026-10-11T04:56:16.445+00:00",
+      "received_at": "2026-10-11T05:14:14.968659+00:00",
+      "sog_kn": 1.691145,
+      "stored_wind_vmg_kn": null,
+      "distance_nm": 3.388,
+      "heading_error_deg": 85.40049999999997,
+      "target_vmg_kn": 0.13561329939216518,
+      "hours": 24.982800471527614,
+      "eta": "2026-10-12T05:55:14.526697+00:00"
+    }
+  ],
+  "normal": {
+    "id": 111434,
+    "sequence": 105390,
+    "captured_at": "2026-10-11T03:31:21.647+00:00",
+    "received_at": "2026-10-11T05:11:56.359961+00:00",
+    "sog_kn": 6.958963,
+    "stored_wind_vmg_kn": null,
+    "distance_nm": 2.188,
+    "heading_error_deg": -40.12742900000001,
+    "target_vmg_kn": 5.320913258414582,
+    "hours": 0.41120760548762186,
+    "eta": "2026-10-11T03:56:01.994380+00:00"
+  },
+  "private_projection_sha256": "32cc633d3a7fdf3008cc47690f0c3399d836b3e95719a268c8ac4c0b3b860746",
+  "positive_below_cloud_floor_count": 21,
+  "conditional_unbounded_closing_example": {
+    "id": 102287,
+    "captured_at": "2026-10-11T00:00:56.371+00:00",
+    "sog_kn": 3.771058,
+    "distance_nm": 1.8,
+    "heading_error_deg": -89.88418000000001,
+    "target_vmg_kn": 0.00762296357287422,
+    "hours": 236.12863721468818
+  },
+  "cloud_example_caveats": [
+    "First long example predates race_plan_matched_at; not a proven live race ETA.",
+    "Second example was received after tracking ended; not a proven live cursor or browser response.",
+    "Final cloud target index 1 and absent automatic-advance audit do not prove all historical/manual cursor values.",
+    "Geometry uses deployed rounded cloud bearing/distance; onboard native calculation/provider envelopes were not retained."
+  ]
+}
