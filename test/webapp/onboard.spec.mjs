@@ -1167,27 +1167,36 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
 }
 
 // Disposable timestamped Signal K API fixtures, not a physical provider capture.
-test('ETA native and cached pages reject tiny/stale input and recover with a date on rollover', async ({ page }) => {
+test('leg-average ETA page suppresses stale samples, recovers, persists on reload and labels provisional plan', async ({ page }) => {
   let mode = 'normal'
   let native = true
   const position = { latitude: -27.395, longitude: 153.18 }
+  const startedAt = Date.now() - 600000
   const stamp = value => ({ value, timestamp: new Date().toISOString() })
   const navigation = () => {
-    const calc = Object.fromEntries(Object.entries({ distance: 1852, bearingTrue: 1.1, velocityMadeGood: 1852 / 3600, timeToGo: 3600, estimatedTimeOfArrival: new Date(Date.now() + 3600000).toISOString() }).map(([key,value])=>[key,stamp(value)]))
-    if (mode === 'inconsistent') calc.timeToGo.value = 259200
-    if (mode === 'rollover') { calc.distance.value=1852*24;calc.timeToGo.value=86400;calc.estimatedTimeOfArrival.value=new Date(Date.now()+86400000).toISOString() }
-    const data = { position: stamp(position), speedOverGround: stamp(mode === 'tiny' ? 1e-310 : 3.2), courseOverGroundTrue: stamp(1.1), ...(native ? {course:{calcValues:calc}} : {}) }
+    const calc = Object.fromEntries(Object.entries({ distance: 1852, bearingTrue: 1.1, velocityMadeGood: 100, timeToGo: 1, estimatedTimeOfArrival: 'broken' }).map(([key,value])=>[key,stamp(value)]))
+    const data = { position: stamp(mode === 'stationary' ? points[0] : position), speedOverGround: stamp(0), courseOverGroundTrue: stamp(0), ...(native ? {course:{calcValues:calc}} : {}) }
     if (mode === 'stale') data.speedOverGround.timestamp = new Date(Date.now()-31000).toISOString()
     return data
   }
-  const fixture = await mockBoat(page, { navigationOverride:navigation, courseState:()=>({desired,native:{activeMatchesDesired:native,course:{activeRoute:{pointIndex:1}}}}) })
+  const courseState = () => ({ desired, native:{activeMatchesDesired:native,course:{activeRoute:{pointIndex:1,href:ownedHref}}}, legStart:{
+    identity: JSON.stringify([desired.courseId,desired.revision,desired.updatedAt,1,native?ownedHref:'cached',false,points]),
+    observedAt: startedAt, startedAt: mode === 'early' ? Date.now()-10000 : startedAt, position: points[0], positionTimestamp: startedAt
+  } })
+  const errors=[];page.on('pageerror', e=>errors.push(e.message))
+  const racePlan = { pack:{applicable:true,courseId:desired.courseId,revision:1}, latestSnapshot:{generatedAt:Date.now(),packRevision:1,tracking:{courseId:desired.courseId,activeIndex:1,reverse:false},plan:{legs:[{estimatedSogKnots:5}]}} }
+  const fixture = await mockBoat(page, { navigationOverride:navigation, courseState, racePlan })
   await page.goto('/signalk-wakelogger/')
+  await page.getByRole('tab', {name:'Race',exact:true}).click()
+  await expect(page.getByText('Leg-average VMG (ground)',{exact:true})).toBeVisible()
   await expect(page.locator('#eta')).not.toHaveText('—')
-  mode='inconsistent';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('horizon')
-  mode='rollover';await expect(page.locator('#eta')).toContainText(new Date(Date.now()+86400000).toLocaleDateString([], {month:'short'}))
-  mode='stale';await expect(page.locator('#eta')).toHaveText('—')
-  native=false;mode='tiny';await expect(page.locator('#eta-reason')).toContainText('Not closing')
+  await expect(page.locator('#vmg')).not.toHaveText('100.0 kn')
+  mode='stale';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('Fresh')
+  mode='stationary';await expect(page.locator('#eta-reason')).toContainText('No positive leg progress')
   mode='normal';await expect(page.locator('#eta')).not.toHaveText('—')
   await page.reload();await expect(page.locator('#eta')).not.toHaveText('—')
+  native=false;await expect(page.locator('#eta')).not.toHaveText('—')
+  mode='early';await expect(page.locator('#eta-reason')).toContainText('Provisional · leg plan speed');await expect(page.locator('#vmg')).toContainText('(plan)')
+  expect(errors).toEqual([])
   expect(fixture.writes).toEqual([])
 })
