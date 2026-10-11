@@ -978,3 +978,80 @@ test('TWA tiles derive wind and Race falls back to fresh water TWA', async ({ pa
   await page.reload()
   await expect(water).toContainText('-30 ° true')
 })
+
+test('Finish explains no recording, automatic closure and unavailable recorder', async ({ page }, testInfo) => {
+  const { control } = await mockBoat(page)
+  await page.goto('/')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  await expect(page.locator('#finish-trip-reason')).toHaveText('No trip is in progress.')
+  control.finishedTrip = { confirmationPending: false, uploadPending: false, manifest: { id: '00000000-0000-0000-0000-000000000075' }, cloudStatus: { state: 'ready' } }
+  await expect(page.locator('#finish-trip-reason')).toHaveText('Trip already ended. Cloud has confirmed it ready.')
+  await page.screenshot({ path: testInfo.outputPath('finish-already-ended.png'), fullPage: true })
+  await page.route('**/plugins/signalk-wakelogger/tracking', route => route.fulfill({ json: { uploadMode: 'automatic', paired: true, available: false, recording: false, trackingSessionId: 'active' } }))
+  await expect(page.locator('#finish-trip-reason')).toContainText('Recorder unavailable')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+})
+
+test('Finish is independent of upload queue and race conflict; refresh failure recovers', async ({ page }) => {
+  await mockBoat(page, { conflict: true })
+  let failing = false
+  await page.route('**/plugins/signalk-wakelogger/tracking', route => failing
+    ? route.fulfill({ status: 503, json: { error: 'unavailable' } })
+    : route.fulfill({ json: { uploadMode: 'automatic', paired: true, recording: true, available: true, connectionState: 'offline', trackingSessionId: 'active', queue: { messageCount: 0 } } }))
+  await page.goto('/')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  failing = true
+  await expect(page.locator('#finish-trip-reason')).toContainText('Recorder status unavailable')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  failing = false
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await expect(page.locator('#finish-trip-reason')).toContainText('Save and end')
+})
+
+test('Finish reports unsafe tail and timeout uncertainty, then releases busy state for retry', async ({ page }) => {
+  const { control, writes } = await mockBoat(page)
+  control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
+  let attempts = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    attempts += 1
+    if (attempts === 1) return route.fulfill({ status: 409, json: { error: 'recording_not_committed' } })
+    if (attempts === 2) return // Deliberately unresolved: client deadline must recover.
+    control.trackingSessionId = null
+    control.finishedTrip = { confirmationPending: true, uploadPending: true, manifest: { id: '00000000-0000-0000-0000-000000000075' } }
+    return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true, available: true, trackingSessionId: null, finishedTrip: control.finishedTrip } })
+  })
+  await page.goto('/')
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#notice')).toContainText('Samples have not been saved safely')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#finish-trip')).toHaveAttribute('aria-busy', 'true')
+  await page.locator('#finish-trip').evaluate(button => button.click())
+  expect(attempts).toBe(2)
+  await expect(page.locator('#notice')).toContainText('Finish request timed out', { timeout: 8000 })
+  await expect(page.locator('#finish-trip')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await page.locator('#finish-trip').focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#finished-trip')).toContainText('saved onboard')
+  expect(attempts).toBe(3)
+  expect(writes).toEqual([])
+})
+
+test('automatic closure during manual Finish is shown as ended without a second write', async ({ page }) => {
+  const { control } = await mockBoat(page)
+  const id = '00000000-0000-0000-0000-000000000075'
+  control.trackingSessionId = id
+  let requests = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    requests += 1
+    control.trackingSessionId = null
+    control.finishedTrip = { confirmationPending: false, uploadPending: false, manifest: { id }, cloudStatus: { state: 'ready' } }
+    await route.fulfill({ json: { uploadMode: 'local_only', paired: true, available: true, recording: true, trackingSessionId: null, finishedTrip: control.finishedTrip } })
+  })
+  await page.goto('/')
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#finish-trip-reason')).toContainText('Trip already ended')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  expect(requests).toBe(1)
+})

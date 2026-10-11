@@ -3,7 +3,7 @@ import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
-import { trackingPresentation, finishedTripPresentation } from './tracking-controls.mjs'
+import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
@@ -866,10 +866,11 @@ function renderTracking() {
   $('tracking-mode').textContent = trackingChanging ? 'Saving…' : view.mode
   $('tracking-description').textContent = view.description
   $('upload-queue').textContent = view.queue
-  const retryConfirmation = !trackingStatus?.trackingSessionId && trackingStatus?.finishedTrip?.confirmationPending !== false && !!trackingStatus?.finishedTrip?.manifest?.id
-  $('finish-trip').disabled = trackingChanging || finishingTrip || !view.available || (!trackingStatus?.trackingSessionId && !retryConfirmation)
+  const finish = finishTripPresentation(trackingStatus, { changing: trackingChanging, finishing: finishingTrip })
+  $('finish-trip').disabled = finish.disabled
   $('finish-trip').setAttribute('aria-busy', String(finishingTrip))
-  $('finish-trip').textContent = finishingTrip ? retryConfirmation ? 'Checking confirmation…' : 'Saving trip…' : retryConfirmation ? 'Retry confirmation' : 'Finish trip'
+  $('finish-trip').textContent = finish.label
+  $('finish-trip-reason').textContent = finish.reason
   $('finished-trip').textContent = finishedTripPresentation(trackingStatus)
   if (trackingStatus) $('cloud-state').textContent = !view.available ? 'Not paired' : !view.enabled ? 'Recording locally' : trackingStatus.connectionState === 'online' ? 'Live connected' : 'Cloud offline'
 }
@@ -887,16 +888,17 @@ async function refreshTracking() {
   renderTracking()
 }
 $('finish-trip').onclick = async () => {
-  const expectedRecordingId = trackingStatus?.trackingSessionId ?? (trackingStatus?.finishedTrip?.confirmationPending !== false ? trackingStatus?.finishedTrip?.manifest?.id : null)
-  if (finishingTrip || trackingChanging || !expectedRecordingId || !trackingPresentation(trackingStatus).available) return
+  const finish = finishTripPresentation(trackingStatus, { changing: trackingChanging, finishing: finishingTrip })
+  if (finish.disabled) return
+  const expectedRecordingId = finish.recordingId
   finishingTrip = true
   ++trackingRequest
   renderTracking()
   try {
     trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking/finish', { method: 'POST', operation: 'finish-trip', body: JSON.stringify({ expectedRecordingId }) })
     $('notice').textContent = ''
-  } catch {
-    $('notice').textContent = 'Trip could not be finished. Check recorder status and try again.'
+  } catch (error) {
+    $('notice').textContent = finishTripFailure(error)
     try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) } catch { trackingStatus = null }
   } finally { finishingTrip = false; renderTracking() }
 }

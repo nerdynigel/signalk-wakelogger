@@ -6,7 +6,7 @@ import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSign
 import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
 import { instrumentReadings, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
-import { trackingPresentation } from '../../webapp/tracking-controls.mjs'
+import { trackingPresentation, finishTripPresentation } from '../../webapp/tracking-controls.mjs'
 import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
@@ -768,4 +768,27 @@ test('TWA derives signed bow-relative angles for each basis and keeps direct rea
   const bounded = get(view({ ...navigation, headingTrue: e(0, 5000) }), 'twa-water')
   assert.equal(bounded.timestamp, now - 5000)
   assert.equal(get(instrumentReadings({ now: now + 40000, navigation, environment: { wind } }), 'twa-water').available, false)
+})
+
+
+test('Finish gates explain unavailable, unpaired, revoked and busy states without using cloud or race readiness', () => {
+  const active = { uploadMode: 'local_only', paired: true, available: true, recording: true, trackingSessionId: 'active', connectionState: 'offline', queue: { messageCount: 999 } }
+  assert.equal(finishTripPresentation(active).disabled, false)
+  assert.equal(finishTripPresentation({ ...active, uploadMode: 'automatic', queue: { messageCount: 0 }, historicalUpload: { state: 'ready' } }).disabled, false)
+  for (const [status, flags, expected] of [
+    [null, {}, /Recorder status unavailable/],
+    [{ ...active, paired: false }, {}, /Pair Wake Logger/],
+    [{ ...active, connectionState: 'device_revoked' }, {}, /Device access revoked/],
+    [{ ...active, recording: false, persistenceError: 'save failed' }, {}, /Recorder unavailable/],
+    [active, { changing: true }, /Wait for the live tracking change/],
+    [active, { finishing: true }, /Saving trip onboard/],
+  ]) {
+    const view = finishTripPresentation(status, flags)
+    assert.equal(view.disabled, true)
+    assert.match(view.reason, expected)
+  }
+  const retry = finishTripPresentation({ ...active, trackingSessionId: null, finishedTrip: { confirmationPending: true, manifest: { id: 'closed' } } })
+  assert.equal(retry.disabled, false)
+  assert.equal(retry.recordingId, 'closed')
+  assert.equal(retry.label, 'Retry confirmation')
 })
