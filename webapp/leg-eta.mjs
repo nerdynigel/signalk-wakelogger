@@ -32,6 +32,9 @@ export function legAverageEta({ marker, origin, target, position, positionTime, 
     const initial = alongLegMeters(axisOrigin,target,marker.position), current = alongLegMeters(axisOrigin,target,position)
     if (initial === null || current === null) return unavailable('Leg geometry unavailable')
     speed = (current-initial)/1852/(elapsed/3600000)
+    // Great-circle projection can round the inclusive 30 kn boundary upward.
+    // Normalize only computed roundoff; do not relax plan or sailing limits.
+    if (speed > 30 && speed-30 <= 1e-12) speed = 30
   }
   if (provisional && (!Number.isFinite(speed) || speed < .5 || speed > 30)) return unavailable('Collecting leg average; plan speed unavailable')
   if (!Number.isFinite(speed)) return unavailable('Leg average unavailable')

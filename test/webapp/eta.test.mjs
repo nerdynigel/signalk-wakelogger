@@ -76,3 +76,22 @@ test('activation without a position permits only the early plan and never rebase
   assert.equal(run({change:({status})=>status.legStart.startedAt=null}).eta,null)
   assert.equal(run({change:({status})=>status.legStart.positionTimestamp=start-30001}).eta,null)
 })
+
+test('inclusive 30 kn projected average retains ETA while above-boundary speeds stay suppressed',()=>{
+  const at = start+3600000
+  const equator = metres => point(0,metres/6371000*180/Math.PI)
+  const args = {marker,origin,target:equator(185200),positionTime:at,now:at,distanceNm:1}
+  const exact = legAverageEta({...args,position:equator(30*1852)})
+  assert.equal(exact.vmgKn,30)
+  assert.equal(exact.timeToGo,120)
+  assert.equal(exact.eta,new Date(at+120000).toISOString())
+  assert.equal(exact.etaReason,null)
+  for (const speed of [30+1e-9,30.0001,30.01]) {
+    const above = legAverageEta({...args,position:equator(speed*1852)})
+    assert.ok(above.vmgKn>30)
+    assert.equal(above.eta,null)
+    assert.equal(above.etaReason,'Leg average outside sailing range')
+  }
+  // Normalization is restricted to projection; the provisional plan bound stays strict.
+  assert.equal(legAverageEta({...args,now:start+59999,positionTime:start+59999,fallbackKn:30+1e-9}).eta,null)
+})

@@ -1191,6 +1191,19 @@ test('leg-average ETA page suppresses stale samples, recovers, persists on reloa
   await expect(page.getByText('Leg-average VMG (ground)',{exact:true})).toBeVisible()
   await expect(page.locator('#eta')).not.toHaveText('—')
   await expect(page.locator('#vmg')).not.toHaveText('100.0 kn')
+  // Exercise the generated module served by the actual page at the numerical boundary.
+  const boundary = await page.evaluate(async () => {
+    const { legAverageEta } = await import('./leg-eta.mjs')
+    const now = Date.now(), start = now-3600000
+    const equator = metres => ({latitude:0,longitude:metres/6371000*180/Math.PI})
+    const args = {marker:{startedAt:start,observedAt:start,position:equator(0),positionTimestamp:start},origin:equator(0),target:equator(185200),positionTime:now,now,distanceNm:1}
+    return [30,30.0001].map(speed=>legAverageEta({...args,position:equator(speed*1852)}))
+  })
+  expect(boundary[0].vmgKn).toBe(30)
+  expect(boundary[0].timeToGo).toBe(120)
+  expect(boundary[0].eta).not.toBeNull()
+  expect(boundary[1].eta).toBeNull()
+  expect(boundary[1].etaReason).toBe('Leg average outside sailing range')
   mode='stale';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('Fresh')
   mode='stationary';await expect(page.locator('#eta-reason')).toContainText('No positive leg progress')
   mode='normal';await expect(page.locator('#eta')).not.toHaveText('—')
