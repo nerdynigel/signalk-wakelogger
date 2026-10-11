@@ -1010,6 +1010,9 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     stopSubscription = subscribeToTelemetry(app, (delta) => {
       normaliser.ingest(delta)
       observations?.ingest(delta)
+      for (const update of delta.updates ?? []) for (const entry of ('values' in update ? update.values : []) ?? []) {
+        if (entry.path === 'navigation.position') void courses?.observeLegPosition(entry.value, update.timestamp).catch(() => app.error('Wake Logger leg marker checkpoint failed'))
+      }
       if (!progression) return
       const fix = normaliser.latestFix()
       if (fix) progression.fix({ at: Date.now(), ...fix })

@@ -88,3 +88,119 @@ implementation proof; independent Verification is an additional gate.
 Chief owns review and final disposition. No promotion, production mutation,
 Openclaw switch, merge, npm publication or paid CI. Rollback: revert this scoped
 commit on the release branch; no data migration.
+
+
+## Frozen QA and correction publication — 11 October 2026
+
+Verification's original attributed report and runnable reproduction, previously
+published on review/THE-882-eta-evidence at
+`c6d171363f5df198beb53b6e8999eda8db8dda37`, are integrated unchanged as
+[eta-independent-review.md](eta-independent-review.md) and
+[eta-order-repro.mjs](eta-order-repro.mjs). They record historical changes-requested
+results at plugin49285dd76499428c4676ce7e7a98ed576530eff8 and
+web74454ddc9c38addfa66307cd554b29f3baeb1c4b; the reproduction targets those old
+helper/page semantics, not the corrected timestamp-based helper API.
+Their historical failing finding is not a verdict on the new correction.
+
+Website correction delivered to nerdynigel/wakelogger release/2026-w42-web,
+`d51aedef2fe376e8b6d1d6e757924cfb2aaa83ce`, existing draft PR81.
+`git push origin release/2026-w42-web` exit0 and independent `git ls-remote origin
+refs/heads/release/2026-w42-web` exact match. Only pre-existing untracked
+frontend/node_modules remains. Plugin runtime source remains identical to
+49285dd76499428c4676ce7e7a98ed576530eff8; this plugin commit only integrates
+review and correction evidence. Prior pinned plugin/native/API proof is reused,
+not rerun or promoted to physical-current/Openclaw proof.
+
+Corrected page carries authoritative preceding finish, rejects overlapping
+starts, preserves unknown/recovery/order across gaps, and shares the timeline
+between table, weather notes, detail/print cards and race summary. Valid long
+forecasts remain supported. Website executed18 timing tests (six new
+regressions), fresh Next webpack build and1200x900/390x844 fixture page checks:
+PASS, no page errors/control writes. Initial browser assertion used the wrong
+formatting; corrected assertion passed. Original web committed diff-check PASS
+is superseded by QA exit2; correction's committed diff from
+e6b5e32b4a46df8eace5dd4f7370d5f28e90b1d2 passes exit0. Plugin documentation
+incremental diff-check passes; copied evidence bytes verified against the source
+review commit. Exact commands and changed-behaviour acceptance map are in the
+website eta-source.md at the delivered SHA.
+
+Independent recheck required. Original acceptance remains OPEN: current physical
+native positive proof stays Software-owned, incident attribution unknown,
+owner-Go Openclaw NOT RUN. No candidate promotion or production/release action.
+Rollback: revert website correction; revert this evidence-only plugin commit
+only to remove integration. No migration. Chief retains acceptance holds.
+
+
+## Accepted focused QA and remaining proof — 11 October 2026
+
+Chief accepted Verification's focused correction recheck at plugin
+`5cd50c0980aac5a6cf6ffae9364b2675206ad644` and website
+`d51aedef2fe376e8b6d1d6e757924cfb2aaa83ce`. Original acceptance remains OPEN.
+The exact independently published report is
+[eta-independent-recheck.md](https://github.com/nerdynigel/signalk-wakelogger/blob/951c1f1625954587a642df2ae974f95bb6204021/docs/evidence/eta-independent-recheck.md).
+Verification attribution and historical source pins are preserved. The four
+report/harness files were copied from that exact commit, not the advanced local
+review HEAD, and each copy was byte-compared with `git show` output.
+
+Accepted independent proof: 18 timing regressions, actual-source explicit
+finish/overlap/unknown/recovery reproduction, fresh webpack build, desktop
+1200x900/mobile390x844 saved-plan and print/table/card/weather/summary assertions,
+no page errors or control writes. Old ordering and whitespace failures are
+superseded only at the corrected pins. Default Next Turbopack build FAILED due
+to the pre-existing dependency symlink; `build --webpack` PASSED. No claim that
+the default build passes. Unchanged plugin/API suites remain evidence at their
+previous documented pins; this documentation-only checkpoint does not rerun or
+expand their scope.
+
+### Physical-current native input availability
+
+Software checked the assigned repository's `docs/development.md`,
+`docs/validation.md`, existing ETA source/independent evidence and registered
+worktrees. The documented Signal K harness uses synthesized/bundled NMEA data;
+its development instructions explicitly provide no production or non-production
+Wake Logger endpoint. Read-only `docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'`
+completed exit0: no running Signal K/Wake Logger native container was available.
+No authorized physical-vessel endpoint or current native capture was supplied
+in this task/handoff. No remote endpoint guessing, credentials inspection,
+production request, clock rewriting, route activation or deployment performed.
+This bounded check establishes local availability only, not absence of a vessel
+service elsewhere.
+
+Physical-current native positive/stale/invalid/recovery proof: **NOT RUN**.
+Exact prerequisite: authorized read-only access to a real current vessel Signal K
+source or a provenance-preserving current capture, including deployed source
+identity, position/SOG/COG and native calculation envelopes, individual timestamps,
+units, route/leg identity and enough successive samples to prove normal positive
+ETA, stale/invalid rejection and recovery at the frozen source. Fixtures and
+2014 source-clock replay cannot meet this prerequisite.
+Software retains proof ownership. Chief must route scoped source/access provision
+to Reliability through the existing review; Software then executes and publishes
+the sanitized implementation proof. Current telemetry obtained later cannot alone
+establish historical race-day attribution: that still requires incident inputs
+and deployed identity. Owner-Go frozen Openclaw acceptance remains NOT RUN;
+Reliability owns environment operations after the existing gate is released.
+
+| Original criterion | Current disposition |
+| --- | --- |
+| Root cause and deterministic reproduction | Confirmed source defects and reproductions accepted; race-day attribution UNKNOWN |
+| Representative correctness and fallback | Source/fixture/browser scope accepted; physical-current native proof NOT RUN, Software-owned |
+| Regression tests | Accepted independent existing and correction suites at documented source pins |
+| Openclaw verification | NOT RUN; frozen owner Go and scoped environment access required |
+
+Original task/release acceptance and serial holds stay OPEN. Return this evidence
+checkpoint through native Chief review; no product correction, duplicate QA,
+candidate promotion, merge, npm, paid CI or production action.
+Rollback: revert the documentation-only integration commit in each repository;
+no data migration. Product rollback remains scoped reversion of ETA implementation
+and website correction, under Chief's release controls.
+
+Consolidated plugin evidence includes exact `eta-correction-independent-review.md`,
+`eta-independent-recheck.md`, `eta-order-recheck.mjs` and `eta-print-recheck.mjs`.
+The historical report and reproduction remain unchanged.
+
+Publication validation: exact four-file byte comparisons PASS; Node v24.21.0
+`--check` for both imported mjs harnesses PASS exit0; both working-tree diff
+checks PASS exit0. Staged/committed scoped checks and remote/PR SHA read-backs
+are recorded in the issue implementation document after publication. Accepted
+behaviour suites are reused at their documented pins for these evidence-only
+changes, not reported as newly executed.

@@ -1,60 +1,78 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { raceProgress } from '../../webapp/course-progress.mjs'
-const now = Date.parse('2026-10-11T12:00:00Z')
+import { legAverageEta, alongLegMeters } from '../../webapp/leg-eta.mjs'
+const start = Date.parse('2026-10-11T12:00:00Z')
 const point = (latitude, longitude) => ({ latitude, longitude })
-const entry = (value, age = 0) => ({ value, timestamp: new Date(now - age * 1000).toISOString() })
-const status = { desired: { action: 'activate', start: point(0, 0), finish: point(0, 1/60) }, native: { activeMatchesDesired: false } }
-const nav = (kn = 5, deg = 90) => ({ position: entry(point(0, 0)), speedOverGround: entry(kn / 1.9438444924406), courseOverGroundTrue: entry(deg * Math.PI / 180) })
-const run = (navigation, calculated = {}, native = false, time = now, desired = status.desired) => raceProgress({ desired, native: { activeMatchesDesired: native, course: { activeRoute: { pointIndex: 1 } } } }, navigation, calculated, null, null, time)
-for (const [label, kn, deg] of [['stationary',0,90],['drift',.01,90],['mid-tack',5,.001],['away',5,270],['epsilon',1e-310,90],['negative',-5,90],['speed boundary',.1,90]]) {
-  test(`${label} has no live ETA and keeps navigation`, () => {
-    const result = run(nav(kn,deg)); assert.equal(result.eta, null); assert.equal(result.timeToGo,null); assert.ok(result.distanceNm > 0); assert.ok(result.etaReason)
+const origin = point(0,0), target = point(0,.1)
+const desired = { action:'activate', courseId:'race', revision:1, updatedAt:new Date(start).toISOString(), start:origin, finish:target }
+const identity = native => JSON.stringify(['race',1,desired.updatedAt,1,native ? '/route' : 'cached',false,[origin,target]])
+const marker = { identity:identity(false), observedAt:start, startedAt:start, position:origin, positionTimestamp:start }
+const stamp = (value,time) => ({value,timestamp:new Date(time).toISOString()})
+function run({elapsed=3600000, position=point(0,.02), native=false, sog=0, cog=0, plan=null, change=()=>{}}={}) {
+  const now=start+elapsed
+  const status={desired,legStart:{...marker,identity:identity(native)},native:{activeMatchesDesired:native,course:{activeRoute:{pointIndex:1,href:'/route'}}}}
+  const navigation={position:stamp(position,now),speedOverGround:stamp(sog,now),courseOverGroundTrue:stamp(cog,now)}
+  const calculated={distance:stamp(1852,now),bearingTrue:stamp(Math.PI/2,now),velocityMadeGood:stamp(100,now),timeToGo:stamp(1,now),estimatedTimeOfArrival:stamp('invalid',now)}
+  change({status,navigation,calculated,now})
+  return raceProgress(status,navigation,calculated,null,plan,now)
+}
+const fallback = elapsed => ({pack:{applicable:true,courseId:'race',revision:1},latestSnapshot:{generatedAt:start+elapsed,packRevision:1,tracking:{courseId:'race',activeIndex:1,reverse:false},plan:{legs:[{estimatedSogKnots:5}]}}})
+test('ETA uses net leg average despite stationary/mid-tack/away instantaneous motion and wrong native ETA',()=>{
+  for (const native of [false,true]) for (const [sog,cog] of [[0,0],[.00001,0],[5,Math.PI],[5,Math.PI/2]]) {
+    const r=run({native,sog,cog});assert.ok(Math.abs(r.vmgKn-1.200809)<.00001)
+    assert.ok(Math.abs(r.timeToGo-r.distanceNm/r.vmgKn*3600)<1e-6)
+    assert.ok(r.eta);assert.equal(r.etaProvisional,false)
+  }
+})
+test('stationary, drifting, negative net progress and near-zero averages are suppressed',()=>{
+  for(const position of [origin,point(0,-.02),point(0,1e-15),point(0,.00001)]) {const r=run({position});assert.equal(r.eta,null);assert.ok(r.etaReason)}
+})
+test('lateral movement never counts as progress and fresh position keeps updating ETA',()=>{
+  assert.ok(Math.abs(alongLegMeters(origin,target,point(.02,.02))-alongLegMeters(origin,target,point(0,.02)))<1e-6)
+  assert.ok(run({position:point(0,.04)}).vmgKn>run().vmgKn)
+  assert.equal(run({position:point(.02,0)}).eta,null)
+})
+test('early window below/at/above 60s uses bounded provisional plan then average',()=>{
+  const early=run({elapsed:59999,plan:fallback(59999),position:point(0,.001)})
+  assert.equal(early.vmgKn,5);assert.equal(early.etaProvisional,true);assert.match(early.etaReason,/Provisional/)
+  for(const elapsed of [60000,60001]) {const r=run({elapsed,plan:fallback(elapsed),position:point(0,.001)});assert.equal(r.etaProvisional,false);assert.ok(r.eta);assert.notEqual(r.vmgKn,5)}
+  assert.equal(run({elapsed:59999}).eta,null)
+  for(const speed of [null,0,.49,30.01,NaN,Infinity]) {const plan=fallback(1);plan.latestSnapshot.plan.legs[0].estimatedSogKnots=speed;assert.equal(run({elapsed:1,plan}).eta,null)}
+})
+test('fallback provenance rejects wrong course, revision, leg, reverse and expired snapshot',()=>{
+  for(const mutate of [p=>p.pack.applicable=false,p=>p.pack.courseId='other',p=>p.latestSnapshot.tracking.activeIndex=2,p=>p.latestSnapshot.tracking.reverse=true,p=>p.latestSnapshot.packRevision=2,p=>p.latestSnapshot.generatedAt=start-1200001]) {
+    const plan=fallback(1000);mutate(plan);assert.equal(run({elapsed:1000,plan}).eta,null)
+  }
+})
+for(const native of [false,true]) for(const key of ['position','speedOverGround','courseOverGroundTrue',...(native ? ['distance','bearingTrue']:[])]) {
+  test(`${native?'native':'cached'} ${key} freshness and recovery`,()=>{
+    for(const timestamp of [undefined,'broken',new Date(start+3600000-30001).toISOString(),new Date(start+3600000+5001).toISOString()]) {
+      assert.equal(run({native,change:({navigation,calculated})=>{(navigation[key]||calculated[key]).timestamp=timestamp}}).eta,null)
+    }
+    assert.ok(run({native}).eta)
   })
 }
-test('normal speed uses injected clock and recovers after tack and stale sensors', () => {
-  const result = run(nav()); assert.ok(Math.abs(result.timeToGo - 720.4854858) < .01)
-  assert.equal(Date.parse(result.eta), now + Math.trunc(result.timeToGo * 1000))
-  const stale = nav(); stale.speedOverGround = entry(5,31); assert.equal(run(stale).eta,null)
-  assert.equal(run(nav()).eta,result.eta)
-  const next = Object.fromEntries(Object.entries(nav()).map(([key, e]) => [key, { ...e, timestamp: new Date(now+86400000).toISOString() }]))
-  assert.equal(Date.parse(run(next, {}, false, now+86400000).eta), Date.parse(result.eta)+86400000)
+test('sensor skew boundary and future boundary remain inclusive',()=>{
+  assert.ok(run({change:({navigation,now})=>navigation.speedOverGround.timestamp=new Date(now-10000).toISOString()}).eta)
+  assert.equal(run({change:({navigation,now})=>navigation.speedOverGround.timestamp=new Date(now-10001).toISOString()}).eta,null)
+  assert.ok(run({change:({navigation,now})=>{for(const entry of Object.values(navigation)) entry.timestamp=new Date(now+5000).toISOString()}}).eta)
 })
-for (const key of ['position','speedOverGround','courseOverGroundTrue']) {
-  for (const [label,timestamp] of [['missing',undefined],['invalid','broken'],['stale',new Date(now-30001).toISOString()],['future',new Date(now+5001).toISOString()]]) {
-    test(`${key} ${label} timestamp rejects ETA`, () => { const n=nav(); n[key]={ ...n[key],timestamp }; assert.equal(run(n).eta,null) })
-  }
-}
-test('freshness and skew boundaries are inclusive', () => {
-  const n=nav(); for (const e of Object.values(n)) e.timestamp=new Date(now-30000).toISOString(); assert.ok(run(n).eta)
-  n.speedOverGround.timestamp=new Date(now-20000).toISOString(); assert.ok(run(n).eta)
-  n.speedOverGround.timestamp=new Date(now-19999).toISOString(); assert.equal(run(n).eta,null)
-  for (const e of Object.values(n)) e.timestamp=new Date(now+5000).toISOString(); assert.ok(run(n).eta)
+test('missing/replaced marker, invalid motion and new leg suppress until new provenance arrives',()=>{
+  for(const change of [({status})=>status.legStart=null,({status})=>status.legStart.identity='old',({status})=>status.desired={...desired,revision:2},({status})=>status.native={activeMatchesDesired:true,course:{activeRoute:{pointIndex:0,href:'/route'}}},({navigation})=>navigation.speedOverGround.value=-1,({navigation})=>navigation.position.value=point(91,0)]) assert.equal(run({change}).eta,null)
 })
-const calc = (seconds = 3600, distance = 1852, vmg = 1852 / 3600) => ({ distance: entry(distance), bearingTrue: entry(Math.PI/2), velocityMadeGood: entry(vmg), timeToGo: entry(seconds), estimatedTimeOfArrival: entry(new Date(now+seconds*1000).toISOString()) })
-test('native coherent ETA passes and does not recompute native values', () => { const c=calc();const r=run(nav(),c,true);assert.equal(r.timeToGo,3600);assert.equal(r.eta,c.estimatedTimeOfArrival.value) })
-for (const key of ['distance','bearingTrue','velocityMadeGood','timeToGo','estimatedTimeOfArrival']) {
-  test(`native ${key} requires timestamp`, () => { const c=calc(); delete c[key].timestamp;assert.equal(run(nav(),c,true).eta,null) })
-}
-test('native speed, sign, consistency, and horizon boundaries', () => {
-  assert.ok(run(nav(),calc(86400,1852*24),true).eta)
-  assert.equal(run(nav(),calc(86401,1852*24),true).eta,null)
-  for (const [key,value] of [['velocityMadeGood',-1],['timeToGo',-1],['distance',-1],['timeToGo',NaN],['estimatedTimeOfArrival','broken'],['estimatedTimeOfArrival','2026-10-10T12:00:00Z']]) { const c=calc();c[key].value=value;assert.equal(run(nav(),c,true).eta,null) }
-  const c=calc();c.timeToGo.value+=36;c.estimatedTimeOfArrival.value=new Date(now+c.timeToGo.value*1000).toISOString();assert.ok(run(nav(),c,true).eta)
-  c.timeToGo.value+=.001;assert.equal(run(nav(),c,true).eta,null)
-  const e=calc();e.estimatedTimeOfArrival.value=new Date(now+3635*1000).toISOString();assert.ok(run(nav(),e,true).eta)
-  e.estimatedTimeOfArrival.value=new Date(now+3635*1000+1).toISOString();assert.equal(run(nav(),e,true).eta,null)
+test('24h duration boundary, date overflow and degenerate geometry',()=>{
+  const speed=alongLegMeters(origin,target,point(0,.02))/1852
+  const args={marker,origin,target,position:point(0,.02),positionTime:start+3600000,now:start+3600000,distanceNm:speed*24}
+  assert.ok(legAverageEta(args).eta)
+  assert.equal(legAverageEta({...args,distanceNm:speed*24+.000001}).eta,null)
+  assert.equal(legAverageEta({...args,now:Number.MAX_VALUE}).eta,null)
+  assert.equal(legAverageEta({...args,target:origin}).eta,null)
 })
-test('cached 24h boundary and overflow never throw', () => {
-  const desired={ ...status.desired, finish:point(0,10/60) };const distance=run(nav(),{},false,now,desired).distanceNm;assert.ok(run(nav(distance/24),{},false,now,desired).eta);assert.equal(run(nav(distance/24-.000001),{},false,now,desired).eta,null)
-  assert.doesNotThrow(()=>run(nav(1e-310)));assert.equal(run(nav(),{},false,Number.MAX_VALUE).eta,null)
-})
-
-test('native invalid motion values, impossible closing speed and epoch units reject ETA', () => {
-  for (const key of ['speedOverGround','courseOverGroundTrue']) for (const val of [null,NaN,Infinity]) {
-    const n=nav();n[key].value=val;assert.equal(run(n,calc(),true).eta,null)
-  }
-  assert.equal(run(nav(0),calc(),true).eta,null)
-  const c=calc();c.estimatedTimeOfArrival.value=Math.floor((now+3600000)/1000);assert.equal(run(nav(),c,true).eta,null)
-  for (const key of Object.keys(calc())) for (const timestamp of ['broken',new Date(now-30001).toISOString(),new Date(now+5001).toISOString()]) {const c=calc();c[key].timestamp=timestamp;assert.equal(run(nav(),c,true).eta,null)}
+test('activation without a position permits only the early plan and never rebases midway',()=>{
+  const change=({status})=>{status.legStart.position=null;status.legStart.positionTimestamp=null}
+  assert.ok(run({elapsed:1000,plan:fallback(1000),change}).eta)
+  assert.equal(run({elapsed:60000,plan:fallback(60000),change}).eta,null)
+  assert.equal(run({change:({status})=>status.legStart.startedAt=null}).eta,null)
+  assert.equal(run({change:({status})=>status.legStart.positionTimestamp=start-30001}).eta,null)
 })

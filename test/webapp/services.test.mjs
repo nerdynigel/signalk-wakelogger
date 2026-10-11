@@ -47,7 +47,7 @@ test('native calculations are converted from SI without fabricating missing valu
   assert.equal(progress.distanceNm, 1)
   assert.equal(progress.bearingDeg, 180)
   assert.equal(progress.direction, 90)
-  assert.equal(progress.vmgKn, 1)
+  assert.equal(progress.vmgKn, null) // Native VMG is not the leg average.
   assert.equal(progress.xteM, -12)
   assert.equal(progress.timeToGo, null) // Untimestamped native calculations are unavailable.
   assert.ok(progress.pointPercent > 20 && progress.pointPercent < 30)
@@ -75,12 +75,9 @@ test('read-only fallback computes next-mark bearing, distance and time while nat
   assert.ok(progress.distanceNm > 1 && progress.distanceNm < 1.5)
   assert.equal(Math.round(progress.bearingDeg), 0)
   assert.equal(Math.round(progress.direction), 0)
-  // VMG to the mark follows the boat speed because the COG matches the bearing.
-  assert.ok(Math.abs(progress.vmgKn - 2 * 1.9438444924406) < 1e-6)
-  assert.ok(progress.timeToGo > 0)
-  assert.ok(Number.isFinite(Date.parse(progress.eta)))
-  // Control writes stay gated: a fallback course never reports active.
-  assert.equal(progress.xteM, null)
+  assert.equal(progress.vmgKn, null)
+  assert.equal(progress.eta, null)
+  assert.match(progress.etaReason, /Leg start unavailable/)
 })
 
 test('invalid native point indices cannot issue a request', async () => {

@@ -273,3 +273,34 @@ describe('onboard race plan integration', () => {
     } finally { await f.stop() }
   })
 })
+
+describe('plugin leg marker input/runtime boundary', () => {
+  it('ingests source timestamps, seeds explicit activation, exposes durable provenance and preserves it on restart', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const f = await fixture()
+    const config = { uploadMode: 'local_only', samplePeriodMs: 250 }
+    try {
+      f.start(config)
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
+      const attached = (await f.request('GET', '/course')).data.legStart
+      expect(attached.startedAt).toBeNull() // No invented historical start.
+      f.ingest({ updates: [{ timestamp: 'broken', values: [{ path: 'navigation.position', value: { latitude: -27.4, longitude: 153.17 } }] }] })
+      expect((await f.request('POST', '/course/activate')).code).toBe(200)
+      expect((await f.request('GET', '/course')).data.legStart.position).toBeNull()
+      const timestamp = new Date().toISOString()
+      const position = { latitude: -27.4, longitude: 153.17 }
+      f.ingest({ updates: [{ timestamp, values: [{ path: 'navigation.position', value: position }] }] })
+      expect((await f.request('POST', '/course/activate')).code).toBe(200)
+      const baseline = (await f.request('GET', '/course')).data.legStart
+      expect(baseline.position).toEqual(position)
+      expect(baseline.positionTimestamp).toBe(Date.parse(timestamp))
+      expect(baseline.startedAt).toBe(baseline.observedAt)
+      f.ingest(navDelta())
+      expect((await f.request('GET', '/course')).data.legStart).toEqual(baseline)
+      await f.stop()
+      f.start(config)
+      await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
+      expect((await f.request('GET', '/course')).data.legStart).toEqual(baseline)
+    } finally { await f.stop() }
+  })
+})

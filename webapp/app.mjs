@@ -177,7 +177,7 @@ function renderCourse() {
   $('previous-mark').textContent = `Previous: ${progress.previous?.name || 'unavailable'}`
   metric('distance', progress.distanceNm, ' NM', 2)
   metric('bearing', progress.bearingDeg, '°', 0)
-  metric('vmg', progress.vmgKn, ' kn')
+  metric('vmg', progress.vmgKn, progress.etaProvisional ? ' kn (plan)' : ' kn')
   metric('xte', progress.xteM, ' m', 0)
   metric('ttg', progress.timeToGo === null ? null : progress.timeToGo / 60, ' min', 0)
   const eta = progress.eta ? new Date(progress.eta) : null
