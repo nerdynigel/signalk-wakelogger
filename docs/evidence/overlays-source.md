@@ -4,7 +4,7 @@ Repository `nerdynigel/signalk-wakelogger`, workspace
 `4de0cc0f-95fe-4135-ad51-b3e73b77de8b`, linked `.worktrees/THE-884`;
 branch `release/2026-w42`, [draft PR #22](https://github.com/nerdynigel/signalk-wakelogger/pull/22),
 base `main`. Starting head `a425020248bf312063e29693536ffb8f3f7b8d67`.
-Validated source **623e55e6cc44c68bcc133fe24aa31039f966354e**.
+Final browser/UI source **c5e20d168621843c895d9acc56e49c36860acc62**. Guide/instrument core and native replay tested at **623e55e6cc44c68bcc133fe24aa31039f966354e**.
 Companion website source **0a632f1dd063f441e8d97e55a82df057faaaf200**,
 [PR #81](https://github.com/nerdynigel/wakelogger/pull/81).
 
@@ -41,6 +41,19 @@ active legs, reaching/dead run and calm inputs suppress estimates. Lines are
 estimates without speed-change/tide/leeway correction, not polar laylines or
 manoeuvre advice. Visible legend and tooltips explain basis and sides. Heading
 unavailability explicitly names the fresh GPS/true-heading requirement.
+
+A final screenshot review identified a second concrete heading-visibility cause:
+without a course or saved history the plugin remained at world zoom, so rendered
+rays and the vessel could be offscreen. The guide legend also sat outside the
+100%-height map and was clipped. First fresh GPS/true-heading now frames the
+vessel once when no course/track exists and the viewport is still automatic;
+subsequent updates do not reframe user choices. The legend is positioned inside
+the map. The seven affected browser checks were rerun at the final source,
+including zoom 13 and an actual vessel rectangle contained within the viewport.
+Screenshots now show both visible rays and the legend; the earlier blank
+screenshots are superseded. `npm run build:webapp`, lint and diff checks passed.
+The guide/instrument modules did not change, so the exact packaged native replay
+above remains core evidence at its stated source rather than a claimed repeat.
 
 ## Executed validation
 
@@ -85,5 +98,5 @@ implementation proof; independent acceptance adds a gate. Earlier tracking,
 TWA/VMG/Finish/course-progress final holds remain. No Openclaw switch, deployment,
 production mutation, merge, npm, paid CI or per-task PR occurred.
 
-Rollback: reviewed revert of `623e55e6cc44c68bcc133fe24aa31039f966354e` and rebuild
+Rollback: reviewed revert of `c5e20d168621843c895d9acc56e49c36860acc62` followed by `623e55e6cc44c68bcc133fe24aa31039f966354e` and rebuild
 public assets, plus companion web source revert. No migrations/data rewrites.
