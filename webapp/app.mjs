@@ -21,7 +21,7 @@ const map = L.map('map', { zoomControl: true }).setView([0, 0], 2)
 const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
 const guideLayer = L.layerGroup().addTo(map)
-let vesselMarker = null
+let vesselMarker = null, guideViewportInitialized = false
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, finishingTrip = false, trackingRequest = 0
@@ -392,6 +392,14 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
   if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
+  // With no course/history there was no initial fit, leaving the vessel at
+  // world zoom. Frame one fresh fix while preserving later viewport intent.
+  if (!guideViewportInitialized && viewportMode === 'auto' && !trackUserControlled && !track.length && !progress?.points?.length) {
+    guideViewportInitialized = true
+    map.setView(location, 13, { animate: false })
+    publishViewport()
+  }
+
 }
 
 function instrumentTile(reading) {

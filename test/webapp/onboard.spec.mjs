@@ -1129,6 +1129,8 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.goto('/signalk-wakelogger/')
     const map = page.locator('#map'), ray = page.locator('.vessel-heading-guide'), opposite = page.locator('.opposite-tack-guide')
     await expect(map).toHaveAttribute('data-heading-guide-bearing', '330')
+    await expect(map).toHaveAttribute('data-viewport-zoom', '13')
+    await expect.poll(() => page.locator('.vessel-icon').evaluate(icon => { const boat = icon.getBoundingClientRect(), map = document.querySelector('#map').getBoundingClientRect(); return boat.x >= map.x && boat.right <= map.right && boat.y >= map.y && boat.bottom <= map.bottom; })).toBe(true)
     await expect(opposite).toHaveCount(1)
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
     await expect(page.locator('#guide-legend')).toContainText('Mirrored tack guide · port')
