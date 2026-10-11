@@ -724,3 +724,48 @@ test('finished trip separates receipt ACK from exact cloud readiness', async () 
   assert.equal(finishedTripPresentation({ finishedTrip: { confirmationPending: false, cloudStatus: { state: 'ready', environmentPending: true } } }), 'Trip confirmed ready by cloud · weather enrichment pending')
   assert.match(finishedTripPresentation({ finishedTrip: { confirmationPending: true, cloudStatus: { state: 'waiting_for_history', missingSamples: 2, rejectedSamples: 1 } } }), /2 samples missing.*1 samples rejected.*pending/)
 })
+
+test('TWA derives signed bow-relative angles for each basis and keeps direct readings', async () => {
+  const { liveNavigationStrip } = await import('../../webapp/instruments.mjs')
+  const now = Date.parse('2026-10-11T10:00:00Z')
+  const e = (value, age = 0) => ({ value, timestamp: new Date(now - age).toISOString() })
+  const navigation = { headingTrue: e(0), courseOverGroundTrue: e(Math.PI / 2), speedOverGround: e(5 / 1.9438444924406), speedThroughWater: e(5 / 1.9438444924406) }
+  const wind = { speedApparent: e(10 / 1.9438444924406), angleApparent: e(Math.PI / 6) }
+  const view = (nav = navigation, w = wind) => instrumentReadings({ now, navigation: nav, environment: { wind: w } })
+  const get = (v, id) => v.readings.find(r => r.id === id)
+  assert.ok(Math.abs(get(view(), 'twa-water').value - 53.79397688699688) < 1e-8)
+  assert.ok(Math.abs(get(view(), 'twa-ground').value) < 1e-8) // Eastward motion cancels apparent east component.
+  assert.equal(get(view(), 'twa-water').basis, 'water')
+  assert.ok(get(view(navigation, { ...wind, angleApparent: e(-Math.PI / 6) }), 'twa-water').value < 0)
+  const direct = view(navigation, { ...wind, angleTrueGround: e(-Math.PI / 4), angleTrueWater: e(0) })
+  assert.equal(get(direct, 'twa-ground').value, -45)
+  assert.equal(get(direct, 'twa-water').value, 0)
+  assert.equal(get(direct, 'twa-ground').source, 'direct')
+  const waterOnly = view({}, { angleTrueWater: e(-Math.PI / 6) })
+  assert.equal(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').available, true)
+  assert.match(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').label, /water/)
+  const staleGround = view({}, { angleTrueGround: e(1, 40000), angleTrueWater: e(0) })
+  assert.equal(liveNavigationStrip(staleGround).find(r => r.id === 'twa').value, 0)
+  const groundSpeed = get(view({}, { speedOverGround: e(7) }), 'tws')
+  assert.equal(groundSpeed.available, true)
+  assert.equal(groundSpeed.reference, 'ground')
+  assert.ok(Math.abs(groundSpeed.value - 7 * 1.9438444924406) < 1e-8)
+  assert.equal(get(view({}, { speedTrue: e(0), speedOverGround: e(7) }), 'tws').value, 0)
+  // Direct speed/direction must not be overwritten when only its counterpart is missing.
+  assert.equal(get(view(navigation, { ...wind, speedTrue: e(7) }), 'tws').source, 'direct')
+  assert.equal(get(view(navigation, { ...wind, directionTrue: e(1) }), 'twd').source, 'direct')
+  for (const key of ['headingTrue', 'courseOverGroundTrue', 'speedOverGround']) {
+    for (const bad of [undefined, { value: 1 }, e(1, 40000), e(1, 15000), e(1, -60000), e(NaN)]) {
+      assert.equal(get(view({ ...navigation, [key]: bad }), 'twa-ground').available, false, key)
+    }
+  }
+  for (const key of ['speedApparent', 'angleApparent']) {
+    assert.equal(get(view(navigation, { ...wind, [key]: undefined }), 'twa-ground').available, false)
+  }
+  assert.equal(get(view({ ...navigation, headingTrue: undefined, headingMagnetic: e(0) }), 'twa-water').available, false)
+  assert.equal(get(view({ ...navigation, speedThroughWater: undefined }), 'twa-water').available, false)
+  assert.equal(get(view(navigation, { speedApparent: e(5 / 1.9438444924406), angleApparent: e(0) }), 'twa-water').available, false) // Calm vector has no angle.
+  const bounded = get(view({ ...navigation, headingTrue: e(0, 5000) }), 'twa-water')
+  assert.equal(bounded.timestamp, now - 5000)
+  assert.equal(get(instrumentReadings({ now: now + 40000, navigation, environment: { wind } }), 'twa-water').available, false)
+})

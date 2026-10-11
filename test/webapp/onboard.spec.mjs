@@ -946,3 +946,35 @@ test('stale tracking confirmation reads current state without retrying a write',
   await expect(toggle).toBeEnabled()
   expect(writes).toBe(1)
 })
+
+test('TWA tiles derive wind and Race falls back to fresh water TWA', async ({ page }) => {
+  let direct = false
+  const entry = value => ({ value, timestamp: new Date().toISOString() })
+  await mockBoat(page, {
+    course: false,
+    navigationOverride: () => direct ? {} : {
+      headingTrue: entry(0), courseOverGroundTrue: entry(0),
+      speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406)
+    },
+    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6) } : {
+      speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6)
+    } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  const ground = grid.locator('.instrument').filter({ hasText: 'True wind angle (ground)' })
+  const water = grid.locator('.instrument').filter({ hasText: 'True wind angle (water)' })
+  await expect(ground).toHaveAttribute('data-available', 'true')
+  await expect(ground).toContainText('54 ° true')
+  await expect(water).toContainText('54 ° true')
+  await page.locator('#race-tab').click()
+  const strip = page.locator('#race-live-nav [data-reading=twa]')
+  await expect(strip).toHaveAttribute('data-available', 'true')
+  await expect(strip).toContainText('54 ° true')
+  direct = true
+  await expect(strip).toContainText('True wind angle (water)')
+  await expect(strip).toContainText('-30 ° true')
+  await expect(ground).toHaveAttribute('data-available', 'false')
+  await page.reload()
+  await expect(water).toContainText('-30 ° true')
+})

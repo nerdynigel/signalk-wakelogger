@@ -70,9 +70,9 @@ function readingObject({ id, label, group, unit, decimals = 1, reference = null,
   }
 }
 
-function direct({ id, label, group, entry, transform = (value) => value, unit, decimals = 1, reference = null, now, staleSeconds }) {
+function direct({ id, label, group, entry, transform = (value) => value, unit, decimals = 1, reference = null, basis = null, now, staleSeconds }) {
   const m = measured(entry, transform, now, staleSeconds)
-  return readingObject({ id, label, group, unit, decimals, reference, source: 'direct', value: m.value, timestamp: m.timestamp, ageSeconds: m.ageSeconds, freshness: m.freshness })
+  return readingObject({ id, label, group, unit, decimals, reference, source: 'direct', value: m.value, timestamp: m.timestamp, ageSeconds: m.ageSeconds, freshness: m.freshness, basis })
 }
 
 export function positionReading(entry, now, staleSeconds) {
@@ -117,7 +117,9 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   readings.push(direct({ id: 'awa', label: 'Apparent wind angle', group: 'Wind', entry: entry('environment.wind.angleApparent'), transform: (v) => signedDegrees(v * RADIANS_TO_DEGREES), unit: '° apparent', reference: 'apparent', decimals: 0, now, staleSeconds }))
   readings.push(direct({ id: 'twa-ground', label: 'True wind angle (ground)', group: 'Wind', entry: entry('environment.wind.angleTrueGround'), transform: (v) => signedDegrees(v * RADIANS_TO_DEGREES), unit: '° true', reference: 'ground', decimals: 0, now, staleSeconds }))
   readings.push(direct({ id: 'twa-water', label: 'True wind angle (water)', group: 'Wind', entry: entry('environment.wind.angleTrueWater'), transform: (v) => signedDegrees(v * RADIANS_TO_DEGREES), unit: '° true', reference: 'water', decimals: 0, now, staleSeconds }))
-  const trueWindSpeed = direct({ id: 'tws', label: 'True wind speed', group: 'Wind', entry: entry('environment.wind.speedTrue'), transform: (v) => v * MPS_TO_KNOTS, unit: 'kn', reference: 'true', now, staleSeconds })
+  const waterWindSpeed = direct({ id: 'tws', label: 'True wind speed', group: 'Wind', entry: entry('environment.wind.speedTrue'), transform: (v) => v * MPS_TO_KNOTS, unit: 'kn', reference: 'water', basis: 'water', now, staleSeconds })
+  const groundWindSpeed = direct({ id: 'tws', label: 'True wind speed', group: 'Wind', entry: entry('environment.wind.speedOverGround'), transform: (v) => v * MPS_TO_KNOTS, unit: 'kn', reference: 'ground', basis: 'ground', now, staleSeconds })
+  const trueWindSpeed = waterWindSpeed.available ? waterWindSpeed : groundWindSpeed.available ? groundWindSpeed : waterWindSpeed
   const trueWindDirection = direct({ id: 'twd', label: 'True wind direction', group: 'Wind', entry: entry('environment.wind.directionTrue'), transform: (v) => normalizeDegrees(v * RADIANS_TO_DEGREES), unit: '° true', reference: 'true', decimals: 0, now, staleSeconds })
   const aws = readings.find((r) => r.id === 'aws')
   const awa = readings.find((r) => r.id === 'awa')
@@ -173,10 +175,34 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
       const sample = deriveTrueWindSample({ awsKnots: aws.value, ...boatReference, ...apparent })
       const result = boundedDerivation(windInputs, () => sample)
       if (result.value) {
-        windSpeed = readingObject({ id: 'tws', label: 'True wind speed', group: 'Wind', unit: 'kn', reference: sample.direct ? 'true' : 'derived', source: 'derived', value: sample.twsKnots, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
-        windDirection = readingObject({ id: 'twd', label: 'True wind direction', group: 'Wind', unit: '° true', decimals: 0, reference: 'true', source: 'derived', value: sample.twdDeg, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
+        if (!trueWindSpeed.available) windSpeed = readingObject({ id: 'tws', label: 'True wind speed', group: 'Wind', unit: 'kn', reference: sample.direct ? 'true' : 'derived', source: 'derived', value: sample.twsKnots, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
+        if (!trueWindDirection.available) windDirection = readingObject({ id: 'twd', label: 'True wind direction', group: 'Wind', unit: '° true', decimals: 0, reference: 'true', source: 'derived', value: sample.twdDeg, timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh', basis: boatReference.basis })
       }
     }
+  }
+  // TWA is relative to the bow, never COG. Derive each velocity basis
+  // independently so a ground result cannot masquerade as water wind.
+  for (const basis of ['ground', 'water']) {
+    const id = `twa-${basis}`
+    const index = readings.findIndex((reading) => reading.id === id)
+    if (readings[index].available || !trueHeading?.available || !aws.available) continue
+    const velocity = basis === 'ground' ? [sog, cog] : [stw, trueHeading]
+    const apparentInputs = apparentDirection.available ? [apparentDirection] : [awa, trueHeading]
+    const inputs = [aws, trueHeading, ...velocity, ...apparentInputs]
+    const result = boundedDerivation(inputs.map((reading) => ({ reading })), () => {
+      const sample = deriveTrueWindSample({
+        awsKnots: aws.value,
+        ...(apparentDirection.available ? { apparentDirectionDeg: apparentDirection.value } : { awaDeg: awa.value }),
+        headingDeg: trueHeading.value,
+        ...(basis === 'ground' ? { sogKnots: sog.value, cogDeg: cog.value } : { stwKnots: stw.value })
+      })
+      return sample ? signedDegrees(sample.twdDeg - trueHeading.value) : null
+    })
+    if (result.value !== null) readings[index] = readingObject({
+      id, label: `True wind angle (${basis})`, group: 'Wind', unit: '° true', decimals: 0,
+      reference: basis, source: 'derived', value: result.value, timestamp: result.bound,
+      ageSeconds: result.age, freshness: 'fresh', basis
+    })
   }
   readings.push(windSpeed)
   readings.push(windDirection)
@@ -209,7 +235,8 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
 export function liveNavigationStrip(view) {
   if (!view || !Array.isArray(view.readings)) return []
   const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
-  const wind = byId['twa-ground'] ?? byId['twa-water']
+  const wind = [byId['twa-ground'], byId['twa-water']].find((reading) => reading?.available)
+    ?? byId['twa-ground'] ?? byId['twa-water']
   const item = (id, label, reading = byId[id]) => reading
     ? { id, label, value: reading.available ? reading.value : null, formatted: formatReading(reading), unit: reading.unit ?? null, freshness: reading.freshness, available: reading.available === true }
     : { id, label, value: null, formatted: 'Unavailable', unit: null, freshness: 'missing', available: false }

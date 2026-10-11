@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { instrumentReadings, liveNavigationStrip } from '../webapp/instruments.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const composeFile = fileURLToPath(new URL('../test/docker/compose.yml', import.meta.url))
@@ -117,6 +119,26 @@ try {
   assert.ok(onboardPage.includes('Wake Logger Onboard'), 'the packaged onboard webapp must be served by Signal K')
   const leafletAsset = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vendor/leaflet.js'], { capture: true }).stdout
   assert.ok(leafletAsset.includes('Leaflet'), 'the onboard map library must be served locally')
+
+  // Use actual REST measurements from the disposable native Signal K server,
+  // not a browser route mock. The packaged asset must match the tested module.
+  const packagedInstruments = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/instruments.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedInstruments, readFileSync(new URL('../webapp/instruments.mjs', import.meta.url), 'utf8').trim())
+  const liveWind = await waitFor('fresh native Signal K true wind angle', () => {
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const environment = query('http://signalk:3000/signalk/v1/api/vessels/self/environment')
+    const view = instrumentReadings({ navigation, environment })
+    const twa = view.readings.find(reading => reading.id === 'twa-ground')
+    return twa?.available ? { navigation, environment, view, twa } : undefined
+  }, 30_000)
+  assert.equal(liveWind.twa.reference, 'ground')
+  assert.ok(liveWind.twa.value >= -180 && liveWind.twa.value <= 180)
+  assert.equal(liveNavigationStrip(liveWind.view).find(reading => reading.id === 'twa').available, true)
+  const noHeading = { ...liveWind.navigation, headingTrue: undefined }
+  const apparentOnly = { wind: { speedApparent: liveWind.environment.wind.speedApparent, angleApparent: liveWind.environment.wind.angleApparent } }
+  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly, now: Date.now() + 60_000 }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  process.stdout.write(`${JSON.stringify({ nativeWindProof: { source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailable: true, missingHeadingRejected: true, staleRejected: true, packagedAssetMatches: true } })}\n`)
 
   const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
   await waitFor('paired recorder starts safely off without a confirmed choice', () => {
