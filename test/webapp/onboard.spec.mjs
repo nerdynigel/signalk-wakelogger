@@ -1055,3 +1055,34 @@ test('automatic closure during manual Finish is shown as ended without a second 
   await expect(page.locator('#finish-trip')).toBeDisabled()
   expect(requests).toBe(1)
 })
+
+test('VMG tiles and Race strip survive water-only input, loss and recovery', async ({ page }) => {
+  let state = 'water'
+  const entry = value => ({ value, timestamp: new Date(state === 'stale' ? Date.now() - 40000 : Date.now()).toISOString() })
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await mockBoat(page, {
+    course: false,
+    navigationOverride: () => ({ speedThroughWater: entry(2) }),
+    environment: () => ({ wind: state === 'missing' ? {} : { angleTrueWater: entry(state === 'downwind' ? Math.PI : Math.PI / 3) } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const water = page.locator('#instruments-grid .instrument').filter({ hasText: 'VMG to wind (water)' })
+  await expect(water).toContainText('1.9 kn')
+  await expect(water).toHaveAttribute('data-available', 'true')
+  await page.locator('#race-tab').click()
+  const strip = page.locator('#race-live-nav [data-reading="vmg-wind-ground"]')
+  await expect(strip).toContainText('VMG to wind (water)')
+  await expect(strip).toContainText('1.9 kn')
+  state = 'missing'
+  await expect(strip).toHaveAttribute('data-available', 'false')
+  state = 'downwind'
+  await expect(strip).toContainText('-3.9 kn')
+  state = 'stale'
+  await expect(strip).toHaveAttribute('data-available', 'false')
+  state = 'water'
+  await expect(strip).toContainText('1.9 kn')
+  await page.reload()
+  await expect(water).toContainText('1.9 kn')
+  expect(errors).toEqual([])
+})

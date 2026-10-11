@@ -147,6 +147,16 @@ try {
   assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
   process.stdout.write(`${JSON.stringify({ nativeWindReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailableAtReplayClock: true, missingHeadingRejected: true, wallClockStaleRejected: true, packagedAssetMatches: true } })}\n`)
 
+  const nativeVmg = liveWind.view.readings.find(reading => reading.id === 'vmg-wind-ground')
+  const nativeTwd = liveWind.view.readings.find(reading => reading.id === 'twd')
+  assert.equal(nativeVmg.available, true)
+  const expectedVmg = liveWind.navigation.speedOverGround.value * 1.9438444924406 * Math.cos(nativeTwd.value * Math.PI / 180 - liveWind.navigation.courseOverGroundTrue.value)
+  assert.ok(Math.abs(nativeVmg.value - expectedVmg) < 1e-9)
+  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'vmg-wind-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'vmg-wind-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: liveWind.environment, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'vmg-wind-ground').available, true)
+  process.stdout.write(`${JSON.stringify({ nativeVmgReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), vmgKn: nativeVmg.value, basis: nativeVmg.basis, sogMps: liveWind.navigation.speedOverGround.value, cogRadians: liveWind.navigation.courseOverGroundTrue.value, twdDegrees: nativeTwd.value, missingHeadingRejected: true, wallClockStaleRejected: true, recovery: true, packagedAssetMatches: true } })}\n`)
+
   const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
   await waitFor('paired recorder starts safely off without a confirmed choice', () => {
     const status = query(trackingUrl)

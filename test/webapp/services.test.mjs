@@ -5,7 +5,7 @@ import { raceProgress, selectedCoursePresentation } from '../../webapp/course-pr
 import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSignalKError } from '../../webapp/api-client.mjs'
 import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
-import { instrumentReadings, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
+import { instrumentReadings, liveNavigationStrip, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
 import { trackingPresentation, finishTripPresentation } from '../../webapp/tracking-controls.mjs'
 import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
@@ -489,7 +489,7 @@ test('every derivation input participates in freshness and skew', () => {
   // VMG obeys the same discipline: a stale SOG blocks ground VMG.
   const vmgInputs = { speedOverGround: { value: 3, timestamp: ts(25_000) }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts() } }
   const vmgView = instrumentReadings({ now, skewSeconds: 10, navigation: vmgInputs, environment: { wind: { speedTrue: { value: 8, timestamp: ts() }, directionTrue: { value: 0.5, timestamp: ts() } } } })
-  assert.equal(source(vmgView, 'vmg-wind-ground'), undefined)
+  assert.equal(source(vmgView, 'vmg-wind-ground').available, false)
 })
 
 test('true wind angle references and wind-relative VMG bases are explicit', () => {
@@ -791,4 +791,48 @@ test('Finish gates explain unavailable, unpaired, revoked and busy states withou
   assert.equal(retry.disabled, false)
   assert.equal(retry.recordingId, 'closed')
   assert.equal(retry.label, 'Retry confirmation')
+})
+
+test('VMG projects independent ground and water vectors, with direct angles and visible fallback', () => {
+  const now = Date.parse('2026-10-11T12:00:00Z')
+  const entry = value => ({ value, timestamp: new Date(now).toISOString() })
+  const value = (view, id) => view.readings.find(r => r.id === id)
+  const resolve = (navigation, wind) => instrumentReadings({ now, navigation, environment: { wind } })
+  const water = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(-Math.PI / 3) })
+  assert.ok(Math.abs(value(water, 'vmg-wind-water').value - 1.9438444924406) < 1e-9)
+  assert.equal(value(water, 'vmg-wind-ground').available, false)
+  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG to wind (water)')
+  const ground = resolve({ speedOverGround: entry(2), courseOverGroundTrue: entry(Math.PI / 2), headingTrue: entry(0) }, { angleTrueGround: entry(Math.PI / 3) })
+  assert.ok(Math.abs(value(ground, 'vmg-wind-ground').value - 2 * 1.9438444924406 * Math.cos(Math.PI / 6)) < 1e-9)
+  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI, 2 * Math.PI]) {
+    const view = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(angle) })
+    assert.ok(Math.abs(value(view, 'vmg-wind-water').value - 2 * 1.9438444924406 * Math.cos(angle)) < 1e-9)
+  }
+  assert.equal(value(resolve({ speedThroughWater: entry(0) }, { angleTrueWater: entry(0) }), 'vmg-wind-water').value, 0)
+  // An unqualified direct absolute bearing retains the ground convention;
+  // it cannot certify water wind without a water TWA/vector.
+  assert.equal(value(resolve({ speedThroughWater: entry(2), headingTrue: entry(0) }, { directionTrue: entry(0) }), 'vmg-wind-water').available, false)
+  // Direct relative water angle wins over a contradictory absolute direction.
+  assert.ok(value(resolve({ speedThroughWater: entry(2), headingTrue: entry(0) }, { angleTrueWater: entry(Math.PI), directionTrue: entry(0) }), 'vmg-wind-water').value < 0)
+  // A water-derived direction cannot become ground VMG when no ground wind
+  // vector was derivable (COG is stale).
+  const mixed = resolve({ speedThroughWater: entry(2), headingTrue: entry(0), speedOverGround: entry(3), courseOverGroundTrue: { ...entry(0), timestamp: new Date(now - 40000).toISOString() } }, { speedApparent: entry(5), angleApparent: entry(0.5) })
+  assert.equal(value(mixed, 'twd').basis, 'water')
+  assert.equal(value(mixed, 'vmg-wind-ground').available, false)
+})
+
+test('VMG rejects missing invalid stale skewed inputs and recovers without course or GPS', () => {
+  const now = Date.parse('2026-10-11T12:00:00Z')
+  const entry = (value, offset = 0) => ({ value, timestamp: new Date(now + offset).toISOString() })
+  const resolve = (speed, angle) => instrumentReadings({ now, navigation: { speedThroughWater: speed }, environment: { wind: { angleTrueWater: angle } } }).readings.find(r => r.id === 'vmg-wind-water')
+  for (const bad of [undefined, entry(NaN), entry(Infinity), { value: 2 }, entry(2, 60000), entry(2, -40000), entry(2, -20000)]) {
+    assert.equal(resolve(bad, entry(0)).available, false)
+    assert.equal(resolve(entry(2), bad).available, false)
+    assert.equal(resolve(entry(2), entry(0)).available, true)
+  }
+  assert.equal(resolve(entry(-2), entry(0)).available, false)
+  const oldest = resolve(entry(2, -5000), entry(0))
+  assert.equal(oldest.timestamp, now - 5000)
+  const view = instrumentReadings({ now, navigation: { speedOverGround: entry(2), courseOverGroundTrue: entry(0), headingMagnetic: entry(0) }, environment: { wind: { angleTrueGround: entry(0) } } })
+  assert.equal(view.readings.find(r => r.id === 'vmg-wind-ground').available, false)
 })
