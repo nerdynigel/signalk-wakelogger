@@ -29,7 +29,7 @@ The plugin requires Node.js 20 or newer on the Signal K server. Your boat does n
 1. In Signal K's **App Store**, install **Wake Logger** (`signalk-wakelogger`).
 2. In Wake Logger, open your vessel's settings and generate a Signal K pairing code.
 3. Open **Wake Logger** in Signal K's plugin configuration, enter the code and save. Enable the plugin if it is disabled.
-4. Check the connection status. When your boat supplies a position and the connection is online, it will appear in the vessel's **Signal K Live** view in Wake Logger.
+4. Open the onboard **Wake Logger webapp** and confirm **Live tracking** on when you are ready to upload. Check the connection status. When your boat supplies a position and the connection is online, it will appear in the vessel's **Signal K Live** view in Wake Logger.
 
 Pairing codes are single-use. If a code expires or is rejected, generate a new one. You do not need to pair again after an ordinary internet outage or plugin update.
 
@@ -37,13 +37,13 @@ Pairing codes are single-use. If a code expires or is rejected, generate a new o
 
 Recording and uploading are separate. Keep Signal K and the Wake Logger plugin running, with your boat's navigation data available, for the trip to be recorded.
 
-**For normal use:** Leave **Upload mode** set to **Automatic upload**. If internet access drops, the plugin stores readings onboard and uploads them when the connection returns.
+**For normal use:** Confirm **Live tracking** on in the onboard Wake Logger app. If internet access drops, the plugin stores readings onboard and resumes uploads when the connection returns, provided your confirmed choice is still on.
 
 **To deliberately defer uploading:** Pair first, then confirm **Live tracking** off on the onboard Wake Logger map. The plugin keeps recording locally, up to your storage and age limits. Confirm it on when you are ready to send your live position and upload stored history. Changing the switch does not end a trip or restart recording, and the confirmed setting survives restarts and configuration updates. Both directions require confirmation. New installations and upgrades without a readable confirmed choice start with live tracking off; confirm it on in the onboard app when ready. Saving the legacy upload mode in plugin settings cannot enable live tracking.
 
-You can also choose **Record locally** or **Automatic upload** in the plugin's **Upload mode** setting. These controls change the same setting.
+The plugin configuration still shows the legacy **Upload mode** setting. Saving **Record locally** or **Automatic upload** there does not change your confirmed live-tracking choice. Use the onboard **Live tracking** switch to change it.
 
-On reconnecting, the latest position is sent promptly while stored history uploads in the background. With the supporting Wake Logger service update, your vessel view shows the percentage of stored history uploaded and an estimated time remaining once there is enough upload progress to measure. Estimates pause when the connection is lost. Detailed recording updates are available under **Upload details**. Wake Logger uses the recorded movement and times to identify trips; switching live tracking does not itself create a new trip. Missing or rejected readings are flagged rather than presented as a complete trip.
+On reconnecting with **Live tracking** on, the latest position is sent promptly while stored history uploads in the background. Reconnecting with it off keeps recording local and does not enable uploads. With the supporting Wake Logger service update, your vessel view shows the percentage of stored history uploaded and an estimated time remaining once there is enough upload progress to measure. Estimates pause when the connection is lost. Detailed recording updates are available under **Upload details**. Wake Logger uses the recorded movement and times to identify trips; switching live tracking does not itself create a new trip. Missing or rejected readings are flagged rather than presented as a complete trip.
 
 **When you dock:** Tap **Finish trip** before switching off boat power. The plugin saves the trip’s actual final recorded sequence and capture time immediately, including offline and with Live tracking off. **Saved onboard · upload pending** is local success, not cloud confirmation. Keep power and Live tracking on until **Trip confirmed ready by cloud** appears if you need confirmation now; the same connection checks receipt coverage and processing. Otherwise the pending finish survives restart and uploads later. The automatic 15-minute stationary stop remains the fallback. Finish trip does not change the active Signal K route, and fresh movement can start a new recording.
 
@@ -93,7 +93,7 @@ Vessel roles and sharing settings in Wake Logger control who can see your data. 
 ## If something is not working
 
 - **Not paired:** Generate a pairing code in Wake Logger and enter it in the plugin settings.
-- **Offline or waiting to upload:** Check **Upload mode**, your internet connection and the plugin's queue status. Leave the plugin running so it can record and retry.
+- **Offline or waiting to upload:** Check **Live tracking** in the onboard app, your internet connection and the plugin's queue status. Confirm Live tracking on when you want uploads to resume. Leave the plugin running so it can record and retry while tracking is on; saving the legacy **Upload mode** setting cannot enable uploads.
 - **No vessel position:** Check that Signal K itself is receiving a valid position from your boat.
 - **Course not active:** Check whether another app selected a route. Reactivate the Wake Logger course when appropriate.
 - **Blank basemap:** Check your selected chart source and local coverage. Course and vessel information can still be displayed.
