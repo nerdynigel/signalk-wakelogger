@@ -136,3 +136,56 @@ no database migration or telemetry wire change.
 - `public/course-progress.mjs`: `c3beb6cf8f6d9ffa18dfdc92d4c50528aaeb5aca4532e536a92c544d74c9245e`
 - `public/leg-eta.mjs`: `7efdcd311533aa72e49c9c8e053209b04107103674772b5f464c5ac52c68acb6`
 - `public/index.html`: `a233a0ffaec1f84f63ef509f2beaef4bf33e0656bc4cedb0cb647197358c2647`
+
+## Inclusive 30 kn correction — 12 October 2026
+
+Affected product/test revision: `56ad09bab44f9ddf25bb4af716d92e2b5f4bf4fb`.
+This section supersedes only the upper-boundary result and leg-eta build hash
+above; all original physical/live/Openclaw gates remain OPEN.
+
+Verification's published report and analytic reproduction are integrated exactly
+from `ede232791d7d2a0c144a5aa6ff78fd28b735874f`, retaining original attribution,
+FAIL decision and historical pins (`leg-average-independent-review.md` and
+`leg-average-independent-check.mjs`). Before editing, executing that harness in
+its original review tree reproduced exit1: exactly 30 nautical miles of progress
+in one hour yielded 30.000000000000004 kn and null ETA. That is floating-point
+projection roundoff at the inclusive sailing limit, not historical incident proof.
+
+Only calculated averages in `(30, 30 + 1e-12]` kn normalize to 30 before shared
+VMG/ETA output. Provisional plan limits remain strict. No lower, date, freshness,
+geometry, baseline/reset or elapsed-window guard changed. A 1e-12 kn tolerance
+is negligible measurement-wise and preserves suppression already at 30+1e-9 kn.
+
+Executed with Node v24.21.0 against this product revision (exit0 unless noted):
+
+- `node --test test/webapp/eta.test.mjs test/webapp/services.test.mjs`: 61 PASS,
+  no skips. New boundary regression asserts VMG exactly30, TTG120 seconds and
+  numeric ETA for one mile; 30+1e-9, 30.0001 and30.01 kn suppress with the sailing
+  range reason. Above-limit provisional plan remains rejected. Existing lower,
+  24h/date, freshness, missing-baseline and recovery assertions pass.
+- `node docs/evidence/leg-average-independent-check.mjs`: PASS including the
+  previously failing exact30 assertion; original harness unchanged, now importing
+  corrected candidate source. Analytic unequal-interval/offset-baseline,
+  above-limit, fallback-window, freshness/recovery and geometry checks pass.
+- `node scripts/build-webapp.mjs`: PASS. Generated ignored public assets rebuilt.
+  `cmp webapp/leg-eta.mjs public/leg-eta.mjs`: PASS. Both SHA256:
+  `f4d225c42bfb83a30017bc5bb5dd1c73741aa9e2c28feadcd217c172484e8fe4`.
+  app/course-progress/index and backend sources remain unchanged.
+- `PLAYWRIGHT_BROWSERS_PATH=/home/nigel/.cache/ms-playwright` with Node24 on PATH,
+  `node node_modules/@playwright/test/cli.js test --config test/webapp/playwright.config.mjs
+  --grep 'leg-average ETA page'`: 1 PASS, Chromium1280x800,20.8s. Existing actual
+  generated-page mocked-input flow retains label/provisional/stale/recovery/reload
+  checks and no page errors/writes; new page-context import of served leg-eta module
+  asserts numeric exact30 and suppressed30.0001. This is local implementation
+  evidence, not independent verification or physical-source acceptance.
+- `node scripts/check-public-repo.mjs`, exact byte comparisons of both attributed
+  verifier files against the published review checkout, `git diff --check`: PASS.
+
+Website numeric adoption remains unwired; no affected website code or evidence
+requires publication there. Attributed host report was already integrated at the
+previous source checkpoint and is reused, not copied again. Independent affected
+source recheck owns the next review stage, followed by Chief reconciliation.
+Current physical positive/invalid/stale/recovery and owner-Go Openclaw NOT RUN;
+exact race-day incident UNKNOWN. No production action, candidate promotion,
+deployment, switch, merge, npm or paid CI. Rollback: revert56ad09b and rebuild;
+evidence can be reverted separately. No migration.
