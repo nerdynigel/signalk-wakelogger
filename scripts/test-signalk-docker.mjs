@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
+import { raceProgress } from '../webapp/course-progress.mjs'
+import { projectBearing } from '../webapp/vessel-guides.mjs'
 import { instrumentReadings, liveNavigationStrip } from '../webapp/instruments.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -394,6 +396,38 @@ try {
   assert.equal(query(courseUrl).native.course.activeRoute.href, otherRouteHref)
   query(`${pluginBase}/course/activate`, 'POST', {})
   assert.equal(query(courseUrl).native.activeMatchesDesired, true)
+  // Real packaged/native REST progress, evaluated at the bundled N2K replay clock.
+  const packagedProgress = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/course-progress.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedProgress, readFileSync(new URL('../webapp/course-progress.mjs', import.meta.url), 'utf8').trim())
+  const motion = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+  const origin = motion.position.value
+  const direction = motion.courseOverGroundTrue.value * 180 / Math.PI
+  const motionPoints = [-100, 100, 300].map((distance, index) => ({
+    id: `motion-${index}`, name: `Motion ${index}`, ...projectBearing(origin, direction, distance)
+  }))
+  query('https://test-cloud:8443/course', 'POST', { ...courseDocument(7, motionPoints), courseId: 'native-motion-proof' })
+  await waitForCourseAck(7, 'applied')
+  const readMotion = () => {
+    const status = query(courseUrl)
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const nativeRoute = query(`http://signalk:3000/signalk/v2/api/resources/routes/${status.native.ownedRouteId}`)
+    const sourceClock = Date.parse(navigation.position.timestamp)
+    const progress = raceProgress(status, navigation, {}, nativeRoute, null, sourceClock)
+    return { progress, status, navigation, nativeRoute, sourceClock }
+  }
+  const firstMotion = readMotion()
+  assert.equal(firstMotion.progress.index, 1)
+  assert.ok(firstMotion.progress.pointPercent > 0 && firstMotion.progress.pointPercent < 50)
+  const nextMotion = await waitFor('position-only native progress increases', () => {
+    const current = readMotion()
+    assert.equal(current.progress.index, 1, 'position progress cannot activate another leg')
+    return current.progress.pointPercent > firstMotion.progress.pointPercent ? current : undefined
+  }, 45_000)
+  assert.equal(raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute).pointPercent, null, '2014 replay is stale at wall clock')
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { value: 1 })
+  assert.equal(readMotion().progress.index, 2, 'manual next-leg semantics survive continuous progress')
+  process.stdout.write(`${JSON.stringify({ nativeCourseProgress: { clock: 'bundled N2K replay', from: firstMotion.progress.pointPercent, to: nextMotion.progress.pointPercent, fixedIndex: 1, staleWallClock: null, manualNextIndex: 2 } })}\n`)
+
   const signalkInfo = query('http://signalk:3000/signalk')
 
   const result = {

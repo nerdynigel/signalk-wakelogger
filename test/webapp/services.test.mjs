@@ -50,7 +50,7 @@ test('native calculations are converted from SI without fabricating missing valu
   assert.equal(progress.vmgKn, 1)
   assert.equal(progress.xteM, -12)
   assert.equal(progress.timeToGo, 60)
-  assert.equal(progress.pointPercent, 50)
+  assert.ok(progress.pointPercent > 20 && progress.pointPercent < 30)
   assert.equal(progress.eta, null)
   const conflict = raceProgress({ ...status, native: { ...status.native, activeMatchesDesired: false } }, {}, { distance: 1852 })
   // Read-only fallback: the cached course keeps navigation visible while native
@@ -182,7 +182,7 @@ test('reversed native routes index from finish toward start', () => {
   assert.equal(at(1).previous.name, 'Finish')
   assert.equal(at(2).next.name, 'Start')
   assert.equal(at(2).previous.name, 'Mark')
-  assert.equal(at(2).pointPercent, 100)
+  assert.equal(at(2).pointPercent, null)
   assert.equal(at(0).direction, null)
 })
 
@@ -835,4 +835,38 @@ test('VMG rejects missing invalid stale skewed inputs and recovers without cours
   assert.equal(oldest.timestamp, now - 5000)
   const view = instrumentReadings({ now, navigation: { speedOverGround: entry(2), courseOverGroundTrue: entry(0), headingMagnetic: entry(0) }, environment: { wind: { angleTrueGround: entry(0) } } })
   assert.equal(view.readings.find(r => r.id === 'vmg-wind-ground').available, false)
+})
+
+
+test('position-driven course progress preserves leg identity, reverse, missing and recovery', () => {
+  const cachedCourse = { start: point(0, 0), marks: [point(0, 1)], finish: point(0, 3) }
+  const status = { cachedCourse, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: 1 } } } }
+  const at = longitude => raceProgress(status, { position: point(0, longitude) })
+  assert.equal(at(0.25).pointPercent, 8)
+  assert.equal(at(0.75).pointPercent, 25)
+  assert.equal(at(0.75).index, 1)
+  assert.equal(at(0.75).pointPercent, at(0.75).pointPercent)
+  assert.equal(at(-1).pointPercent, 0)
+  assert.equal(at(2).pointPercent, 33) // overshooting never advances a leg
+  assert.equal(at(NaN).pointPercent, null)
+  assert.equal(at(0.75).pointPercent, 25)
+  status.native.course.activeRoute.pointIndex = 2
+  assert.equal(at(2).pointPercent, 67)
+  status.native.course.activeRoute.reverse = true
+  status.native.course.activeRoute.pointIndex = 1
+  assert.equal(at(2).pointPercent, 33)
+  assert.equal(raceProgress({}).pointPercent, null)
+})
+
+
+test('known stale invalid and future GPS timestamps suppress progress at the existing freshness boundary', () => {
+  const cachedCourse = { start: point(0, 0), finish: point(0, 1) }
+  const status = { cachedCourse, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: 1 } } } }
+  const now = Date.parse('2026-10-11T11:00:00Z')
+  const at = timestamp => raceProgress(status, { position: { value: point(0, .5), timestamp } }, {}, null, null, now)
+  assert.equal(at(new Date(now).toISOString()).pointPercent, 50)
+  assert.equal(at(new Date(now - 31000).toISOString()).pointPercent, null)
+  assert.equal(at('invalid').pointPercent, null)
+  assert.equal(at(new Date(now + 6000).toISOString()).pointPercent, null)
+  assert.equal(at(new Date(now).toISOString()).pointPercent, 50)
 })

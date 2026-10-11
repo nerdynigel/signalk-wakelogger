@@ -1,3 +1,4 @@
+import { parseSignalKTimestamp, INSTRUMENT_STALE_SECONDS } from './instruments.mjs'
 const value = (input) => input && typeof input === 'object' && 'value' in input ? input.value : input
 const finite = (input) => typeof value(input) === 'number' && Number.isFinite(value(input)) ? value(input) : null
 const radiansToDegrees = (input) => input === null ? null : ((input * 180 / Math.PI) % 360 + 360) % 360
@@ -19,6 +20,26 @@ function greatCircle(from, to) {
   const x = Math.sin(deltaLongitude) * Math.cos(latitude2)
   const y = Math.cos(latitude1) * Math.sin(latitude2) - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(deltaLongitude)
   return { distanceM: EARTH_RADIUS_M * centralAngle, bearingDeg: (Math.atan2(x, y) * 180 / Math.PI + 360) % 360 }
+}
+
+// Distance-weighted progress along the active leg, clamped at its endpoints.
+// This is presentation only: reaching 100% never advances a native waypoint.
+export function courseProgressPercent(points, index, position) {
+  const valid = p => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
+    && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180
+  if (points.length < 2 || !Number.isInteger(index) || index < 0 || index >= points.length || !points.every(valid)) return null
+  if (index === 0) return 0
+  if (!valid(position)) return null
+  const legs = points.slice(1).map((p, i) => greatCircle(points[i], p))
+  const total = legs.reduce((sum, leg) => sum + leg.distanceM, 0)
+  if (!(total > 0)) return null
+  const from = greatCircle(points[index - 1], position)
+  const leg = legs[index - 1]
+  const along = EARTH_RADIUS_M * Math.atan2(Math.sin(from.distanceM / EARTH_RADIUS_M)
+    * Math.cos((from.bearingDeg - leg.bearingDeg) * Math.PI / 180), Math.cos(from.distanceM / EARTH_RADIUS_M))
+  const completed = legs.slice(0, index - 1).reduce((sum, part) => sum + part.distanceM, 0)
+    + Math.max(0, Math.min(leg.distanceM, along))
+  return Math.round(completed / total * 100)
 }
 
 export function coursePoints(course) {
@@ -47,7 +68,7 @@ export function selectedCoursePresentation(status, racePlan = null) {
   return { course, pendingPack, name: date ? `${name} · ${date}` : name }
 }
 
-export function raceProgress(status, navigation = {}, calculated = {}, nativeRoute = null, racePlan = null) {
+export function raceProgress(status, navigation = {}, calculated = {}, nativeRoute = null, racePlan = null, now = Date.now()) {
   const desired = selectedCoursePresentation(status, racePlan).course
   const cachedPoints = coursePoints(desired)
   const geometry = nativeRoute?.feature?.geometry
@@ -76,6 +97,10 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
   const position = value(navigation.position)
   const validPosition = position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
     && Math.abs(position.latitude) <= 90 && Math.abs(position.longitude) <= 180
+  const timestamp = navigation.position?.timestamp
+  const positionTime = parseSignalKTimestamp(timestamp)
+  const positionCurrent = timestamp === undefined || (positionTime !== null
+    && positionTime <= now + 5000 && now - positionTime <= INSTRUMENT_STALE_SECONDS * 1000)
   const next = index === null ? null : points[index]
   const fallback = readOnly && validPosition && next ? greatCircle(position, next) : null
   // Signal K supplies the calculations when the route is active. Only units and
@@ -105,7 +130,7 @@ export function raceProgress(status, navigation = {}, calculated = {}, nativeRou
     readOnly, navSource: matches ? 'signalk' : readOnly ? 'cached' : 'none',
     next,
     previous: previousIndex >= 0 && previousIndex < points.length ? points[previousIndex] : null,
-    pointPercent: index === null || points.length < 2 ? null : Math.round(index * 100 / (points.length - 1)),
+    pointPercent: courseProgressPercent(points, index, validPosition && positionCurrent ? position : null),
     position: validPosition ? position : null,
     direction: radiansToDegrees(finite(navigation.headingTrue) ?? finite(navigation.courseOverGroundTrue)),
     distanceNm,

@@ -1086,3 +1086,29 @@ test('VMG tiles and Race strip survive water-only input, loss and recovery', asy
   await expect(water).toContainText('1.9 kn')
   expect(errors).toEqual([])
 })
+
+
+test('course progress changes with positions without leg activation and recovers after stale GPS', async ({ page }) => {
+  let longitude = points[0].longitude, latitude = points[0].latitude
+  let timestamp = () => new Date().toISOString()
+  const { writes } = await mockBoat(page, { navigationOverride: () => ({ position: {
+    value: { latitude, longitude }, timestamp: timestamp()
+  } }) })
+  await page.goto('/')
+  await expect(page.locator('#progress-value')).toHaveText('0%')
+  latitude = (points[0].latitude + points[1].latitude) / 2
+  longitude = (points[0].longitude + points[1].longitude) / 2
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await expect(page.locator('#next-mark')).toHaveText('Eastern mark')
+  expect(writes).toEqual([])
+  timestamp = () => new Date(Date.now() - 60000).toISOString()
+  await expect(page.locator('#progress-value')).toHaveText('—', { timeout: 10000 })
+  timestamp = () => new Date().toISOString()
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await page.reload()
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await page.locator('#course-tab').click()
+  await page.locator('#advance-point').click()
+  await expect(page.locator('#next-mark')).toHaveText('Race finish')
+  expect(writes.filter(write => write.method === 'PUT')).toHaveLength(1)
+})
