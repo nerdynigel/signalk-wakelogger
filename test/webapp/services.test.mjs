@@ -5,8 +5,8 @@ import { raceProgress, selectedCoursePresentation } from '../../webapp/course-pr
 import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSignalKError } from '../../webapp/api-client.mjs'
 import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
-import { instrumentReadings, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
-import { trackingPresentation } from '../../webapp/tracking-controls.mjs'
+import { instrumentReadings, liveNavigationStrip, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
+import { trackingPresentation, finishTripPresentation } from '../../webapp/tracking-controls.mjs'
 import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
@@ -47,10 +47,10 @@ test('native calculations are converted from SI without fabricating missing valu
   assert.equal(progress.distanceNm, 1)
   assert.equal(progress.bearingDeg, 180)
   assert.equal(progress.direction, 90)
-  assert.equal(progress.vmgKn, 1)
+  assert.equal(progress.vmgKn, null) // Native VMG is not the leg average.
   assert.equal(progress.xteM, -12)
-  assert.equal(progress.timeToGo, 60)
-  assert.equal(progress.pointPercent, 50)
+  assert.equal(progress.timeToGo, null) // Untimestamped native calculations are unavailable.
+  assert.ok(progress.pointPercent > 20 && progress.pointPercent < 30)
   assert.equal(progress.eta, null)
   const conflict = raceProgress({ ...status, native: { ...status.native, activeMatchesDesired: false } }, {}, { distance: 1852 })
   // Read-only fallback: the cached course keeps navigation visible while native
@@ -68,19 +68,16 @@ test('read-only fallback computes next-mark bearing, distance and time while nat
   const cachedCourse = { action: 'activate', activeWaypointIndex: 1, start: { ...point(-27.4, 153.1), name: 'Start' }, marks: [{ ...point(-27.3, 153.1), name: 'Windward' }], finish: { ...point(-27.2, 153.1), name: 'Finish' } }
   const status = { cachedCourse, native: { activeMatchesDesired: false, conflict: true } }
   // Position south of the active mark; heading north, moving at 2 m/s.
-  const progress = raceProgress(status, { position: { value: point(-27.32, 153.1) }, headingTrue: { value: 0 }, courseOverGroundTrue: { value: 0 }, speedOverGround: { value: 2 } }, {})
+  const progress = raceProgress(status, { position: { value: point(-27.32, 153.1), timestamp: new Date().toISOString() }, headingTrue: { value: 0 }, courseOverGroundTrue: { value: 0, timestamp: new Date().toISOString() }, speedOverGround: { value: 2, timestamp: new Date().toISOString() } }, {})
   assert.equal(progress.matches, false)
   assert.equal(progress.readOnly, true)
   assert.equal(progress.next.name, 'Windward')
   assert.ok(progress.distanceNm > 1 && progress.distanceNm < 1.5)
   assert.equal(Math.round(progress.bearingDeg), 0)
   assert.equal(Math.round(progress.direction), 0)
-  // VMG to the mark follows the boat speed because the COG matches the bearing.
-  assert.ok(Math.abs(progress.vmgKn - 2 * 1.9438444924406) < 1e-6)
-  assert.ok(progress.timeToGo > 0)
-  assert.ok(Number.isFinite(Date.parse(progress.eta)))
-  // Control writes stay gated: a fallback course never reports active.
-  assert.equal(progress.xteM, null)
+  assert.equal(progress.vmgKn, null)
+  assert.equal(progress.eta, null)
+  assert.match(progress.etaReason, /Leg start unavailable/)
 })
 
 test('invalid native point indices cannot issue a request', async () => {
@@ -182,7 +179,7 @@ test('reversed native routes index from finish toward start', () => {
   assert.equal(at(1).previous.name, 'Finish')
   assert.equal(at(2).next.name, 'Start')
   assert.equal(at(2).previous.name, 'Mark')
-  assert.equal(at(2).pointPercent, 100)
+  assert.equal(at(2).pointPercent, null)
   assert.equal(at(0).direction, null)
 })
 
@@ -489,7 +486,7 @@ test('every derivation input participates in freshness and skew', () => {
   // VMG obeys the same discipline: a stale SOG blocks ground VMG.
   const vmgInputs = { speedOverGround: { value: 3, timestamp: ts(25_000) }, courseOverGroundTrue: { value: 1, timestamp: ts() }, headingTrue: { value: 1, timestamp: ts() } }
   const vmgView = instrumentReadings({ now, skewSeconds: 10, navigation: vmgInputs, environment: { wind: { speedTrue: { value: 8, timestamp: ts() }, directionTrue: { value: 0.5, timestamp: ts() } } } })
-  assert.equal(source(vmgView, 'vmg-wind-ground'), undefined)
+  assert.equal(source(vmgView, 'vmg-wind-ground').available, false)
 })
 
 test('true wind angle references and wind-relative VMG bases are explicit', () => {
@@ -723,4 +720,196 @@ test('finished trip separates receipt ACK from exact cloud readiness', async () 
   assert.match(finishedTripPresentation({ ...pending, uploadMode: 'automatic', connectionState: 'offline' }), /cloud offline/)
   assert.equal(finishedTripPresentation({ finishedTrip: { confirmationPending: false, cloudStatus: { state: 'ready', environmentPending: true } } }), 'Trip confirmed ready by cloud · weather enrichment pending')
   assert.match(finishedTripPresentation({ finishedTrip: { confirmationPending: true, cloudStatus: { state: 'waiting_for_history', missingSamples: 2, rejectedSamples: 1 } } }), /2 samples missing.*1 samples rejected.*pending/)
+})
+
+test('TWA derives signed bow-relative angles for each basis and keeps direct readings', async () => {
+  const { liveNavigationStrip } = await import('../../webapp/instruments.mjs')
+  const now = Date.parse('2026-10-11T10:00:00Z')
+  const e = (value, age = 0) => ({ value, timestamp: new Date(now - age).toISOString() })
+  const navigation = { headingTrue: e(0), courseOverGroundTrue: e(Math.PI / 2), speedOverGround: e(5 / 1.9438444924406), speedThroughWater: e(5 / 1.9438444924406) }
+  const wind = { speedApparent: e(10 / 1.9438444924406), angleApparent: e(Math.PI / 6) }
+  const view = (nav = navigation, w = wind) => instrumentReadings({ now, navigation: nav, environment: { wind: w } })
+  const get = (v, id) => v.readings.find(r => r.id === id)
+  assert.ok(Math.abs(get(view(), 'twa-water').value - 53.79397688699688) < 1e-8)
+  assert.ok(Math.abs(get(view(), 'twa-ground').value) < 1e-8) // Eastward motion cancels apparent east component.
+  assert.equal(get(view(), 'twa-water').basis, 'water')
+  assert.ok(get(view(navigation, { ...wind, angleApparent: e(-Math.PI / 6) }), 'twa-water').value < 0)
+  const direct = view(navigation, { ...wind, angleTrueGround: e(-Math.PI / 4), angleTrueWater: e(0) })
+  assert.equal(get(direct, 'twa-ground').value, -45)
+  assert.equal(get(direct, 'twa-water').value, 0)
+  assert.equal(get(direct, 'twa-ground').source, 'direct')
+  const waterOnly = view({}, { angleTrueWater: e(-Math.PI / 6) })
+  assert.equal(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').available, true)
+  assert.match(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').label, /water/)
+  const staleGround = view({}, { angleTrueGround: e(1, 40000), angleTrueWater: e(0) })
+  assert.equal(liveNavigationStrip(staleGround).find(r => r.id === 'twa').value, 0)
+  const groundSpeed = get(view({}, { speedOverGround: e(7) }), 'tws')
+  assert.equal(groundSpeed.available, true)
+  assert.equal(groundSpeed.reference, 'ground')
+  assert.ok(Math.abs(groundSpeed.value - 7 * 1.9438444924406) < 1e-8)
+  assert.equal(get(view({}, { speedTrue: e(0), speedOverGround: e(7) }), 'tws').value, 0)
+  // Direct speed/direction must not be overwritten when only its counterpart is missing.
+  assert.equal(get(view(navigation, { ...wind, speedTrue: e(7) }), 'tws').source, 'direct')
+  assert.equal(get(view(navigation, { ...wind, directionTrue: e(1) }), 'twd').source, 'direct')
+  for (const key of ['headingTrue', 'courseOverGroundTrue', 'speedOverGround']) {
+    for (const bad of [undefined, { value: 1 }, e(1, 40000), e(1, 15000), e(1, -60000), e(NaN)]) {
+      assert.equal(get(view({ ...navigation, [key]: bad }), 'twa-ground').available, false, key)
+    }
+  }
+  for (const key of ['speedApparent', 'angleApparent']) {
+    assert.equal(get(view(navigation, { ...wind, [key]: undefined }), 'twa-ground').available, false)
+  }
+  assert.equal(get(view({ ...navigation, headingTrue: undefined, headingMagnetic: e(0) }), 'twa-water').available, false)
+  assert.equal(get(view({ ...navigation, speedThroughWater: undefined }), 'twa-water').available, false)
+  assert.equal(get(view(navigation, { speedApparent: e(5 / 1.9438444924406), angleApparent: e(0) }), 'twa-water').available, false) // Calm vector has no angle.
+  const bounded = get(view({ ...navigation, headingTrue: e(0, 5000) }), 'twa-water')
+  assert.equal(bounded.timestamp, now - 5000)
+  assert.equal(get(instrumentReadings({ now: now + 40000, navigation, environment: { wind } }), 'twa-water').available, false)
+})
+
+
+test('Finish gates explain unavailable, unpaired, revoked and busy states without using cloud or race readiness', () => {
+  const active = { uploadMode: 'local_only', paired: true, available: true, recording: true, trackingSessionId: 'active', connectionState: 'offline', queue: { messageCount: 999 } }
+  assert.equal(finishTripPresentation(active).disabled, false)
+  assert.equal(finishTripPresentation({ ...active, uploadMode: 'automatic', queue: { messageCount: 0 }, historicalUpload: { state: 'ready' } }).disabled, false)
+  for (const [status, flags, expected] of [
+    [null, {}, /Recorder status unavailable/],
+    [{ ...active, paired: false }, {}, /Pair Wake Logger/],
+    [{ ...active, connectionState: 'device_revoked' }, {}, /Device access revoked/],
+    [{ ...active, recording: false, persistenceError: 'save failed' }, {}, /Recorder unavailable/],
+    [active, { changing: true }, /Wait for the live tracking change/],
+    [active, { finishing: true }, /Saving trip onboard/],
+  ]) {
+    const view = finishTripPresentation(status, flags)
+    assert.equal(view.disabled, true)
+    assert.match(view.reason, expected)
+  }
+  const retry = finishTripPresentation({ ...active, trackingSessionId: null, finishedTrip: { confirmationPending: true, manifest: { id: 'closed' } } })
+  assert.equal(retry.disabled, false)
+  assert.equal(retry.recordingId, 'closed')
+  assert.equal(retry.label, 'Retry confirmation')
+})
+
+test('VMG projects independent ground and water vectors, with direct angles and visible fallback', () => {
+  const now = Date.parse('2026-10-11T12:00:00Z')
+  const entry = value => ({ value, timestamp: new Date(now).toISOString() })
+  const value = (view, id) => view.readings.find(r => r.id === id)
+  const resolve = (navigation, wind) => instrumentReadings({ now, navigation, environment: { wind } })
+  const water = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(-Math.PI / 3) })
+  assert.ok(Math.abs(value(water, 'vmg-wind-water').value - 1.9438444924406) < 1e-9)
+  assert.equal(value(water, 'vmg-wind-ground').available, false)
+  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG to wind (water)')
+  const ground = resolve({ speedOverGround: entry(2), courseOverGroundTrue: entry(Math.PI / 2), headingTrue: entry(0) }, { angleTrueGround: entry(Math.PI / 3) })
+  assert.ok(Math.abs(value(ground, 'vmg-wind-ground').value - 2 * 1.9438444924406 * Math.cos(Math.PI / 6)) < 1e-9)
+  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI, 2 * Math.PI]) {
+    const view = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(angle) })
+    assert.ok(Math.abs(value(view, 'vmg-wind-water').value - 2 * 1.9438444924406 * Math.cos(angle)) < 1e-9)
+  }
+  assert.equal(value(resolve({ speedThroughWater: entry(0) }, { angleTrueWater: entry(0) }), 'vmg-wind-water').value, 0)
+  // An unqualified direct absolute bearing retains the ground convention;
+  // it cannot certify water wind without a water TWA/vector.
+  assert.equal(value(resolve({ speedThroughWater: entry(2), headingTrue: entry(0) }, { directionTrue: entry(0) }), 'vmg-wind-water').available, false)
+  // Direct relative water angle wins over a contradictory absolute direction.
+  assert.ok(value(resolve({ speedThroughWater: entry(2), headingTrue: entry(0) }, { angleTrueWater: entry(Math.PI), directionTrue: entry(0) }), 'vmg-wind-water').value < 0)
+  // A water-derived direction cannot become ground VMG when no ground wind
+  // vector was derivable (COG is stale).
+  const mixed = resolve({ speedThroughWater: entry(2), headingTrue: entry(0), speedOverGround: entry(3), courseOverGroundTrue: { ...entry(0), timestamp: new Date(now - 40000).toISOString() } }, { speedApparent: entry(5), angleApparent: entry(0.5) })
+  assert.equal(value(mixed, 'twd').basis, 'water')
+  assert.equal(value(mixed, 'vmg-wind-ground').available, false)
+})
+
+test('VMG rejects missing invalid stale skewed inputs and recovers without course or GPS', () => {
+  const now = Date.parse('2026-10-11T12:00:00Z')
+  const entry = (value, offset = 0) => ({ value, timestamp: new Date(now + offset).toISOString() })
+  const resolve = (speed, angle) => instrumentReadings({ now, navigation: { speedThroughWater: speed }, environment: { wind: { angleTrueWater: angle } } }).readings.find(r => r.id === 'vmg-wind-water')
+  for (const bad of [undefined, entry(NaN), entry(Infinity), { value: 2 }, entry(2, 60000), entry(2, -40000), entry(2, -20000)]) {
+    assert.equal(resolve(bad, entry(0)).available, false)
+    assert.equal(resolve(entry(2), bad).available, false)
+    assert.equal(resolve(entry(2), entry(0)).available, true)
+  }
+  assert.equal(resolve(entry(-2), entry(0)).available, false)
+  const oldest = resolve(entry(2, -5000), entry(0))
+  assert.equal(oldest.timestamp, now - 5000)
+  const view = instrumentReadings({ now, navigation: { speedOverGround: entry(2), courseOverGroundTrue: entry(0), headingMagnetic: entry(0) }, environment: { wind: { angleTrueGround: entry(0) } } })
+  assert.equal(view.readings.find(r => r.id === 'vmg-wind-ground').available, false)
+})
+
+
+test('position-driven course progress preserves leg identity, reverse, missing and recovery', () => {
+  const cachedCourse = { start: point(0, 0), marks: [point(0, 1)], finish: point(0, 3) }
+  const status = { cachedCourse, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: 1 } } } }
+  const at = longitude => raceProgress(status, { position: point(0, longitude) })
+  assert.equal(at(0.25).pointPercent, 8)
+  assert.equal(at(0.75).pointPercent, 25)
+  assert.equal(at(0.75).index, 1)
+  assert.equal(at(0.75).pointPercent, at(0.75).pointPercent)
+  assert.equal(at(-1).pointPercent, 0)
+  assert.equal(at(2).pointPercent, 33) // overshooting never advances a leg
+  assert.equal(at(NaN).pointPercent, null)
+  assert.equal(at(0.75).pointPercent, 25)
+  status.native.course.activeRoute.pointIndex = 2
+  assert.equal(at(2).pointPercent, 67)
+  status.native.course.activeRoute.reverse = true
+  status.native.course.activeRoute.pointIndex = 1
+  assert.equal(at(2).pointPercent, 33)
+  assert.equal(raceProgress({}).pointPercent, null)
+})
+
+
+test('known stale invalid and future GPS timestamps suppress progress at the existing freshness boundary', () => {
+  const cachedCourse = { start: point(0, 0), finish: point(0, 1) }
+  const status = { cachedCourse, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: 1 } } } }
+  const now = Date.parse('2026-10-11T11:00:00Z')
+  const at = timestamp => raceProgress(status, { position: { value: point(0, .5), timestamp } }, {}, null, null, now)
+  assert.equal(at(new Date(now).toISOString()).pointPercent, 50)
+  assert.equal(at(new Date(now - 31000).toISOString()).pointPercent, null)
+  assert.equal(at('invalid').pointPercent, null)
+  assert.equal(at(new Date(now + 6000).toISOString()).pointPercent, null)
+  assert.equal(at(new Date(now).toISOString()).pointPercent, 50)
+})
+
+
+test('direct fresh ground wind guides work without apparent sensors and never use water or unknown wind', async () => {
+  const { vesselGuideBearings } = await import('../../webapp/vessel-guides.mjs')
+  const timestamp = Date.now()
+  const measurement = (value, extra = {}) => ({ value, freshness: 'fresh', timestamp, source: 'direct', ...extra })
+  const readings = heading => [
+    { id: 'position', ...measurement({ latitude: -27, longitude: 153 }) },
+    { id: 'heading', ...measurement(heading, { reference: 'true' }) }
+  ]
+  const wind = { speed: measurement(12, { basis: 'ground' }), direction: measurement(0, { reference: 'true' }) }
+  const tack = vesselGuideBearings(readings(330), null, wind)
+  assert.equal(tack.maneuverBearing, 30)
+  assert.equal(tack.currentTack, 'starboard')
+  assert.equal(vesselGuideBearings(readings(30), null, wind).currentTack, 'port')
+  const gybe = vesselGuideBearings(readings(130), null, wind)
+  assert.equal(gybe.kind, 'gybe')
+  assert.equal(gybe.maneuverBearing, 230)
+  const angle = { speed: wind.speed, angle: measurement(30, { reference: 'ground', basis: 'ground' }) }
+  assert.equal(vesselGuideBearings(readings(330), null, angle).maneuverBearing, 30)
+  for (const speed of [measurement(0, { basis: 'ground' }), measurement(12, { basis: 'water' }), measurement(12, { basis: 'ground', freshness: 'stale' }), measurement(Infinity, { basis: 'ground' })]) {
+    assert.equal(vesselGuideBearings(readings(330), null, { ...wind, speed }).maneuverBearing, null)
+  }
+  for (const direction of [measurement(NaN), measurement(0, { freshness: 'unknown' }), measurement(0, { reference: 'true', timestamp: timestamp - 10001 })]) {
+    assert.equal(vesselGuideBearings(readings(330), null, { ...wind, direction }).maneuverBearing, null)
+  }
+  for (const heading of [0, 90, 180]) assert.equal(vesselGuideBearings(readings(heading), null, wind).maneuverBearing, null)
+  assert.equal(vesselGuideBearings(readings(330), null, wind).maneuverBearing, 30)
+})
+
+
+test('onboard instrument output supplies direct ground wind even when the displayed TWS is water', async () => {
+  const { instrumentReadings } = await import('../../webapp/instruments.mjs')
+  const { vesselGuideBearings } = await import('../../webapp/vessel-guides.mjs')
+  const now = Date.now(), timestamp = new Date(now).toISOString()
+  const m = value => ({ value, timestamp })
+  const navigation = { position: m({ latitude: -27, longitude: 153 }), headingTrue: m(330 * Math.PI / 180) }
+  const environment = { wind: { speedTrue: m(8 / 1.9438444924406), speedOverGround: m(12 / 1.9438444924406), directionTrue: m(0) } }
+  const view = instrumentReadings({ navigation, environment, now })
+  assert.equal(view.readings.find(reading => reading.id === 'tws').basis, 'water')
+  assert.equal(vesselGuideBearings(view.readings, null, view.guideWind).maneuverBearing, 30)
+  const stale = instrumentReadings({ navigation, environment, now: now + 120000 })
+  assert.equal(vesselGuideBearings(stale.readings, null, stale.guideWind).heading, null)
+  const waterOnly = instrumentReadings({ navigation, environment: { wind: { ...environment.wind, speedOverGround: undefined } }, now })
+  assert.equal(vesselGuideBearings(waterOnly.readings, null, waterOnly.guideWind).maneuverBearing, null)
 })

@@ -31,6 +31,10 @@ async function fixture() {
     post: (route: string, handler: any) => { handlers[`POST ${route}`] = handler; accessLevels[`POST ${route}`] = 'admin' }
   } as any)
   async function request(method: string, body?: unknown, route = '/tracking') {
+    if (method === 'POST' && route === '/tracking' && body && typeof body === 'object' && !('confirmed' in body)) {
+      const status = await request('GET')
+      body = { ...body, confirmed: true, expectedUploadMode: status.data.uploadMode }
+    }
     let code = 0; let data: any
     const response = { status(value: number) { code = value; return this }, json(value: unknown) { data = value } }
     await handlers[`${method} ${route}`]({ body }, response, (error: unknown) => { throw error })
@@ -225,4 +229,85 @@ it('keeps Finish trip available after a recording receipt persistence failure', 
     expect(finished.code).toBe(200)
     expect(finished.data.finishedTrip.manifest.id).toBe(id)
   } finally { await f.plugin.stop() }
+})
+
+
+it('rejects unconfirmed and stale choices without persistence or connection', async () => {
+  const connect = vi.spyOn(mqtt, 'connect')
+  const f = await fixture()
+  try {
+    expect((await f.request('POST', { uploadMode: 'automatic', confirmed: false })).code).toBe(400)
+    expect((await f.request('POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'automatic' })).code).toBe(409)
+    expect(f.app.savePluginOptions).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
+    expect((await f.request('GET')).data.uploadMode).toBe('local_only')
+  } finally { await f.plugin.stop() }
+})
+it('restores both confirmed choices across restart and ignores configuration updates', async () => {
+  const connect = vi.spyOn(mqtt, 'connect')
+  const f = await fixture()
+  try {
+    for (const mode of ['automatic', 'local_only']) {
+      expect((await f.request('POST', { uploadMode: mode })).code).toBe(200)
+      await f.plugin.stop()
+      f.plugin.start({ ...f.configuration(), uploadMode: mode === 'automatic' ? 'local_only' : 'automatic' }, vi.fn())
+      await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+      expect((await f.request('GET')).data).toMatchObject({ uploadMode: mode, persistedUploadMode: mode })
+    }
+    expect(connect).toHaveBeenCalledTimes(2)
+  } finally { await f.plugin.stop() }
+})
+it.each(['missing', 'malformed', 'unconfirmed', 'unknown-version', 'unreadable', 'invalid-mode', 'null'])('fails off on %s choice despite legacy automatic config', async (kind) => {
+  const connect = vi.spyOn(mqtt, 'connect')
+  const f = await fixture()
+  try {
+    await f.plugin.stop()
+    const target = path.join(f.dir, 'tracking-choice.json')
+    if (kind === 'malformed') await fs.writeFile(target, '{')
+    if (kind === 'unconfirmed') await fs.writeFile(target, JSON.stringify({ version: 1, uploadMode: 'automatic' }))
+    if (kind === 'unknown-version') await fs.writeFile(target, JSON.stringify({ version: 2, confirmed: true, uploadMode: 'automatic' }))
+    if (kind === 'invalid-mode') await fs.writeFile(target, JSON.stringify({ version: 1, confirmed: true, uploadMode: 'invalid' }))
+    if (kind === 'null') await fs.writeFile(target, 'null')
+    if (kind === 'unreadable') await fs.mkdir(target) // EISDIR, even under privileged test runners
+    f.plugin.start({ ...f.configuration(), uploadMode: 'automatic' }, vi.fn())
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    expect((await f.request('GET')).data).toMatchObject({ uploadMode: 'local_only', persistedUploadMode: 'local_only' })
+    expect(connect).not.toHaveBeenCalled()
+  } finally { await f.plugin.stop() }
+})
+it('fails off when the durable choice write fails after an options save', async () => {
+  const connect = vi.spyOn(mqtt, 'connect')
+  const f = await fixture()
+  try {
+    await fs.mkdir(path.join(f.dir, 'tracking-choice.json'))
+    const result = await f.request('POST', { uploadMode: 'automatic' })
+    expect(result.code).toBe(503)
+    expect(result.data.uploadMode).toBe('local_only')
+    await f.plugin.stop()
+    f.plugin.start(f.configuration(), vi.fn())
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    expect((await f.request('GET')).data.uploadMode).toBe('local_only')
+    expect(connect).not.toHaveBeenCalled()
+  } finally { await f.plugin.stop() }
+})
+
+it('keeps restart off when interrupted after the confirmed choice rename', async () => {
+  const connect = vi.spyOn(mqtt, 'connect')
+  const f = await fixture()
+  const rename = fs.rename
+  let release: (() => void) | undefined
+  const held = vi.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+    await rename(source, target)
+    if (String(target) === path.join(f.dir, 'tracking-choice.json')) await new Promise<void>(resolve => { release = resolve })
+  })
+  try {
+    const enabling = f.request('POST', { uploadMode: 'automatic' })
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    f.plugin.start(f.configuration(), vi.fn())
+    release!()
+    expect((await enabling).code).not.toBe(200)
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    expect((await f.request('GET')).data.uploadMode).toBe('local_only')
+    expect(connect).not.toHaveBeenCalled()
+  } finally { release?.(); held.mockRestore(); await f.plugin.stop() }
 })

@@ -194,3 +194,69 @@ describe('course delivery and native resources', () => {
     expect(() => parseCourse(encoded({ ...document(), marks: [document().start] }))).toThrow('course_duplicate_point_id')
   })
 })
+
+describe('durable leg start provenance', () => {
+  it('uses activation time with a fresh source baseline and retains it across polling, restart and duplicate delivery', async () => {
+    const { store, target, native } = await fixture()
+    const at = Date.now()
+    const p = { latitude: -27, longitude: 153 }
+    await store.observeLegPosition(p, new Date(at).toISOString(), at)
+    await store.receive(encoded(document()))
+    const baseline = (await store.status() as any).legStart
+    expect(baseline.startedAt).toBe(baseline.observedAt)
+    expect(baseline.positionTimestamp).toBe(at)
+    expect(baseline.position).toEqual(p)
+    await store.observeLegPosition({ latitude: -27.005, longitude: 153.005 }, new Date(at + 10000).toISOString(), at + 10000)
+    expect((await store.status() as any).legStart).toEqual(baseline)
+    const restarted = new CourseStore(target, native)
+    await restarted.open()
+    expect((await restarted.status() as any).legStart).toEqual(baseline)
+    await restarted.receive(encoded(document()))
+    expect((await restarted.status() as any).legStart).toEqual(baseline)
+  })
+  it('does not rebase a leg when activation has no fresh position; old/invalid/future sources cannot seed it', async () => {
+    for (const invalid of [null, { latitude: 91, longitude: 0 }, { latitude: 0, longitude: 0 }]) {
+      const { store } = await fixture()
+      const at = Date.now()
+      await store.observeLegPosition(invalid, new Date(at + 5001).toISOString(), at)
+      await store.observeLegPosition(invalid, new Date(at - 30001).toISOString(), at)
+      await store.receive(encoded(document()))
+      const baseline = (await store.status() as any).legStart
+      expect(baseline.position).toBeNull()
+      await store.observeLegPosition({ latitude: 0, longitude: 0 }, new Date(at + 10000).toISOString(), at + 10000)
+      expect((await store.status() as any).legStart).toEqual(baseline)
+    }
+  })
+  it('resets on advance, reverse, route conflict, explicit activation and course revision without changing navigation', async () => {
+    const { store, setNative, app } = await fixture()
+    await store.receive(encoded(document()))
+    let prior = (await store.status() as any).legStart
+    for (const route of [{ pointIndex: 2 }, { pointIndex: 2, reverse: true }, { pointIndex: 1, href: '/foreign' }]) {
+      const before = prior
+      setNative({ activeRoute: { href: nativeRouteHref(document().courseId), ...route } })
+      prior = (await store.status() as any).legStart
+      expect(prior.identity).not.toEqual(before.identity)
+      expect(prior.startedAt).toBe(prior.observedAt)
+    }
+    await store.activate()
+    prior = (await store.status() as any).legStart
+    await store.observeLegPosition({ latitude: -27, longitude: 153 }, new Date().toISOString())
+    await store.activate()
+    expect((await store.status() as any).legStart.position).toEqual({ latitude: -27, longitude: 153 })
+    await store.receive(encoded(document(2)))
+    expect((await store.status() as any).legStart.identity).not.toEqual(prior.identity)
+    await store.receive(encoded({ v: 1, action: 'clear', revision: 3, courseId: null, updatedAt: new Date().toISOString() }))
+    expect((await store.status() as any).legStart).toBeNull()
+    expect(app.activateRoute).toHaveBeenCalledTimes(4)
+  })
+  it('an existing route without a saved marker never invents historical activation time', async () => {
+    const { store, target, native } = await fixture()
+    await store.receive(encoded(document()))
+    const stored = JSON.parse(await fs.readFile(target, 'utf8'))
+    delete stored.legStart
+    await fs.writeFile(target, JSON.stringify(stored))
+    const restarted = new CourseStore(target, native)
+    await restarted.open()
+    expect((await restarted.status() as any).legStart.startedAt).toBeNull()
+  })
+})

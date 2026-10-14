@@ -58,7 +58,8 @@ describe('local recording mode', () => {
       expect(app.setPluginError).not.toHaveBeenCalled()
       expect(app.error).not.toHaveBeenCalled()
       plugin.start({ uploadMode: 'automatic', samplePeriodMs: 250 }, vi.fn())
-      await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(statuses.at(-1)).toContain('recording_locally'))
+      expect(connect).not.toHaveBeenCalled()
     } finally { await plugin.stop() }
   })
 })

@@ -3,11 +3,13 @@ import path from 'node:path'
 import { NativeCourseService, nativeRouteId } from './native-course'
 import { CourseError, coursePoints, parseCourse, type ActiveCourseDocument, type CourseAcknowledgement, type CourseDocument, type MapReadiness } from './protocol'
 
-interface Snapshot { version: 1; mapReadiness?: { revision: number; status: MapReadiness }; desired?: CourseDocument; cachedCourse?: ActiveCourseDocument; acknowledgement?: CourseAcknowledgement }
+export interface LegStart { identity: string; observedAt: number; startedAt: number | null; position: { latitude: number; longitude: number } | null; positionTimestamp: number | null }
+interface Snapshot { version: 1; legStart?: LegStart; mapReadiness?: { revision: number; status: MapReadiness }; desired?: CourseDocument; cachedCourse?: ActiveCourseDocument; acknowledgement?: CourseAcknowledgement }
 
 export class CourseStore {
   private snapshot: Snapshot = { version: 1 }
   private operation: Promise<void> = Promise.resolve()
+  private latestLegPosition: { position: { latitude: number; longitude: number }; at: number } | null = null
   constructor(private readonly target: string, private readonly native: NativeCourseService) {}
 
   async open(): Promise<void> {
@@ -49,13 +51,51 @@ export class CourseStore {
     if (!acknowledgement) return undefined
     return { ...acknowledgement, activation: await this.activation(), mapReadiness: this.snapshot.mapReadiness?.revision === this.snapshot.desired?.revision ? this.snapshot.mapReadiness?.status ?? 'unknown' : 'unknown' }
   }
+  // One durable marker for every observed activation/advance. Never use page
+  // load time, a packet receipt time, or an old race-plan timestamp as leg start.
+  async observeLeg(now = Date.now(), activation = false): Promise<void> {
+    await this.exclusive(async () => {
+      const desired = this.snapshot.desired
+      const native = await this.native.current()
+      const matches = desired?.action === 'activate' && await this.native.matches(desired)
+      const points = desired?.action === 'activate' ? coursePoints(desired) : []
+      const index = matches ? native?.activeRoute?.pointIndex : desired?.action === 'activate' ? desired.activeWaypointIndex ?? 1 : null
+      const identity = desired?.action === 'activate' && Number.isInteger(index) && index! >= 0 && index! < points.length
+        ? JSON.stringify([desired.courseId, desired.revision, desired.updatedAt, index, matches ? native?.activeRoute?.href : 'cached', matches && native?.activeRoute?.reverse === true, points]) : null
+      if (!activation && (identity === this.snapshot.legStart?.identity || (!identity && !this.snapshot.legStart))) return
+      // A first attachment to an already active route cannot reconstruct its
+      // activation. Controlled activation or an observed transition is required.
+      const knownEvent = activation || !!this.snapshot.legStart
+      const fix = this.latestLegPosition
+      const baseline = knownEvent && fix && fix.at <= now && now-fix.at <= 30000 ? fix : null
+      const next = { ...this.snapshot, legStart: identity ? { identity, observedAt: now, startedAt: knownEvent ? now : null,
+        position: baseline?.position ?? null, positionTimestamp: baseline?.at ?? null } : undefined }
+      await this.persist(next)
+      this.snapshot = next
+    })
+  }
+
+  observeLegPosition(position: unknown, timestamp: unknown, now = Date.now()): Promise<void> {
+    return this.exclusive(async () => {
+      const p = position as { latitude?: number; longitude?: number } | null
+      const at = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN
+      if (!p || typeof p.latitude !== 'number' || typeof p.longitude !== 'number'
+        || !Number.isFinite(p.latitude) || !Number.isFinite(p.longitude) || Math.abs(p.latitude) > 90 || Math.abs(p.longitude) > 180
+        || !Number.isFinite(at) || at > now || now - at > 30000 || (this.latestLegPosition && at <= this.latestLegPosition.at)) return
+      this.latestLegPosition = { position: { latitude: p.latitude, longitude: p.longitude }, at }
+
+    })
+  }
+
   async status(): Promise<object> {
+    await this.observeLeg()
     const course = this.snapshot.cachedCourse
     const native = await this.native.current()
     const activation = await this.activation()
     const activeMatchesDesired = !!course && this.snapshot.desired?.action === 'activate' && await this.native.matches(course)
     return {
       desired: this.snapshot.desired ?? null, cachedCourse: course ?? null,
+      legStart: this.snapshot.legStart ?? null,
       acknowledgement: await this.acknowledgement() ?? null,
       routePoints: course ? coursePoints(course) : [],
       native: {
@@ -69,6 +109,7 @@ export class CourseStore {
   }
 
   receive(payload: Buffer): Promise<CourseAcknowledgement> {
+    let activated = false
     return this.exclusive(async () => {
       let document: CourseDocument
       try {
@@ -85,7 +126,10 @@ export class CourseStore {
         if (document.action === 'clear') await this.native.clearOwned(previousCourse)
         else {
           await this.native.ensureResource(document)
-          if (!duplicate) await this.native.activate(document, false, previousCourse)
+          if (!duplicate) {
+            const result = await this.native.activate(document, false, previousCourse)
+            activated = result === 'active' || previous?.revision !== document.revision
+          }
         }
         const activation = await this.activation()
         const blocker = activation === 'conflict' && document.action === 'activate'
@@ -108,7 +152,7 @@ export class CourseStore {
         this.snapshot.acknowledgement = acknowledgement
         return acknowledgement
       }
-    })
+    }).then(async acknowledgement => { await this.observeLeg(Date.now(), activated); return acknowledgement })
   }
 
   activate(): Promise<void> {
@@ -123,7 +167,7 @@ export class CourseStore {
       const acknowledgement: CourseAcknowledgement = { v: 1, revision: course.revision, status: 'applied', activation: 'active' }
       await this.persist({ ...this.snapshot, acknowledgement })
       this.snapshot.acknowledgement = acknowledgement
-    })
+    }).then(async () => { await this.observeLeg(Date.now(), true) })
   }
 
   setMapReadiness(revision: unknown, status: unknown): Promise<void> {

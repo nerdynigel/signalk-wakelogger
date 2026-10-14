@@ -3,7 +3,7 @@ import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
-import { trackingPresentation, finishedTripPresentation } from './tracking-controls.mjs'
+import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
@@ -21,7 +21,7 @@ const map = L.map('map', { zoomControl: true }).setView([0, 0], 2)
 const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
 const guideLayer = L.layerGroup().addTo(map)
-let vesselMarker = null
+let vesselMarker = null, guideViewportInitialized = false
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, finishingTrip = false, trackingRequest = 0
@@ -177,11 +177,13 @@ function renderCourse() {
   $('previous-mark').textContent = `Previous: ${progress.previous?.name || 'unavailable'}`
   metric('distance', progress.distanceNm, ' NM', 2)
   metric('bearing', progress.bearingDeg, '°', 0)
-  metric('vmg', progress.vmgKn, ' kn')
+  metric('vmg', progress.vmgKn, progress.etaProvisional ? ' kn (plan)' : ' kn')
   metric('xte', progress.xteM, ' m', 0)
   metric('ttg', progress.timeToGo === null ? null : progress.timeToGo / 60, ' min', 0)
   const eta = progress.eta ? new Date(progress.eta) : null
-  $('eta').textContent = eta && Number.isFinite(eta.getTime()) ? eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+  $('eta').textContent = eta && Number.isFinite(eta.getTime()) ? (eta.toDateString() === new Date().toDateString() ? eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : eta.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : '—'
+  $('eta').title = progress.etaReason || ''
+  $('eta-reason').textContent = progress.etaReason || ''
   $('progress-value').textContent = progress.pointPercent === null ? '—' : `${progress.pointPercent}%`
   $('course-progress').value = progress.pointPercent ?? 0
   routeLayer.clearLayers()
@@ -360,17 +362,20 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
   guideLayer.clearLayers()
-  const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => reading.id !== 'awa') : view.readings
+  const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => !['awa', 'aws'].includes(reading.id)) : view.readings
   const leg = progress?.matches && progress.previous && progress.next ? { from: progress.previous, to: progress.next } : null
-  const guides = vesselGuideBearings(readings, leg)
+  const guides = vesselGuideBearings(readings, leg, environmentUnavailable ? null : view.guideWind)
   const element = $('map')
   element.dataset.headingGuideBearing = guides.heading === null ? '' : String(guides.heading)
   element.dataset.oppositeTackBearing = guides.kind === 'tack' ? String(guides.maneuverBearing) : ''
   element.dataset.oppositeGybeBearing = guides.kind === 'gybe' ? String(guides.maneuverBearing) : ''
   element.dataset.maneuverGuideKind = guides.kind || ''
+  element.dataset.currentTack = guides.currentTack || ''
+  const oppositeSide = guides.currentTack === 'port' ? 'starboard' : 'port'
+  $('guide-legend').textContent = guides.heading === null ? 'Heading guide unavailable · fresh GPS and true heading required' : `Heading · true${guides.currentTack ? ` · ${guides.currentTack}` : ''}${guides.kind ? ` · Mirrored ${guides.kind} guide · ${oppositeSide} · current true-wind angle; no tide or leeway correction` : ''}`
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
-  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated opposite ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
+  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
   if (guides.heading === null) return
   const location = L.latLng(guides.position.latitude, guides.position.longitude)
   const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
@@ -388,7 +393,15 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
     L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer)
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
-  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated opposite ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
+  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
+  // With no course/history there was no initial fit, leaving the vessel at
+  // world zoom. Frame one fresh fix while preserving later viewport intent.
+  if (!guideViewportInitialized && viewportMode === 'auto' && !trackUserControlled && !track.length && !progress?.points?.length) {
+    guideViewportInitialized = true
+    map.setView(location, 13, { animate: false })
+    publishViewport()
+  }
+
 }
 
 function instrumentTile(reading) {
@@ -866,10 +879,11 @@ function renderTracking() {
   $('tracking-mode').textContent = trackingChanging ? 'Saving…' : view.mode
   $('tracking-description').textContent = view.description
   $('upload-queue').textContent = view.queue
-  const retryConfirmation = !trackingStatus?.trackingSessionId && trackingStatus?.finishedTrip?.confirmationPending !== false && !!trackingStatus?.finishedTrip?.manifest?.id
-  $('finish-trip').disabled = trackingChanging || finishingTrip || !view.available || (!trackingStatus?.trackingSessionId && !retryConfirmation)
+  const finish = finishTripPresentation(trackingStatus, { changing: trackingChanging, finishing: finishingTrip })
+  $('finish-trip').disabled = finish.disabled
   $('finish-trip').setAttribute('aria-busy', String(finishingTrip))
-  $('finish-trip').textContent = finishingTrip ? retryConfirmation ? 'Checking confirmation…' : 'Saving trip…' : retryConfirmation ? 'Retry confirmation' : 'Finish trip'
+  $('finish-trip').textContent = finish.label
+  $('finish-trip-reason').textContent = finish.reason
   $('finished-trip').textContent = finishedTripPresentation(trackingStatus)
   if (trackingStatus) $('cloud-state').textContent = !view.available ? 'Not paired' : !view.enabled ? 'Recording locally' : trackingStatus.connectionState === 'online' ? 'Live connected' : 'Cloud offline'
 }
@@ -887,36 +901,41 @@ async function refreshTracking() {
   renderTracking()
 }
 $('finish-trip').onclick = async () => {
-  const expectedRecordingId = trackingStatus?.trackingSessionId ?? (trackingStatus?.finishedTrip?.confirmationPending !== false ? trackingStatus?.finishedTrip?.manifest?.id : null)
-  if (finishingTrip || trackingChanging || !expectedRecordingId || !trackingPresentation(trackingStatus).available) return
+  const finish = finishTripPresentation(trackingStatus, { changing: trackingChanging, finishing: finishingTrip })
+  if (finish.disabled) return
+  const expectedRecordingId = finish.recordingId
   finishingTrip = true
   ++trackingRequest
   renderTracking()
   try {
     trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking/finish', { method: 'POST', operation: 'finish-trip', body: JSON.stringify({ expectedRecordingId }) })
     $('notice').textContent = ''
-  } catch {
-    $('notice').textContent = 'Trip could not be finished. Check recorder status and try again.'
+  } catch (error) {
+    $('notice').textContent = finishTripFailure(error)
     try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) } catch { trackingStatus = null }
   } finally { finishingTrip = false; renderTracking() }
 }
 $('live-tracking').onclick = async () => {
-  if (trackingChanging || !trackingPresentation(trackingStatus).available) return
-  const uploadMode = trackingStatus.uploadMode === 'automatic' ? 'local_only' : 'automatic'
-  let warning = null
-  if (uploadMode === 'local_only') {
-    // Pre-switch warning: local-only stays possible, but the crew is told
-    // precisely what is missing before onboard sail planning is relied upon.
-    const readiness = await client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' }).catch(() => null)
-    if (readiness) offlineReadiness = readiness
-    warning = localOnlyWarning(readiness)
-    renderOfflineReadiness()
-  }
+  if (trackingChanging || finishingTrip || !trackingPresentation(trackingStatus).available) return
+  const expectedUploadMode = trackingStatus.uploadMode
+  const uploadMode = expectedUploadMode === 'automatic' ? 'local_only' : 'automatic'
+  // Freeze status polling and other controls before the readiness request/modal.
   trackingChanging = true
   ++trackingRequest
   renderTracking()
   try {
-    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', operation: 'set-tracking', body: JSON.stringify({ uploadMode }) })
+    let warning = null
+    if (uploadMode === 'local_only') {
+      const readiness = await client.request('/plugins/signalk-wakelogger/offline-readiness', { operation: 'read-offline-readiness' }).catch(() => null)
+      if (readiness) offlineReadiness = readiness
+      warning = localOnlyWarning(readiness)
+      renderOfflineReadiness()
+    }
+    const current = expectedUploadMode === 'automatic' ? 'ON' : 'OFF'
+    const target = uploadMode === 'automatic' ? 'ON' : 'OFF'
+    const effect = uploadMode === 'automatic' ? 'Send live position and saved history when connected.' : 'Pause cloud uploads. Your trip continues recording onboard.'
+    if (!window.confirm(`Live tracking is currently ${current}. Change to ${target}?\n\n${effect}${warning ? `\n\n${warning}` : ''}`)) return
+    trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { method: 'POST', operation: 'set-tracking', body: JSON.stringify({ uploadMode, confirmed: true, expectedUploadMode }) })
     notice(warning || (uploadMode === 'local_only' ? 'Live tracking off. Your trip continues recording onboard.' : 'Live tracking on. Saved history uploads when connected.'))
   } catch (error) {
     try { trackingStatus = await client.request('/plugins/signalk-wakelogger/tracking', { operation: 'read-tracking' }) }
@@ -928,7 +947,7 @@ $('live-tracking').onclick = async () => {
       setFullscreen(false)
       $('login').hidden = false
     }
-  } finally { trackingChanging = false; renderTracking() }
+  } finally { trackingChanging = false; renderTracking(); void refreshTracking() }
 }
 
 const tabNames = ['instruments', 'race', 'course', 'charts']

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { raceProgress } from '../webapp/course-progress.mjs'
+import { projectBearing, vesselGuideBearings } from '../webapp/vessel-guides.mjs'
+import { instrumentReadings, liveNavigationStrip } from '../webapp/instruments.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const composeFile = fileURLToPath(new URL('../test/docker/compose.yml', import.meta.url))
@@ -118,6 +122,75 @@ try {
   const leafletAsset = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vendor/leaflet.js'], { capture: true }).stdout
   assert.ok(leafletAsset.includes('Leaflet'), 'the onboard map library must be served locally')
 
+  // Use actual REST measurements from the disposable native Signal K server,
+  // not a browser route mock. The packaged asset must match the tested module.
+  const packagedInstruments = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/instruments.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedInstruments, readFileSync(new URL('../webapp/instruments.mjs', import.meta.url), 'utf8').trim())
+  // The server's bundled replay deliberately retains 2014 source timestamps.
+  // Evaluate positive derivation at the replay clock; at wall clock these
+  // measurements must be unavailable, even though HTTP is responding live.
+  const liveWind = await waitFor('native replay true wind angle at source clock', () => {
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const environment = query('http://signalk:3000/signalk/v1/api/vessels/self/environment')
+    const entries = [navigation.headingTrue, navigation.courseOverGroundTrue, navigation.speedOverGround,
+      environment.wind?.speedApparent, environment.wind?.angleApparent]
+    const sourceClock = Math.max(...entries.map(entry => Date.parse(entry?.timestamp)))
+    if (!Number.isFinite(sourceClock)) return undefined
+    const view = instrumentReadings({ navigation, environment, now: sourceClock })
+    const twa = view.readings.find(reading => reading.id === 'twa-ground')
+    return twa?.available ? { navigation, environment, view, twa, sourceClock } : undefined
+  }, 30_000)
+  assert.equal(liveWind.twa.reference, 'ground')
+  assert.ok(liveWind.twa.value >= -180 && liveWind.twa.value <= 180)
+  assert.equal(liveNavigationStrip(liveWind.view).find(reading => reading.id === 'twa').available, true)
+  const noHeading = { ...liveWind.navigation, headingTrue: undefined }
+  const apparentOnly = { wind: { speedApparent: liveWind.environment.wind.speedApparent, angleApparent: liveWind.environment.wind.angleApparent } }
+  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'twa-ground').available, false)
+  process.stdout.write(`${JSON.stringify({ nativeWindReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), source: liveWind.twa.source, basis: liveWind.twa.reference, twaDeg: liveWind.twa.value, stripAvailableAtReplayClock: true, missingHeadingRejected: true, wallClockStaleRejected: true, packagedAssetMatches: true } })}\n`)
+
+  const packagedGuides = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/vessel-guides.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedGuides, readFileSync(new URL('../webapp/vessel-guides.mjs', import.meta.url), 'utf8').trim())
+  const nativeGuides = await waitFor('native heading and mirrored maneuver at replay clock', () => {
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const environment = query('http://signalk:3000/signalk/v1/api/vessels/self/environment')
+    const entries = [navigation.position, navigation.headingTrue, navigation.courseOverGroundTrue, navigation.speedOverGround, environment.wind?.speedApparent, environment.wind?.angleApparent]
+    const sourceClock = Math.max(...entries.map(entry => Date.parse(entry?.timestamp)))
+    const view = instrumentReadings({ navigation, environment, now: sourceClock })
+    const guides = vesselGuideBearings(view.readings, null, view.guideWind)
+    return guides.heading !== null && guides.maneuverBearing !== null ? { navigation, environment, sourceClock, guides } : undefined
+  }, 30_000)
+  const resolveNativeGuides = (navigation, environment, now) => {
+    const view = instrumentReadings({ navigation, environment, now })
+    return vesselGuideBearings(view.readings, null, view.guideWind)
+  }
+  assert.ok(Math.abs(nativeGuides.guides.maneuverBearing - ((2 * nativeGuides.guides.trueWindFrom - nativeGuides.guides.heading + 720) % 360)) < 1e-8)
+  assert.equal(resolveNativeGuides({ ...nativeGuides.navigation, headingTrue: undefined }, nativeGuides.environment, nativeGuides.sourceClock).heading, null)
+  assert.equal(resolveNativeGuides(nativeGuides.navigation, nativeGuides.environment, Date.now()).heading, null)
+  assert.notEqual(resolveNativeGuides(nativeGuides.navigation, nativeGuides.environment, nativeGuides.sourceClock).maneuverBearing, null)
+  process.stdout.write(`${JSON.stringify({ nativeOverlayReplayProof: { clock: new Date(nativeGuides.sourceClock).toISOString(), heading: nativeGuides.guides.heading, opposite: nativeGuides.guides.maneuverBearing, kind: nativeGuides.guides.kind, currentTack: nativeGuides.guides.currentTack, missingHeadingRejected: true, wallClockStaleRejected: true, recovery: true, packagedGuidesMatch: true } })}\n`)
+
+  const nativeVmg = liveWind.view.readings.find(reading => reading.id === 'vmg-wind-ground')
+  const nativeTwd = liveWind.view.readings.find(reading => reading.id === 'twd')
+  assert.equal(nativeVmg.available, true)
+  const expectedVmg = liveWind.navigation.speedOverGround.value * 1.9438444924406 * Math.cos(nativeTwd.value * Math.PI / 180 - liveWind.navigation.courseOverGroundTrue.value)
+  assert.ok(Math.abs(nativeVmg.value - expectedVmg) < 1e-9)
+  assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'vmg-wind-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: apparentOnly }).readings.find(reading => reading.id === 'vmg-wind-ground').available, false)
+  assert.equal(instrumentReadings({ navigation: liveWind.navigation, environment: liveWind.environment, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'vmg-wind-ground').available, true)
+  process.stdout.write(`${JSON.stringify({ nativeVmgReplayProof: { sourceClock: new Date(liveWind.sourceClock).toISOString(), vmgKn: nativeVmg.value, basis: nativeVmg.basis, sogMps: liveWind.navigation.speedOverGround.value, cogRadians: liveWind.navigation.courseOverGroundTrue.value, twdDegrees: nativeTwd.value, missingHeadingRejected: true, wallClockStaleRejected: true, recovery: true, packagedAssetMatches: true } })}\n`)
+
+  const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
+  await waitFor('paired recorder starts safely off without a confirmed choice', () => {
+    const status = query(trackingUrl)
+    return status.available && status.recording && status.uploadMode === 'local_only'
+  }, 300_000)
+  assert.equal(telemetrySamples(snapshot()).length, 0, 'pairing and default config cannot enable telemetry')
+  const rejected = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', trackingUrl, 'POST', JSON.stringify({ uploadMode: 'automatic' })], { capture: true, allowFailure: true })
+  assert.notEqual(rejected.status, 0, 'unconfirmed requests must fail')
+  assert.ok(rejected.stderr.includes('tracking_confirmation_required'))
+  query(trackingUrl, 'POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
+
   const initial = await waitFor('three durably acknowledged telemetry samples', () => {
     const value = snapshot()
     return maximumAck(value) >= 3 ? value : undefined
@@ -149,8 +222,7 @@ try {
   query('http://signalk:3000/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex', 'PUT', { value: 2 })
   await waitFor('native next-point update', () => query('http://signalk:3000/plugins/signalk-wakelogger/course').native.course.activeRoute.pointIndex === 2)
 
-  const trackingUrl = 'http://signalk:3000/plugins/signalk-wakelogger/tracking'
-  const paused = query(trackingUrl, 'POST', { uploadMode: 'local_only' })
+  const paused = query(trackingUrl, 'POST', { uploadMode: 'local_only', confirmed: true, expectedUploadMode: 'automatic' })
   assert.equal(paused.uploadMode, 'local_only')
   assert.equal(paused.persistedUploadMode, 'local_only')
   assert.equal(paused.recording, true)
@@ -170,7 +242,7 @@ try {
     return value.available && value.uploadMode === 'local_only' && value.recording ? value : undefined
   }, 300_000)
   assert.equal(telemetrySamples(snapshot()).length, pausedCloudCount, 'persisted off mode must prevent cloud telemetry after restart')
-  const enabled = query(trackingUrl, 'POST', { uploadMode: 'automatic' })
+  const enabled = query(trackingUrl, 'POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
   assert.equal(enabled.uploadMode, 'automatic')
   assert.equal(enabled.persistedUploadMode, 'automatic')
   assert.ok(enabled.historicalUpload.totalSamples >= 3, 'resume reports the offline upload cohort')
@@ -197,6 +269,7 @@ try {
     const position = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation/position')
     return Number.isFinite(position?.value?.latitude) && Number.isFinite(position?.value?.longitude)
   }, 300_000)
+  assert.equal(query(trackingUrl).uploadMode, 'automatic', 'confirmed ON survives abrupt restart and broker reconnect')
   const restoredCourse = query('http://signalk:3000/plugins/signalk-wakelogger/course')
   assert.equal(restoredCourse.desired.revision, 1, 'cached course survives abrupt restart')
   assert.equal(restoredCourse.native.course.activeRoute.pointIndex, 2, 'retained course replay preserves native progress')
@@ -344,6 +417,53 @@ try {
   assert.equal(query(courseUrl).native.course.activeRoute.href, otherRouteHref)
   query(`${pluginBase}/course/activate`, 'POST', {})
   assert.equal(query(courseUrl).native.activeMatchesDesired, true)
+  // Real packaged/native REST progress, evaluated at the bundled N2K replay clock.
+  const packagedProgress = compose(['exec', '-T', 'test-cloud', 'node', '/app/query.mjs', 'http://signalk:3000/signalk-wakelogger/course-progress.mjs'], { capture: true }).stdout.trim()
+  assert.equal(packagedProgress, readFileSync(new URL('../webapp/course-progress.mjs', import.meta.url), 'utf8').trim())
+  const motion = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+  const origin = motion.position.value
+  const direction = motion.courseOverGroundTrue.value * 180 / Math.PI
+  const motionPoints = [-100, 100, 300].map((distance, index) => ({
+    id: `motion-${index}`, name: `Motion ${index}`, ...projectBearing(origin, direction, distance)
+  }))
+  query('https://test-cloud:8443/course', 'POST', { ...courseDocument(7, motionPoints), courseId: 'native-motion-proof' })
+  await waitForCourseAck(7, 'applied')
+  const readMotion = () => {
+    const status = query(courseUrl)
+    const navigation = query('http://signalk:3000/signalk/v1/api/vessels/self/navigation')
+    const nativeRoute = query(`http://signalk:3000/signalk/v2/api/resources/routes/${status.native.ownedRouteId}`)
+    const sourceClock = Date.parse(navigation.position.timestamp)
+    const progress = raceProgress(status, navigation, {}, nativeRoute, null, sourceClock)
+    return { progress, status, navigation, nativeRoute, sourceClock }
+  }
+  const firstMotion = readMotion()
+  assert.equal(firstMotion.progress.index, 1)
+  assert.ok(firstMotion.progress.pointPercent > 0 && firstMotion.progress.pointPercent < 50)
+  const nextMotion = await waitFor('position-only native progress increases', () => {
+    const current = readMotion()
+    assert.equal(current.progress.index, 1, 'position progress cannot activate another leg')
+    return current.progress.pointPercent > firstMotion.progress.pointPercent ? current : undefined
+  }, 45_000)
+  assert.equal(raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute).pointPercent, null, '2014 replay is stale at wall clock')
+  // Actual packaged Signal K REST inputs (bundled replay, not owner telemetry).
+  const staleEta = raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute)
+  assert.equal(staleEta.eta, null, 'old replay must never claim a wall-clock ETA')
+  assert.equal(staleEta.timeToGo, null)
+  const cachedStatus = { ...nextMotion.status, native: { ...nextMotion.status.native, activeMatchesDesired: false } }
+  const replayEta = raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock)
+  assert.ok(replayEta.eta, `source-clock cached ETA requires fresh actual sensor envelopes: ${replayEta.etaReason}`)
+  assert.ok(replayEta.timeToGo >= 0 && replayEta.timeToGo <= 86400)
+  const staleMotion = { ...nextMotion.navigation, speedOverGround: { ...nextMotion.navigation.speedOverGround,
+    timestamp: new Date(nextMotion.sourceClock - 31000).toISOString() } }
+  assert.equal(raceProgress(cachedStatus, staleMotion, {}, null, null, nextMotion.sourceClock).eta, null)
+  assert.equal(raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock).eta, replayEta.eta)
+  process.stdout.write(`${JSON.stringify({ nativeEtaProof: { clock: 'bundled N2K replay', nativeWallClockEta: staleEta.eta,
+    nativeReason: staleEta.etaReason, cachedSourceClockEta: replayEta.eta, seconds: replayEta.timeToGo,
+    staleMotionRejected: true, recovery: true } })}\n`)
+  skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { value: 1 })
+  assert.equal(readMotion().progress.index, 2, 'manual next-leg semantics survive continuous progress')
+  process.stdout.write(`${JSON.stringify({ nativeCourseProgress: { clock: 'bundled N2K replay', from: firstMotion.progress.pointPercent, to: nextMotion.progress.pointPercent, fixedIndex: 1, staleWallClock: null, manualNextIndex: 2 } })}\n`)
+
   const signalkInfo = query('http://signalk:3000/signalk')
 
   const result = {

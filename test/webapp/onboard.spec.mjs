@@ -44,7 +44,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     const json = (body) => route.fulfill({ json: body })
     const pathname = url.pathname
     if (pathname === '/plugins/signalk-wakelogger/tracking') {
-      if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: { uploadMode } }) }
+      if (request.method() === 'POST') { uploadMode = request.postDataJSON().uploadMode; writes.push({ path: pathname, method: 'POST', body: request.postDataJSON() }) }
       return json({
         uploadMode, paired: true, recording: true,
         trackingSessionId: control.trackingSessionId,
@@ -238,7 +238,9 @@ test('missing heading and COG show an un-oriented vessel position', async ({ pag
   await expect(page.locator('.leaflet-marker-pane .mark').filter({ hasText: '●' })).toBeVisible()
 })
 
-test('live switch changes upload mode without stopping local recording', async ({ page }) => {
+test('live switch confirms both directions without stopping local recording', async ({ page }) => {
+  const dialogs = []
+  page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.accept() })
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
   const toggle = page.getByRole('switch', { name: 'Live tracking' })
@@ -250,8 +252,12 @@ test('live switch changes upload mode without stopping local recording', async (
   await expect(page.locator('#tracking-mode')).toHaveText('Live + history')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  expect(writes.map((entry) => entry.body)).toEqual([{ uploadMode: 'automatic' }, { uploadMode: 'local_only' }])
+  expect(writes.map((entry) => entry.body)).toEqual([{ uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' }, { uploadMode: 'local_only', confirmed: true, expectedUploadMode: 'automatic' }])
   await expect(page.locator('#tracking-description')).toContainText('Recording locally')
+  expect(dialogs[0]).toContain('currently OFF. Change to ON?')
+  expect(dialogs[1]).toContain('currently ON. Change to OFF?')
+  await page.reload()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
 })
 
 test('fullscreen works on desktop and mobile with tracking controls retained', async ({ page }, testInfo) => {
@@ -279,6 +285,7 @@ test('fullscreen works on desktop and mobile with tracking controls retained', a
 })
 
 test('failed mode save reads back the actual safely paused state', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   await mockBoat(page)
   await page.route('**/plugins/signalk-wakelogger/tracking', async route => {
     if (route.request().method() === 'POST') return route.fulfill({ status: 503, json: { message: 'settings save failed' } })
@@ -895,4 +902,314 @@ test('a rejected course activation still shows live navigation and an informatio
   await page.locator('#activate-course').click()
   await expect.poll(() => writes.length).toBeGreaterThanOrEqual(1)
   expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
+})
+
+
+test('cancel in either direction and reload never change live tracking', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const { writes } = await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toBeEnabled()
+  page.once('dialog', dialog => dialog.dismiss())
+  await toggle.focus()
+  await toggle.press('Space')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  expect(writes).toHaveLength(0)
+  page.once('dialog', dialog => dialog.accept())
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await page.reload()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  page.once('dialog', dialog => dialog.dismiss())
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  expect(writes).toHaveLength(1)
+})
+
+test('stale tracking confirmation reads current state without retrying a write', async ({ page }) => {
+  await mockBoat(page)
+  let writes = 0
+  page.on('dialog', dialog => dialog.accept())
+  await page.route('**/plugins/signalk-wakelogger/tracking', async route => {
+    if (route.request().method() === 'POST') {
+      writes += 1
+      return route.fulfill({ status: 409, json: { error: 'tracking_changed' } })
+    }
+    return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await expect(toggle).toBeEnabled()
+  expect(writes).toBe(1)
+})
+
+test('TWA tiles derive wind and Race falls back to fresh water TWA', async ({ page }) => {
+  let direct = false
+  const entry = value => ({ value, timestamp: new Date().toISOString() })
+  await mockBoat(page, {
+    course: false,
+    navigationOverride: () => direct ? {} : {
+      headingTrue: entry(0), courseOverGroundTrue: entry(0),
+      speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406)
+    },
+    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6) } : {
+      speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6)
+    } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  const ground = grid.locator('.instrument').filter({ hasText: 'True wind angle (ground)' })
+  const water = grid.locator('.instrument').filter({ hasText: 'True wind angle (water)' })
+  await expect(ground).toHaveAttribute('data-available', 'true')
+  await expect(ground).toContainText('54 ° true')
+  await expect(water).toContainText('54 ° true')
+  await page.locator('#race-tab').click()
+  const strip = page.locator('#race-live-nav [data-reading=twa]')
+  await expect(strip).toHaveAttribute('data-available', 'true')
+  await expect(strip).toContainText('54 ° true')
+  direct = true
+  await expect(strip).toContainText('True wind angle (water)')
+  await expect(strip).toContainText('-30 ° true')
+  await expect(ground).toHaveAttribute('data-available', 'false')
+  await page.reload()
+  await expect(water).toContainText('-30 ° true')
+})
+
+test('Finish explains no recording, automatic closure and unavailable recorder', async ({ page }, testInfo) => {
+  const { control } = await mockBoat(page)
+  await page.goto('/')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  await expect(page.locator('#finish-trip-reason')).toHaveText('No trip is in progress.')
+  control.finishedTrip = { confirmationPending: false, uploadPending: false, manifest: { id: '00000000-0000-0000-0000-000000000075' }, cloudStatus: { state: 'ready' } }
+  await expect(page.locator('#finish-trip-reason')).toHaveText('Trip already ended. Cloud has confirmed it ready.')
+  await page.screenshot({ path: testInfo.outputPath('finish-already-ended.png'), fullPage: true })
+  await page.route('**/plugins/signalk-wakelogger/tracking', route => route.fulfill({ json: { uploadMode: 'automatic', paired: true, available: false, recording: false, trackingSessionId: 'active' } }))
+  await expect(page.locator('#finish-trip-reason')).toContainText('Recorder unavailable')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+})
+
+test('Finish is independent of upload queue and race conflict; refresh failure recovers', async ({ page }) => {
+  await mockBoat(page, { conflict: true })
+  let failing = false
+  await page.route('**/plugins/signalk-wakelogger/tracking', route => failing
+    ? route.fulfill({ status: 503, json: { error: 'unavailable' } })
+    : route.fulfill({ json: { uploadMode: 'automatic', paired: true, recording: true, available: true, connectionState: 'offline', trackingSessionId: 'active', queue: { messageCount: 0 } } }))
+  await page.goto('/')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  failing = true
+  await expect(page.locator('#finish-trip-reason')).toContainText('Recorder status unavailable')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  failing = false
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await expect(page.locator('#finish-trip-reason')).toContainText('Save and end')
+})
+
+test('Finish reports unsafe tail and timeout uncertainty, then releases busy state for retry', async ({ page }) => {
+  const { control, writes } = await mockBoat(page)
+  control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
+  let attempts = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    attempts += 1
+    if (attempts === 1) return route.fulfill({ status: 409, json: { error: 'recording_not_committed' } })
+    if (attempts === 2) return // Deliberately unresolved: client deadline must recover.
+    control.trackingSessionId = null
+    control.finishedTrip = { confirmationPending: true, uploadPending: true, manifest: { id: '00000000-0000-0000-0000-000000000075' } }
+    return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true, available: true, trackingSessionId: null, finishedTrip: control.finishedTrip } })
+  })
+  await page.goto('/')
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#notice')).toContainText('Samples have not been saved safely')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#finish-trip')).toHaveAttribute('aria-busy', 'true')
+  await page.locator('#finish-trip').evaluate(button => button.click())
+  expect(attempts).toBe(2)
+  await expect(page.locator('#notice')).toContainText('Finish request timed out', { timeout: 8000 })
+  await expect(page.locator('#finish-trip')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  await page.locator('#finish-trip').focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#finished-trip')).toContainText('saved onboard')
+  expect(attempts).toBe(3)
+  expect(writes).toEqual([])
+})
+
+test('automatic closure during manual Finish is shown as ended without a second write', async ({ page }) => {
+  const { control } = await mockBoat(page)
+  const id = '00000000-0000-0000-0000-000000000075'
+  control.trackingSessionId = id
+  let requests = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', async route => {
+    requests += 1
+    control.trackingSessionId = null
+    control.finishedTrip = { confirmationPending: false, uploadPending: false, manifest: { id }, cloudStatus: { state: 'ready' } }
+    await route.fulfill({ json: { uploadMode: 'local_only', paired: true, available: true, recording: true, trackingSessionId: null, finishedTrip: control.finishedTrip } })
+  })
+  await page.goto('/')
+  await page.locator('#finish-trip').click()
+  await expect(page.locator('#finish-trip-reason')).toContainText('Trip already ended')
+  await expect(page.locator('#finish-trip')).toBeDisabled()
+  expect(requests).toBe(1)
+})
+
+test('VMG tiles and Race strip survive water-only input, loss and recovery', async ({ page }) => {
+  let state = 'water'
+  const entry = value => ({ value, timestamp: new Date(state === 'stale' ? Date.now() - 40000 : Date.now()).toISOString() })
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await mockBoat(page, {
+    course: false,
+    navigationOverride: () => ({ speedThroughWater: entry(2) }),
+    environment: () => ({ wind: state === 'missing' ? {} : { angleTrueWater: entry(state === 'downwind' ? Math.PI : Math.PI / 3) } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const water = page.locator('#instruments-grid .instrument').filter({ hasText: 'VMG to wind (water)' })
+  await expect(water).toContainText('1.9 kn')
+  await expect(water).toHaveAttribute('data-available', 'true')
+  await page.locator('#race-tab').click()
+  const strip = page.locator('#race-live-nav [data-reading="vmg-wind-ground"]')
+  await expect(strip).toContainText('VMG to wind (water)')
+  await expect(strip).toContainText('1.9 kn')
+  state = 'missing'
+  await expect(strip).toHaveAttribute('data-available', 'false')
+  state = 'downwind'
+  await expect(strip).toContainText('-3.9 kn')
+  state = 'stale'
+  await expect(strip).toHaveAttribute('data-available', 'false')
+  state = 'water'
+  await expect(strip).toContainText('1.9 kn')
+  await page.reload()
+  await expect(water).toContainText('1.9 kn')
+  expect(errors).toEqual([])
+})
+
+
+test('course progress changes with positions without leg activation and recovers after stale GPS', async ({ page }) => {
+  let longitude = points[0].longitude, latitude = points[0].latitude
+  let timestamp = () => new Date().toISOString()
+  const { writes } = await mockBoat(page, { navigationOverride: () => ({ position: {
+    value: { latitude, longitude }, timestamp: timestamp()
+  } }) })
+  await page.goto('/')
+  await expect(page.locator('#progress-value')).toHaveText('0%')
+  latitude = (points[0].latitude + points[1].latitude) / 2
+  longitude = (points[0].longitude + points[1].longitude) / 2
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await expect(page.locator('#next-mark')).toHaveText('Eastern mark')
+  expect(writes).toEqual([])
+  timestamp = () => new Date(Date.now() - 60000).toISOString()
+  await expect(page.locator('#progress-value')).toHaveText('—', { timeout: 10000 })
+  timestamp = () => new Date().toISOString()
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await page.reload()
+  await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await page.locator('#course-tab').click()
+  await page.locator('#advance-point').click()
+  await expect(page.locator('#next-mark')).toHaveText('Race finish')
+  expect(writes.filter(write => write.method === 'PUT')).toHaveLength(1)
+})
+
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`direct ground wind overlays survive updates, controls and recovery ${viewport.width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    let heading = 330, twd = 0, timestampAge = 0, unknown = false, envFailure = false
+    const measurement = value => ({ value, timestamp: unknown ? undefined : new Date(Date.now() - timestampAge).toISOString() })
+    const environment = () => ({ wind: { speedOverGround: measurement(12 / 1.9438444924406), directionTrue: measurement(twd * Math.PI / 180) } })
+    const { writes } = await mockBoat(page, {
+      course: false,
+      navigationOverride: () => ({ position: measurement({ latitude: -27.395, longitude: 153.18 }), headingTrue: measurement(heading * Math.PI / 180) }),
+      environment
+    })
+    await page.route('**/signalk/v1/api/vessels/self/environment', route => envFailure ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: environment() }))
+    await page.goto('/signalk-wakelogger/')
+    const map = page.locator('#map'), ray = page.locator('.vessel-heading-guide'), opposite = page.locator('.opposite-tack-guide')
+    await expect(map).toHaveAttribute('data-heading-guide-bearing', '330')
+    await expect(map).toHaveAttribute('data-viewport-zoom', '13')
+    await expect.poll(() => page.locator('.vessel-icon').evaluate(icon => { const boat = icon.getBoundingClientRect(), map = document.querySelector('#map').getBoundingClientRect(); return boat.x >= map.x && boat.right <= map.right && boat.y >= map.y && boat.bottom <= map.bottom; })).toBe(true)
+    await expect(opposite).toHaveCount(1)
+    await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
+    await expect(page.locator('#guide-legend')).toContainText('Mirrored tack guide · port')
+    heading = 30
+    await expect(map).toHaveAttribute('data-current-tack', 'port')
+    await expect(map).toHaveAttribute('data-opposite-tack-bearing', '330')
+    heading = 130
+    await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
+    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '230')
+    twd = 10
+    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '250')
+    await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
+    await page.locator('.leaflet-control-zoom-in').click()
+    await expect(ray).toHaveCount(1)
+    await page.locator('#fullscreen').click()
+    await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    await page.locator('#fullscreen').click()
+    envFailure = true
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
+    await expect(ray).toHaveCount(1)
+    envFailure = false
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    timestampAge = 120000
+    await expect(ray).toHaveCount(0)
+    unknown = true; timestampAge = 0
+    await expect(map).toHaveAttribute('data-heading-guide-bearing', '')
+    unknown = false
+    await expect(ray).toHaveCount(1)
+    await page.reload()
+    await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
+    expect(writes).toEqual([])
+  })
+}
+
+// Disposable timestamped Signal K API fixtures, not a physical provider capture.
+test('leg-average ETA page suppresses stale samples, recovers, persists on reload and labels provisional plan', async ({ page }) => {
+  let mode = 'normal'
+  let native = true
+  const position = { latitude: -27.395, longitude: 153.18 }
+  const startedAt = Date.now() - 600000
+  const stamp = value => ({ value, timestamp: new Date().toISOString() })
+  const navigation = () => {
+    const calc = Object.fromEntries(Object.entries({ distance: 1852, bearingTrue: 1.1, velocityMadeGood: 100, timeToGo: 1, estimatedTimeOfArrival: 'broken' }).map(([key,value])=>[key,stamp(value)]))
+    const data = { position: stamp(mode === 'stationary' ? points[0] : position), speedOverGround: stamp(0), courseOverGroundTrue: stamp(0), ...(native ? {course:{calcValues:calc}} : {}) }
+    if (mode === 'stale') data.speedOverGround.timestamp = new Date(Date.now()-31000).toISOString()
+    return data
+  }
+  const courseState = () => ({ desired, native:{activeMatchesDesired:native,course:{activeRoute:{pointIndex:1,href:ownedHref}}}, legStart:{
+    identity: JSON.stringify([desired.courseId,desired.revision,desired.updatedAt,1,native?ownedHref:'cached',false,points]),
+    observedAt: startedAt, startedAt: mode === 'early' ? Date.now()-10000 : startedAt, position: points[0], positionTimestamp: startedAt
+  } })
+  const errors=[];page.on('pageerror', e=>errors.push(e.message))
+  const racePlan = { pack:{applicable:true,courseId:desired.courseId,revision:1}, latestSnapshot:{generatedAt:Date.now(),packRevision:1,tracking:{courseId:desired.courseId,activeIndex:1,reverse:false},plan:{legs:[{estimatedSogKnots:5}]}} }
+  const fixture = await mockBoat(page, { navigationOverride:navigation, courseState, racePlan })
+  await page.goto('/signalk-wakelogger/')
+  await page.getByRole('tab', {name:'Race',exact:true}).click()
+  await expect(page.getByText('Leg-average VMG (ground)',{exact:true})).toBeVisible()
+  await expect(page.locator('#eta')).not.toHaveText('—')
+  await expect(page.locator('#vmg')).not.toHaveText('100.0 kn')
+  // Exercise the generated module served by the actual page at the numerical boundary.
+  const boundary = await page.evaluate(async () => {
+    const { legAverageEta } = await import('./leg-eta.mjs')
+    const now = Date.now(), start = now-3600000
+    const equator = metres => ({latitude:0,longitude:metres/6371000*180/Math.PI})
+    const args = {marker:{startedAt:start,observedAt:start,position:equator(0),positionTimestamp:start},origin:equator(0),target:equator(185200),positionTime:now,now,distanceNm:1}
+    return [30,30.0001].map(speed=>legAverageEta({...args,position:equator(speed*1852)}))
+  })
+  expect(boundary[0].vmgKn).toBe(30)
+  expect(boundary[0].timeToGo).toBe(120)
+  expect(boundary[0].eta).not.toBeNull()
+  expect(boundary[1].eta).toBeNull()
+  expect(boundary[1].etaReason).toBe('Leg average outside sailing range')
+  mode='stale';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('Fresh')
+  mode='stationary';await expect(page.locator('#eta-reason')).toContainText('No positive leg progress')
+  mode='normal';await expect(page.locator('#eta')).not.toHaveText('—')
+  await page.reload();await expect(page.locator('#eta')).not.toHaveText('—')
+  native=false;await expect(page.locator('#eta')).not.toHaveText('—')
+  mode='early';await expect(page.locator('#eta-reason')).toContainText('Provisional · leg plan speed');await expect(page.locator('#vmg')).toContainText('(plan)')
+  expect(errors).toEqual([])
+  expect(fixture.writes).toEqual([])
 })
