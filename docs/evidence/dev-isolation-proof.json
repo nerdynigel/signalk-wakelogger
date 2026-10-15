@@ -1,0 +1,141 @@
+{
+  "at": "2026-10-15T22:09:52.574754+00:00",
+  "synthetic": true,
+  "purpose": "fresh precondition proof before the bounded automatic-mode receive interval",
+  "containers": {
+    "wakelogger-scope-a-api-1": {
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "8000/tcp",
+      "exposedOnly": [
+        "8000/tcp"
+      ],
+      "publishedHostPorts": []
+    },
+    "wakelogger-scope-a-broker-1": {
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "1883/tcp",
+      "exposedOnly": [
+        "1883/tcp"
+      ],
+      "publishedHostPorts": []
+    },
+    "wakelogger-scope-a-db-1": {
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "5432/tcp",
+      "exposedOnly": [
+        "5432/tcp"
+      ],
+      "publishedHostPorts": []
+    },
+    "wakelogger-scope-a-frontend-1": {
+      "networks": [
+        "wakelogger-scope-a_entry",
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "0.0.0.0:3010->3000/tcp",
+      "exposedOnly": [],
+      "publishedHostPorts": [
+        "3010"
+      ]
+    },
+    "wakelogger-scope-a-gateway-1": {
+      "networks": [
+        "wakelogger-scope-a_entry",
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "0.0.0.0:3002->3002/tcp, 0.0.0.0:8020->8020/tcp",
+      "exposedOnly": [],
+      "publishedHostPorts": [
+        "3002",
+        "8020"
+      ]
+    },
+    "wakelogger-scope-a-minio-1": {
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "9000/tcp",
+      "exposedOnly": [
+        "9000/tcp"
+      ],
+      "publishedHostPorts": []
+    },
+    "wakelogger-scope-a-signalk-1": {
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ],
+      "ports": "3000/tcp",
+      "exposedOnly": [
+        "3000/tcp"
+      ],
+      "publishedHostPorts": []
+    }
+  },
+  "publishedHostPorts": [
+    "3002",
+    "3010",
+    "8020"
+  ],
+  "plugin": {
+    "enabled": true,
+    "uploadMode": "local_only",
+    "pairingDestination": "gateway:8443 (internal compose service)"
+  },
+  "device": {
+    "deviceId": "7b0fddba-1a98-4872-b3ef-1b1df87e6ddb",
+    "mqttHost": "broker",
+    "mqttPort": 1883,
+    "tls": false,
+    "associationStatusTemplate": "gateway:8443 (internal compose service)"
+  },
+  "recordings": {
+    "cloudIds": [
+      "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+      "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+      "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+      "b7a21084-985b-437a-a3f9-b1328842d6dd",
+      "f681eef9-928d-43bf-ace5-2206aa5d41b0"
+    ],
+    "allArchivedOnDevice": true,
+    "outboxSegmentsPresent": true,
+    "syntheticDisclosure": "all five recordings are this DEV tranche\u2019s synthetic fixtures"
+  },
+  "tracking": {
+    "uploadMode": "local_only",
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "STOP_CANDIDATE",
+    "queue": {
+      "messageCount": 792,
+      "diskBytes": 695105,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1439,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 792,
+      "uploadedSamples": 60,
+      "droppedSamples": 0
+    },
+    "syntheticDisclosure": "every sequence in the queue belongs to this DEV tranche\u2019s synthetic fixtures; no real vessel data exists in this instance"
+  },
+  "conclusion": {
+    "instance": "this exact scope-a compose project on the isolated internal network",
+    "broker": "internal compose service broker:1883; no published port",
+    "ingestion": "cloud API/worker on the isolated network; gateway:8443 internal",
+    "uploadDestinations": "device credentials bind pairing/association to gateway:8443 only; no external destination configured",
+    "queuedData": "synthetic tranche fixtures only (recordings listed above)",
+    "ok": true
+  }
+}

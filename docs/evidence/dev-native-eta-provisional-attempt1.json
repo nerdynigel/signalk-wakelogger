@@ -1,0 +1,29 @@
+{
+  "at": "2026-10-15T22:10:58.278642+00:00",
+  "synthetic": true,
+  "isolationFreshness": "2026-10-15T22:09:52.574754+00:00",
+  "observations": [],
+  "trackingBefore": {
+    "uploadMode": "local_only",
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "STOP_CANDIDATE",
+    "queue": {
+      "messageCount": 792,
+      "diskBytes": 695105,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1439,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 792,
+      "uploadedSamples": 60,
+      "droppedSamples": 0
+    }
+  }
+}

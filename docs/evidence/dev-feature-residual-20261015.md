@@ -136,11 +136,58 @@ The print was fixed; receipt contents were complete and are unchanged, and the
 single-use guard prevents replay. No product, fixture-transition or service
 operation was performed by this driver beyond one plan recalculation probe.
 
+## 5. Numeric provisional plan-speed ETA after bounded isolated receive — PASS
+
+Chief's recorded conditional decision (comment 77fa4eeb) authorized one brief,
+recorded automatic-mode receive interval after a fresh isolation proof
+([dev-isolation-proof.json](dev-isolation-proof.json)): the fixture instance,
+broker, ingestion and every upload destination are isolated/local, and the
+queued data are this tranche's synthetic fixtures. The receive interval and the
+numeric provisional proof were then executed end-to-end by
+[dev-native-eta-provisional.py](dev-native-eta-provisional.py) →
+[dev-native-eta-provisional.json](dev-native-eta-provisional.json):
+
+- Receive: `mode('automatic')` started the frozen plugin's MQTT transport; the
+  staged Pack revision 3 (`THE882.synthetic.fixture.20261015`, sha256
+  `0e9a9dbd…`) was received and applied 2.1 s later (`applicable: true`, course
+  digest `2342f0a8…`) from the isolated broker.
+- Drain: natural ACK/queue advancement to the isolated receiver was recorded
+  (acknowledgedSequence 647 → 707 during the interval, 1026 by final OFF;
+  currentSequence 1440 → 1532; dropped 0; historicalUpload remainingSamples
+  792 → 413). Nothing was purged, reset, rewound or reinserted.
+- Numeric early-leg provisional: after a real course activation rebased the leg
+  marker, the served modules returned `vmgKn = 4.25` kn (first-leg
+  `estimatedSogKnots` from the received pack), `etaReason = 'Provisional · leg
+  plan speed'`, `etaProvisional = true`.
+- Transition/boundary across the 60 s minimum leg window: 53.5 s → still
+  provisional (4.25 kn); 63.5 s → numeric leg-average (`etaProvisional: false`,
+  3.19 kn) with the leg marker unmoved.
+- Stale/recovery: 33 s without fresh navigation → `eta: null`, `Fresh
+  navigation inputs unavailable`; fresh samples → numeric leg-average (2.41 kn)
+  without rebasing the leg marker.
+- Final state: persisted `local_only`/OFF, `liveTrackingEnabled: false`,
+  dropped 0, marker history retained.
+
+Progression disclosure: a fixture-preparation probe published one synthetic
+navigation value after the isolation proof, which the voyage tracker recorded
+as one new sample (currentSequence 1439 → 1440, session candidate flipped from
+STOP to START under new session `b3f7305e…`); this natural recording is
+disclosed in the receipt (`trackingBefore.progressionDisclosure`) and nothing
+was purged or rewound.
+
+Driver disclosure: the first execution failed before any state change because
+the isolated SK model prunes idle synthetic values, so the native navigation
+readback 404'd until a baseline injection ran; the guard renamed the partial
+receipt to
+[dev-native-eta-provisional-attempt1.json](dev-native-eta-provisional-attempt1.json),
+the driver was re-ordered (baseline injection before the first readback), and
+the successful run is the receipt above.
+
 ## Preserved state after this tranche
 
 - `voyage4 1e25ce14-…` complete 190/190, retained; original recordings untouched.
 - Route4/plan25 and leg marker history retained; explicit reset events are recorded in the receipts.
-- Tracking final `local_only`/OFF; new synthetic recording `5f835fd9…` preserved (local, self-stopping); queue currentSequence 1439, acknowledgedSequence 647, dropped 0.
+- Tracking final `local_only`/OFF; synthetic sessions `5f835fd9…` and `b3f7305e…` preserved (local, self-stopping); queue currentSequence 1532, acknowledgedSequence 1026, dropped 0; historical upload `bf855810…` 413/852 remaining.
 - No production mint, no sudo, no destructive op, no contract change.
 
 ## Reproduce
@@ -150,5 +197,7 @@ python3 docs/evidence/dev-native-eta-cases.py        # ~6 min, single-use receip
 python3 docs/evidence/dev-tracking-consent.py        # ~1 min, single-use receipt
 python3 docs/evidence/dev-tide-real-api.py           # ~1 min, single-use receipt
 python3 docs/evidence/dev-tide-real-api-positive.py  # ~1 min, single-use receipt
+python3 docs/evidence/dev-isolation-proof.py         # read-only precondition proof, single-use receipt
+python3 docs/evidence/dev-native-eta-provisional.py  # ~3 min, bounded automatic receive, single-use receipt
 ```
 Run-bound secrets are fetched at runtime; receipts are single-use by guard.

@@ -1,0 +1,683 @@
+{
+  "at": "2026-10-15T22:19:13.644490+00:00",
+  "synthetic": true,
+  "isolationFreshness": "2026-10-15T22:09:52.574754+00:00",
+  "observations": [
+    {
+      "case": "provisional-plan-speed-value",
+      "at": "2026-10-15T22:19:44.081223+00:00",
+      "nowMs": 1792102784024,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792102778631,
+        "startedAt": 1792102778631,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "positionTimestamp": 1792102772432
+      },
+      "ageSeconds": 5.393,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.211
+      },
+      "positionTimestamp": "2026-10-15T22:19:41.875Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T22:19:41.875Z",
+      "cogTimestamp": "2026-10-15T22:19:41.875Z",
+      "pack": {
+        "available": true,
+        "packId": "THE882.synthetic.fixture.20261015",
+        "revision": 3,
+        "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+        "ruleSetVersion": "race_plan_dynamic_v1",
+        "courseId": "race-plan-25",
+        "courseName": "THE882 synthetic ETA leg",
+        "startTime": "2026-10-15T11:47:59.765604Z",
+        "racePlanId": 25,
+        "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+        "generatedAt": "2026-10-15T14:30:25.389099Z",
+        "validFrom": "2026-10-15T13:30:25.389099Z",
+        "validUntil": "2026-10-16T02:30:25.389099Z",
+        "coverage": {
+          "from": "2026-10-15T13:30:25.389099+00:00",
+          "until": "2026-10-16T02:30:25.389099+00:00"
+        },
+        "appliedAt": 1792102759251,
+        "applicable": true,
+        "currentAt": "valid"
+      },
+      "snapshotRevision": 3,
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 5,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "direction": 90,
+        "distanceNm": 0.9472959835915737,
+        "bearingDeg": 90.00529307243198,
+        "xteM": -0.008530181566885448,
+        "vmgKn": 4.25,
+        "timeToGo": 802.4154213952154,
+        "eta": "2026-10-15T22:33:06.439Z",
+        "etaReason": "Provisional \u00b7 leg plan speed",
+        "etaProvisional": true
+      },
+      "note": "numeric early-leg ETA from the received Race Plan leg plan speed"
+    },
+    {
+      "case": "boundary-before-min-window",
+      "at": "2026-10-15T22:20:32.135231+00:00",
+      "nowMs": 1792102832095,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792102778631,
+        "startedAt": 1792102778631,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "positionTimestamp": 1792102772432
+      },
+      "ageSeconds": 53.464,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.2119237355693
+      },
+      "positionTimestamp": "2026-10-15T22:20:31.361Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T22:20:31.361Z",
+      "cogTimestamp": "2026-10-15T22:20:31.361Z",
+      "pack": {
+        "available": true,
+        "packId": "THE882.synthetic.fixture.20261015",
+        "revision": 3,
+        "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+        "ruleSetVersion": "race_plan_dynamic_v1",
+        "courseId": "race-plan-25",
+        "courseName": "THE882 synthetic ETA leg",
+        "startTime": "2026-10-15T11:47:59.765604Z",
+        "racePlanId": 25,
+        "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+        "generatedAt": "2026-10-15T14:30:25.389099Z",
+        "validFrom": "2026-10-15T13:30:25.389099Z",
+        "validUntil": "2026-10-16T02:30:25.389099Z",
+        "coverage": {
+          "from": "2026-10-15T13:30:25.389099+00:00",
+          "until": "2026-10-16T02:30:25.389099+00:00"
+        },
+        "appliedAt": 1792102759251,
+        "applicable": true,
+        "currentAt": "valid"
+      },
+      "snapshotRevision": 3,
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 10,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2119237355693
+        },
+        "direction": 90,
+        "distanceNm": 0.90124066820472,
+        "bearingDeg": 90.0050357356269,
+        "xteM": -0.015612006939940937,
+        "vmgKn": 4.25,
+        "timeToGo": 763.4038601263511,
+        "eta": "2026-10-15T22:33:15.498Z",
+        "etaReason": "Provisional \u00b7 leg plan speed",
+        "etaProvisional": true
+      },
+      "note": null
+    },
+    {
+      "case": "boundary-after-min-window",
+      "at": "2026-10-15T22:20:42.184421+00:00",
+      "nowMs": 1792102842146,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792102778631,
+        "startedAt": 1792102778631,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "positionTimestamp": 1792102772432
+      },
+      "ageSeconds": 63.515,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.2121272546168
+      },
+      "positionTimestamp": "2026-10-15T22:20:41.769Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T22:20:41.769Z",
+      "cogTimestamp": "2026-10-15T22:20:41.769Z",
+      "pack": {
+        "available": true,
+        "packId": "THE882.synthetic.fixture.20261015",
+        "revision": 3,
+        "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+        "ruleSetVersion": "race_plan_dynamic_v1",
+        "courseId": "race-plan-25",
+        "courseName": "THE882 synthetic ETA leg",
+        "startTime": "2026-10-15T11:47:59.765604Z",
+        "racePlanId": 25,
+        "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+        "generatedAt": "2026-10-15T14:30:25.389099Z",
+        "validFrom": "2026-10-15T13:30:25.389099Z",
+        "validUntil": "2026-10-16T02:30:25.389099Z",
+        "coverage": {
+          "from": "2026-10-15T13:30:25.389099+00:00",
+          "until": "2026-10-16T02:30:25.389099+00:00"
+        },
+        "appliedAt": 1792102759251,
+        "applicable": true,
+        "currentAt": "valid"
+      },
+      "snapshotRevision": 3,
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 11,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2121272546168
+        },
+        "direction": 90,
+        "distanceNm": 0.8910936800021553,
+        "bearingDeg": 90.00497903871434,
+        "xteM": -0.017069288740859587,
+        "vmgKn": 3.1855198465453642,
+        "timeToGo": 1007.0372819954979,
+        "eta": "2026-10-15T22:37:29.183Z",
+        "etaReason": null,
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "stale-after-provisional",
+      "at": "2026-10-15T22:21:29.480648+00:00",
+      "nowMs": 1792102889444,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792102778631,
+        "startedAt": 1792102778631,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "positionTimestamp": 1792102772432
+      },
+      "ageSeconds": 110.813,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21239340543886
+      },
+      "positionTimestamp": "2026-10-15T22:20:55.380Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T22:20:55.380Z",
+      "cogTimestamp": "2026-10-15T22:20:55.380Z",
+      "pack": {
+        "available": true,
+        "packId": "THE882.synthetic.fixture.20261015",
+        "revision": 3,
+        "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+        "ruleSetVersion": "race_plan_dynamic_v1",
+        "courseId": "race-plan-25",
+        "courseName": "THE882 synthetic ETA leg",
+        "startTime": "2026-10-15T11:47:59.765604Z",
+        "racePlanId": 25,
+        "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+        "generatedAt": "2026-10-15T14:30:25.389099Z",
+        "validFrom": "2026-10-15T13:30:25.389099Z",
+        "validUntil": "2026-10-16T02:30:25.389099Z",
+        "coverage": {
+          "from": "2026-10-15T13:30:25.389099+00:00",
+          "until": "2026-10-16T02:30:25.389099+00:00"
+        },
+        "appliedAt": 1792102759251,
+        "applicable": true,
+        "currentAt": "valid"
+      },
+      "snapshotRevision": 3,
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": null,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21239340543886
+        },
+        "direction": 90,
+        "distanceNm": 0.8778240166236162,
+        "bearingDeg": 90.00490489369452,
+        "xteM": -0.018918919006194034,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Fresh navigation inputs unavailable",
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "recovery-after-stale-provisional",
+      "at": "2026-10-15T22:21:38.529155+00:00",
+      "nowMs": 1792102898493,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792102778631,
+        "startedAt": 1792102778631,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.211
+        },
+        "positionTimestamp": 1792102772432
+      },
+      "ageSeconds": 119.862,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21261230281715
+      },
+      "positionTimestamp": "2026-10-15T22:21:38.324Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T22:21:38.324Z",
+      "cogTimestamp": "2026-10-15T22:21:38.324Z",
+      "pack": {
+        "available": true,
+        "packId": "THE882.synthetic.fixture.20261015",
+        "revision": 3,
+        "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+        "ruleSetVersion": "race_plan_dynamic_v1",
+        "courseId": "race-plan-25",
+        "courseName": "THE882 synthetic ETA leg",
+        "startTime": "2026-10-15T11:47:59.765604Z",
+        "racePlanId": 25,
+        "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+        "generatedAt": "2026-10-15T14:30:25.389099Z",
+        "validFrom": "2026-10-15T13:30:25.389099Z",
+        "validUntil": "2026-10-16T02:30:25.389099Z",
+        "coverage": {
+          "from": "2026-10-15T13:30:25.389099+00:00",
+          "until": "2026-10-16T02:30:25.389099+00:00"
+        },
+        "appliedAt": 1792102759251,
+        "applicable": true,
+        "currentAt": "valid"
+      },
+      "snapshotRevision": 3,
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 13,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21261230281715
+        },
+        "direction": 90,
+        "distanceNm": 0.8678359407060278,
+        "bearingDeg": 90.00484908472856,
+        "xteM": -0.020269179978006015,
+        "vmgKn": 2.414346994282459,
+        "timeToGo": 1294.0183801004175,
+        "eta": "2026-10-15T22:43:12.511Z",
+        "etaReason": null,
+        "etaProvisional": false
+      },
+      "note": null
+    }
+  ],
+  "trackingBefore": {
+    "uploadMode": "local_only",
+    "trackingSessionId": "b3f7305e-4baa-435b-b2ba-43ff15260bcc",
+    "trackingState": "START_CANDIDATE",
+    "queue": {
+      "messageCount": 793,
+      "diskBytes": 695771,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1440,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 792,
+      "uploadedSamples": 60,
+      "droppedSamples": 0
+    },
+    "progressionDisclosure": "one synthetic fixture-prep sample captured (currentSequence 1439->1440) when a preparation probe published a synthetic navigation value after the isolation proof; no purge, reset, rewind or reinsertion; acknowledgedSequence and historicalUpload unchanged"
+  },
+  "baselineMarker": {
+    "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+    "observedAt": 1792068033686,
+    "startedAt": 1792068033686,
+    "position": {
+      "latitude": -33.86,
+      "longitude": 151.21593339508965
+    },
+    "positionTimestamp": 1792068032773
+  },
+  "receive": {
+    "enabledAt": "2026-10-15T22:19:19.114659+00:00",
+    "watch": [
+      {
+        "elapsedSeconds": 0.1,
+        "packAvailable": false,
+        "revision": null,
+        "applicable": false,
+        "acknowledgedSequence": 647,
+        "remainingSamples": 792
+      },
+      {
+        "elapsedSeconds": 2.1,
+        "packAvailable": true,
+        "revision": 3,
+        "applicable": true,
+        "acknowledgedSequence": 647,
+        "remainingSamples": 792
+      }
+    ],
+    "disabledAt": "2026-10-15T22:19:34.612130+00:00"
+  },
+  "packReceived": {
+    "available": true,
+    "packId": "THE882.synthetic.fixture.20261015",
+    "revision": 3,
+    "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+    "ruleSetVersion": "race_plan_dynamic_v1",
+    "courseId": "race-plan-25",
+    "racePlanId": 25,
+    "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+    "generatedAt": "2026-10-15T14:30:25.389099Z",
+    "validFrom": "2026-10-15T13:30:25.389099Z",
+    "validUntil": "2026-10-16T02:30:25.389099Z",
+    "appliedAt": 1792102759251,
+    "applicable": true,
+    "currentAt": "valid"
+  },
+  "drainDuringReceive": {
+    "queue": {
+      "messageCount": 737,
+      "diskBytes": 697031,
+      "oldestCapturedAt": 1792067037123,
+      "acknowledgedSequence": 707,
+      "currentSequence": 1444,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 732,
+      "uploadedSamples": 120,
+      "droppedSamples": 0
+    },
+    "disclosure": "natural ACK/queue progression to the isolated receiver; never purged, rewound or reinserted"
+  },
+  "off": {
+    "uploadMode": "local_only",
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "queue": {
+      "messageCount": 421,
+      "diskBytes": 697805,
+      "oldestCapturedAt": 1792067578666,
+      "acknowledgedSequence": 1026,
+      "currentSequence": 1447,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 413,
+      "uploadedSamples": 439,
+      "droppedSamples": 0
+    },
+    "packStillApplied": true
+  },
+  "snapshot": {
+    "id": "THE882.synthetic.fixture.20261015:3:1792102774570",
+    "generatedAt": 1792102774570,
+    "source": "onboard",
+    "packId": "THE882.synthetic.fixture.20261015",
+    "packRevision": 3,
+    "packSha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7",
+    "tracking": {
+      "trackingSessionId": null,
+      "courseId": "race-plan-25",
+      "racePlanId": 25,
+      "activeIndex": 1,
+      "totalPoints": 2,
+      "reverse": false
+    },
+    "estimatedSogKnotsFirstLeg": 4.25,
+    "warning": "Fresh onboard observations not yet available",
+    "forecastCoverage": "complete"
+  },
+  "reset": {
+    "before": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792068033686,
+      "startedAt": 1792068033686,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21593339508965
+      },
+      "positionTimestamp": 1792068032773
+    },
+    "after": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792102778631,
+      "startedAt": 1792102778631,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.211
+      },
+      "positionTimestamp": 1792102772432
+    },
+    "activation": {
+      "http": 200,
+      "activation": null
+    }
+  },
+  "transition": {
+    "before": 53.464,
+    "after": 63.515,
+    "beforeProvisional": true,
+    "afterProvisional": false,
+    "beforeVmgKn": 4.25,
+    "afterVmgKn": 3.1855198465453642
+  },
+  "trackingAfter": {
+    "uploadMode": "local_only",
+    "persistedUploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "queue": {
+      "messageCount": 506,
+      "diskBytes": 720609,
+      "oldestCapturedAt": 1792067578666,
+      "acknowledgedSequence": 1026,
+      "currentSequence": 1532,
+      "droppedCount": 0
+    },
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 413,
+      "uploadedSamples": 439,
+      "droppedSamples": 0
+    }
+  },
+  "completedAt": "2026-10-15T22:21:43.862796+00:00"
+}
