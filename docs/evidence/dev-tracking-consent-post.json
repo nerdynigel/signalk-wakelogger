@@ -1,0 +1,15 @@
+{
+  "at": 1792068623408,
+  "uploadMode": "local_only",
+  "liveTrackingEnabled": false,
+  "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+  "trackingState": "STOP_CANDIDATE",
+  "queue": {
+    "messageCount": 792,
+    "diskBytes": 695105,
+    "oldestCapturedAt": 1792066785242,
+    "acknowledgedSequence": 647,
+    "currentSequence": 1439,
+    "droppedCount": 0
+  }
+}

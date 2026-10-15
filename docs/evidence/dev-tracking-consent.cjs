@@ -1,0 +1,21 @@
+const fs=require('fs');const {chromium,expect}=require('@playwright/test');
+(async()=>{const input=JSON.parse(fs.readFileSync(0,'utf8'));const browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']});const R={at:new Date().toISOString(),synthetic:true,steps:[],requests:[],dialogs:[],errors:[]};
+try{const page=await browser.newPage({viewport:{width:1365,height:900}});
+page.on('pageerror',e=>R.errors.push(e.message));
+let dialogAction='dismiss';
+page.on('dialog',async dialog=>{R.dialogs.push({step:R.steps.length,type:dialog.type(),message:dialog.message().split('\n')[0],action:dialogAction});if(dialogAction==='accept')await dialog.accept();else await dialog.dismiss()});
+page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname==='/plugins/signalk-wakelogger/tracking')R.requests.push({step:R.steps.length,at:new Date().toISOString(),body:r.postData()?.slice(0,300)})});
+await page.addInitScript(token=>sessionStorage.setItem('wakelogger-onboard-token',token),input.token);
+await page.goto(input.base+'/signalk-wakelogger/');
+await expect(page.locator('#live-tracking')).toBeEnabled({timeout:30000});
+const state=async()=>({checked:await page.locator('#live-tracking').getAttribute('aria-checked'),mode:await page.locator('#tracking-mode').innerText(),description:await page.locator('#tracking-description').innerText(),cloud:await page.locator('#cloud-state').innerText(),queue:await page.locator('#upload-queue').innerText()});
+let s=await state();expect(s.checked).toBe('false');expect(s.mode).toBe('Record locally');R.steps.push({name:'baseline-off',...s,requests:R.requests.length});
+dialogAction='dismiss';await page.locator('#live-tracking').click();await page.waitForTimeout(800);s=await state();expect(s.checked).toBe('false');expect(s.mode).toBe('Record locally');expect(R.requests.length).toBe(0);R.steps.push({name:'cancel-enable-direction',...s,requests:R.requests.length});
+dialogAction='accept';await page.locator('#live-tracking').click();await expect(page.locator('#live-tracking')).toHaveAttribute('aria-checked','true',{timeout:20000});s=await state();expect(['Live + history','Waiting for internet']).toContain(s.mode);expect(R.requests.length).toBe(1);R.steps.push({name:'confirmed-enable',...s,requests:R.requests.length});
+dialogAction='dismiss';await page.locator('#live-tracking').click();await page.waitForTimeout(800);s=await state();expect(s.checked).toBe('true');expect(s.mode).not.toBe('Record locally');expect(R.requests.length).toBe(1);R.steps.push({name:'cancel-disable-direction',...s,requests:R.requests.length});
+dialogAction='accept';await page.locator('#live-tracking').click();await expect(page.locator('#live-tracking')).toHaveAttribute('aria-checked','false',{timeout:20000});s=await state();expect(s.mode).toBe('Record locally');expect(s.cloud).toBe('Recording locally');expect(R.requests.length).toBe(2);R.steps.push({name:'confirmed-disable',...s,requests:R.requests.length});
+await page.reload();await expect(page.locator('#live-tracking')).toBeEnabled({timeout:30000});s=await state();expect(s.checked).toBe('false');expect(s.mode).toBe('Record locally');R.steps.push({name:'reload-off-persisted',...s,requests:R.requests.length});
+expect(R.errors).toEqual([]);R.ok=true;
+fs.writeFileSync('docs/evidence/dev-tracking-consent.json',JSON.stringify(R,null,2)+'\n');
+console.log('PASS native consent modal both directions on real page + isolated endpoints; confirmed OFF persisted across reload');}
+finally{await browser.close()}})().catch(error=>{console.error(String(error.message).replace(/Bearer\s+[^\s]+/gi,'Bearer [redacted]').slice(0,400));process.exitCode=1});

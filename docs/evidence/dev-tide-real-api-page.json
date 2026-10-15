@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-15T12:52:06.742Z",
+  "synthetic": true,
+  "url": "http://10.0.0.147:3010/vessels/manage?vessel=4&tab=trips",
+  "pageErrors": [],
+  "consoleErrors": [],
+  "tideCards": 0,
+  "missingText": 4,
+  "voyageCards": 1,
+  "ok": true
+}

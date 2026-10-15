@@ -1,0 +1,100 @@
+{
+  "at": "2026-10-15T12:50:20.896Z",
+  "synthetic": true,
+  "steps": [
+    {
+      "name": "baseline-off",
+      "checked": "false",
+      "mode": "Record locally",
+      "description": "Recording locally · cloud uploads paused",
+      "cloud": "Recording locally",
+      "queue": "852 samples saved onboard",
+      "requests": 0
+    },
+    {
+      "name": "cancel-enable-direction",
+      "checked": "false",
+      "mode": "Record locally",
+      "description": "Recording locally · cloud uploads paused",
+      "cloud": "Recording locally",
+      "queue": "852 samples saved onboard",
+      "requests": 0
+    },
+    {
+      "name": "confirmed-enable",
+      "checked": "true",
+      "mode": "Waiting for internet",
+      "description": "Recording locally · uploads resume when connected",
+      "cloud": "Cloud offline",
+      "queue": "852 samples waiting to upload",
+      "requests": 1
+    },
+    {
+      "name": "cancel-disable-direction",
+      "checked": "true",
+      "mode": "Live + history",
+      "description": "Sending live data and saved history",
+      "cloud": "Live connected",
+      "queue": "852 samples waiting to upload",
+      "requests": 1
+    },
+    {
+      "name": "confirmed-disable",
+      "checked": "false",
+      "mode": "Record locally",
+      "description": "Recording locally · cloud uploads paused",
+      "cloud": "Recording locally",
+      "queue": "792 samples saved onboard",
+      "requests": 2
+    },
+    {
+      "name": "reload-off-persisted",
+      "checked": "false",
+      "mode": "Record locally",
+      "description": "Recording locally · cloud uploads paused",
+      "cloud": "Recording locally",
+      "queue": "792 samples saved onboard",
+      "requests": 2
+    }
+  ],
+  "requests": [
+    {
+      "step": 2,
+      "at": "2026-10-15T12:50:21.900Z",
+      "body": "{\"uploadMode\":\"automatic\",\"confirmed\":true,\"expectedUploadMode\":\"local_only\"}"
+    },
+    {
+      "step": 4,
+      "at": "2026-10-15T12:50:22.865Z",
+      "body": "{\"uploadMode\":\"local_only\",\"confirmed\":true,\"expectedUploadMode\":\"automatic\"}"
+    }
+  ],
+  "dialogs": [
+    {
+      "step": 1,
+      "type": "confirm",
+      "message": "Live tracking is currently OFF. Change to ON?",
+      "action": "dismiss"
+    },
+    {
+      "step": 2,
+      "type": "confirm",
+      "message": "Live tracking is currently OFF. Change to ON?",
+      "action": "accept"
+    },
+    {
+      "step": 3,
+      "type": "confirm",
+      "message": "Live tracking is currently ON. Change to OFF?",
+      "action": "dismiss"
+    },
+    {
+      "step": 4,
+      "type": "confirm",
+      "message": "Live tracking is currently ON. Change to OFF?",
+      "action": "accept"
+    }
+  ],
+  "errors": [],
+  "ok": true
+}

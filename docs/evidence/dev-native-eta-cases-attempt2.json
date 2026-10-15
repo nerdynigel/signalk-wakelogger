@@ -1,0 +1,592 @@
+{
+  "at": "2026-10-15T12:23:22.050317+00:00",
+  "synthetic": true,
+  "observations": [
+    {
+      "case": "continuous-average-early",
+      "at": "2026-10-15T12:23:35.502057+00:00",
+      "nowMs": 1792067015476,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1789.714,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21020715117604
+      },
+      "positionTimestamp": "2026-10-15T12:23:34.705Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:23:34.705Z",
+      "cogTimestamp": "2026-10-15T12:23:34.705Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 1,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21020715117604
+        },
+        "direction": 90,
+        "distanceNm": 0.9868255890806669,
+        "bearingDeg": 90.00551394644344,
+        "xteM": -0.0018407737674078343,
+        "vmgKn": 0.009913670512698243,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "ETA outside live horizon",
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "continuous-average-mid",
+      "at": "2026-10-15T12:24:28.540850+00:00",
+      "nowMs": 1792067068513,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1842.751,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21094295466006
+      },
+      "positionTimestamp": "2026-10-15T12:24:28.343Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:24:28.343Z",
+      "cogTimestamp": "2026-10-15T12:24:28.343Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 5,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21094295466006
+        },
+        "direction": 90,
+        "distanceNm": 0.9506879722506532,
+        "bearingDeg": 90.00531202535905,
+        "xteM": -0.007978310261892375,
+        "vmgKn": 0.08129708253779691,
+        "timeToGo": 42098.395087070465,
+        "eta": "2026-10-16T00:06:06.908Z",
+        "etaReason": null,
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "continuous-average-late",
+      "at": "2026-10-15T12:24:38.580806+00:00",
+      "nowMs": 1792067078556,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1852.794,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21107477045626
+      },
+      "positionTimestamp": "2026-10-15T12:24:37.952Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:24:37.952Z",
+      "cogTimestamp": "2026-10-15T12:24:37.952Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 5,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21107477045626
+        },
+        "direction": 90,
+        "distanceNm": 0.9435681018704107,
+        "bearingDeg": 90.00527224266835,
+        "xteM": -0.00913190858378583,
+        "vmgKn": 0.09362594487347022,
+        "timeToGo": 36281.02414692967,
+        "eta": "2026-10-15T22:29:19.580Z",
+        "etaReason": null,
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "out-of-sync-inputs",
+      "at": "2026-10-15T12:24:55.840012+00:00",
+      "nowMs": 1792067095817,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1870.055,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.2112758886216
+      },
+      "positionTimestamp": "2026-10-15T12:24:55.652Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:24:41.954Z",
+      "cogTimestamp": "2026-10-15T12:24:41.954Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 6,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2112758886216
+        },
+        "direction": 90,
+        "distanceNm": 0.9339733214934467,
+        "bearingDeg": 90.00521863126443,
+        "xteM": -0.010657539622105932,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Navigation inputs out of sync",
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "stale-inputs",
+      "at": "2026-10-15T12:25:34.191866+00:00",
+      "nowMs": 1792067134168,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1908.406,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21129322739034
+      },
+      "positionTimestamp": "2026-10-15T12:24:57.253Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:24:41.954Z",
+      "cogTimestamp": "2026-10-15T12:24:41.954Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": null,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21129322739034
+        },
+        "direction": 90,
+        "distanceNm": 0.932676345256186,
+        "bearingDeg": 90.00521138433521,
+        "xteM": -0.010861215911728589,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Fresh navigation inputs unavailable",
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "recovery-after-stale",
+      "at": "2026-10-15T12:25:56.226825+00:00",
+      "nowMs": 1792067156202,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792065225762,
+        "startedAt": 1792065225762,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21010829961733
+        },
+        "positionTimestamp": 1792065225183
+      },
+      "ageSeconds": 1930.44,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21151638516957
+      },
+      "positionTimestamp": "2026-10-15T12:25:55.846Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:25:55.846Z",
+      "cogTimestamp": "2026-10-15T12:25:55.846Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 8,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21151638516957
+        },
+        "direction": 90,
+        "distanceNm": 0.9219501833936464,
+        "bearingDeg": 90.00515145126246,
+        "xteM": -0.012522352160457955,
+        "vmgKn": 0.1309204017063255,
+        "timeToGo": 25351.439630182304,
+        "eta": "2026-10-15T19:28:27.641Z",
+        "etaReason": null,
+        "etaProvisional": false
+      },
+      "note": null
+    },
+    {
+      "case": "reset-provisional-suppression",
+      "at": "2026-10-15T12:26:04.605474+00:00",
+      "nowMs": 1792067164577,
+      "marker": {
+        "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+        "observedAt": 1792067161558,
+        "startedAt": 1792067161558,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2115645584438
+        },
+        "positionTimestamp": 1792067160650
+      },
+      "ageSeconds": 3.019,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.2115645584438
+      },
+      "positionTimestamp": "2026-10-15T12:26:00.650Z",
+      "sog": 0,
+      "sogTimestamp": "2026-10-15T12:26:00.650Z",
+      "cogTimestamp": "2026-10-15T12:26:00.650Z",
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 8,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2115645584438
+        },
+        "direction": 90,
+        "distanceNm": 0.9191484075466436,
+        "bearingDeg": 90.00513579618462,
+        "xteM": -0.012949410789827035,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Leg samples unavailable",
+        "etaProvisional": false
+      },
+      "note": null
+    }
+  ],
+  "trackingBefore": {
+    "uploadMode": "local_only",
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "START_CANDIDATE"
+  },
+  "syntheticRecordingStartedByInjection": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+  "restartBoundary": {
+    "preRestartMarker": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792065225762,
+      "startedAt": 1792065225762,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21010829961733
+      },
+      "positionTimestamp": 1792065225183
+    },
+    "currentMarker": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792065225762,
+      "startedAt": 1792065225762,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21010829961733
+      },
+      "positionTimestamp": 1792065225183
+    },
+    "preservedAcrossIsolatedSignalKRestarts": true
+  },
+  "preflight": {
+    "source": "THE882.synthetic.eta",
+    "position": {
+      "latitude": -33.86,
+      "longitude": 151.2101343158929
+    },
+    "timestamp": "2026-10-15T12:23:25.324Z"
+  },
+  "continuous": {
+    "observations": [
+      "continuous-average-early",
+      "continuous-average-mid",
+      "continuous-average-late"
+    ],
+    "gapSeconds": [
+      1789.714,
+      1842.751,
+      1852.794
+    ]
+  },
+  "reset": {
+    "before": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792065225762,
+      "startedAt": 1792065225762,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21010829961733
+      },
+      "positionTimestamp": 1792065225183
+    },
+    "after": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792067161558,
+      "startedAt": 1792067161558,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.2115645584438
+      },
+      "positionTimestamp": 1792067160650
+    },
+    "activation": {
+      "http": 200,
+      "activation": null
+    }
+  }
+}
