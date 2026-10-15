@@ -1,0 +1,132 @@
+{
+  "at": "2026-10-15T14:39:33.625196+00:00",
+  "synthetic": true,
+  "endpoints": {
+    "voyage4": {
+      "tide": {
+        "tide_state": "rising",
+        "tide_height_m": 1.1,
+        "tide_start_height_m": 1.1,
+        "tide_end_height_m": 1.2,
+        "tide_min_m": 1.1,
+        "tide_max_m": 1.8
+      },
+      "tide_events": [
+        {
+          "kind": "low",
+          "observed_at": "2026-10-15T09:04:15.018000Z",
+          "height_m": 0.2,
+          "source": "THE882.synthetic.fixture.20261015",
+          "confidence": null
+        },
+        {
+          "kind": "high",
+          "observed_at": "2026-10-15T12:05:55.585500Z",
+          "height_m": 1.8,
+          "source": "THE882.synthetic.fixture.20261015",
+          "confidence": null
+        },
+        {
+          "kind": "low",
+          "observed_at": "2026-10-15T15:07:36.153000Z",
+          "height_m": 0.2,
+          "source": "THE882.synthetic.fixture.20261015",
+          "confidence": null
+        }
+      ]
+    },
+    "voyage4_summary": {
+      "found": true,
+      "tide_events": 3,
+      "has_tide_fields": true
+    },
+    "recalculate": {
+      "http": 200,
+      "tide_source_type": "model",
+      "source": "worldtides",
+      "tide_events": 4,
+      "atlas": "THE882 synthetic"
+    }
+  },
+  "expected": {
+    "voyageCard": "workspace-trip-card-4",
+    "heights": [
+      "0.20 m",
+      "1.10 m",
+      "1.20 m",
+      "1.80 m"
+    ],
+    "diff": "+0.10 m",
+    "eventKinds": [
+      "High Tide",
+      "Low Tide"
+    ]
+  },
+  "page": {
+    "at": "2026-10-15T14:39:34.427Z",
+    "synthetic": true,
+    "url": "http://dev-web:3010/vessels/manage?vessel=4&tab=trips",
+    "expected": {
+      "voyageCard": "workspace-trip-card-4",
+      "heights": [
+        "0.20 m",
+        "1.10 m",
+        "1.20 m",
+        "1.80 m"
+      ],
+      "diff": "+0.10 m",
+      "eventKinds": [
+        "High Tide",
+        "Low Tide"
+      ]
+    },
+    "viewports": [
+      {
+        "viewport": "1365x900",
+        "pageErrors": [],
+        "consoleErrors": [],
+        "writes": [],
+        "failed": [],
+        "tideText": "tide trip diff +0.10 m low tide 8:04 pm 0.20 m high tide 11:05 pm 1.80 m low tide 2:07 am 0.20 m 11:04 pm 1.10 m 11:07 pm 1.20 m",
+        "tideSource": "voyage",
+        "markerEdges": 2,
+        "markerTestids": [
+          "trip-tide-marker-edge",
+          "trip-tide-marker-during-high-1792065955585-0",
+          "trip-tide-marker-edge"
+        ],
+        "svgPaths": 1,
+        "provenance": 0
+      },
+      {
+        "viewport": "390x844",
+        "pageErrors": [],
+        "consoleErrors": [],
+        "writes": [],
+        "failed": [],
+        "tideText": "tide trip diff +0.10 m low tide 8:04 pm 0.20 m high tide 11:05 pm 1.80 m low tide 2:07 am 0.20 m 11:04 pm 1.10 m 11:07 pm 1.20 m",
+        "tideSource": "voyage",
+        "markerEdges": 2,
+        "markerTestids": [
+          "trip-tide-marker-edge",
+          "trip-tide-marker-during-high-1792065955585-0",
+          "trip-tide-marker-edge"
+        ],
+        "svgPaths": 1,
+        "provenance": 0
+      }
+    ],
+    "ok": true
+  },
+  "preserved": {
+    "statusAfter": {
+      "uploadMode": "local_only",
+      "persistedUploadMode": "local_only",
+      "liveTrackingEnabled": false,
+      "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec"
+    },
+    "queueEqual": true,
+    "recordingsEqual": true,
+    "voyage4TideEqual": true
+  }
+}

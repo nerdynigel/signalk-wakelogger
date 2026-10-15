@@ -85,10 +85,56 @@ already proven with routed samples in `dev-feature-proof-20261015.md`
 requires either a working provider stub or a received Race Pack; broker
 publication is Reliability-owned through Chief.
 
+Follow-up (same day): Reliability then applied a narrowly synthetic voyage4
+environment fixture on the isolated API ([preparation](dev-fixture-reliability-20261015.md));
+the positive served-website proof against that real API fixture is section 4.
+
 Related named gap (unchanged): the numeric provisional-plan fallback
 (`plan speed` branch) needs a received Race Pack (MQTT); in this fixture
 `pack.available=false`, so the suppression path is proven but not the numeric
 provisional value. Local analytic proof exists in the prior evidence.
+
+## 4. Positive real-API tide fixture rendering — PASS (desktop + mobile)
+
+`docs/evidence/dev-tide-real-api-positive.py` →
+`dev-tide-real-api-positive.json`, `dev-tide-real-api-positive-page.json`,
+screenshots `dev-tide-real-api-positive-1365.png` / `-390.png`. This renders the
+real served website (web `3010`) against the real isolated API, **no mocks**,
+while the [Reliability fixture](dev-fixture-reliability-20261015.md) is applied
+(ids 2/2; synthetic, not provider-accuracy evidence).
+
+- Real API values at render time: voyage4 `tide_state=rising`,
+  start `1.1` / end `1.2` / min `1.1` / max `1.8` m, 3 tide events
+  (low `0.2` 09:04:15Z, high `1.8` 12:05:55Z, low `0.2` 15:07:36Z);
+  `POST /v1/race-plan/25/recalculate` → 200, `source_type=model`,
+  `source=worldtides`, 4 numeric events, atlas `THE882 synthetic`.
+- Served page (`/vessels/manage?vessel=4&tab=trips`), asserted at **1365×900**
+  and **390×844**: `trip-tide-card` visible with `data-tide-source=voyage`,
+  SVG area path + polyline visible, two `trip-tide-marker-edge` markers plus a
+  `trip-tide-marker-during-high-…` marker, card text carries the real API values
+  (high `1.80 m`, lows `0.20 m`, start `1.10 m`, end `1.20 m`,
+  trip diff `+0.10 m`) — values, not fixed strings, are computed from the real
+  API response and asserted in-page. No `trip-tide-provenance` for voyage
+  source (by design; provenance text renders for race-plan fallback, proven by
+  routed samples). Zero page errors, zero console errors, zero non-GET
+  requests. Tracking stayed `local_only`/OFF; queue, recordings and voyage4
+  tide fields unchanged before/after.
+
+Missing → recovered transition: the missing-state served-page receipt
+`dev-tide-real-api-page.json` (committed in `dad63ec`, captured while the real
+API tide source was `unavailable`) shows **0** tide cards and the explicit
+`No tide summary available.`; after Reliability's recorded rollback → reapply
+([rollback](dev-fixture-rollback.json), [setup](dev-fixture-setup.json)) the
+same served route renders the numeric card above. This is the real-API
+fallback (explicit degradation, no errors) and recovery (numeric rendering
+resumes) pair; the fixture transitions themselves were executed and receipted
+by Reliability, the page evidence on both sides by Software.
+
+Driver disclosure: the first execution of this driver wrote both receipts and
+then failed in a post-write print (`len()` applied to an already-counted int).
+The print was fixed; receipt contents were complete and are unchanged, and the
+single-use guard prevents replay. No product, fixture-transition or service
+operation was performed by this driver beyond one plan recalculation probe.
 
 ## Preserved state after this tranche
 
@@ -103,5 +149,6 @@ provisional value. Local analytic proof exists in the prior evidence.
 python3 docs/evidence/dev-native-eta-cases.py        # ~6 min, single-use receipt
 python3 docs/evidence/dev-tracking-consent.py        # ~1 min, single-use receipt
 python3 docs/evidence/dev-tide-real-api.py           # ~1 min, single-use receipt
+python3 docs/evidence/dev-tide-real-api-positive.py  # ~1 min, single-use receipt
 ```
 Run-bound secrets are fetched at runtime; receipts are single-use by guard.
