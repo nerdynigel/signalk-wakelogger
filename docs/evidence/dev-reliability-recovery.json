@@ -1,0 +1,1404 @@
+{
+  "startedAt": "2026-10-15T12:02:49.122337+00:00",
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "wakelogger-scope-a-signalk-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 26.85
+    },
+    {
+      "name": "wakelogger-scope-a-signalk-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 28.26
+    },
+    {
+      "name": "wakelogger-scope-a-signalk-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 26.88
+    },
+    {
+      "name": "wakelogger-scope-a-signalk-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 27.09
+    },
+    {
+      "name": "wakelogger-scope-a-api-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 37.94
+    },
+    {
+      "name": "wakelogger-scope-a-signalk-1",
+      "restartExit": 0,
+      "sameId": true,
+      "recoverySeconds": 28.08
+    }
+  ],
+  "before": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065768799,
+    "at": 1792065769127
+  },
+  "originalRecordings": [
+    {
+      "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+      "voyage_id": 3,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:48:00.901000Z",
+      "ended_at": "2026-10-15T11:55:03.258000Z",
+      "expected_samples": 131,
+      "received_samples": 131,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:56:08.784385Z"
+    },
+    {
+      "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+      "voyage_id": 2,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:43:42.066000Z",
+      "ended_at": "2026-10-15T11:45:56.195000Z",
+      "expected_samples": 133,
+      "received_samples": 133,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:46:55.935320Z"
+    },
+    {
+      "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+      "voyage_id": 1,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:25:21.952000Z",
+      "ended_at": "2026-10-15T11:27:36.102000Z",
+      "expected_samples": 133,
+      "received_samples": 133,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:31:10.180925Z"
+    }
+  ],
+  "course": {
+    "desired": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "cachedCourse": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "legStart": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792065225762,
+      "startedAt": 1792065225762,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21010829961733
+      },
+      "positionTimestamp": 1792065225183
+    },
+    "acknowledgement": {
+      "v": 1,
+      "revision": 1,
+      "status": "applied",
+      "activation": "active",
+      "mapReadiness": "unknown"
+    },
+    "routePoints": [
+      {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      }
+    ],
+    "native": {
+      "available": true,
+      "course": {
+        "startTime": "2026-10-15T11:53:43.785Z",
+        "targetArrivalTime": null,
+        "arrivalCircle": 0,
+        "activeRoute": {
+          "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "name": "THE882 synthetic ETA proof",
+          "reverse": false,
+          "pointIndex": 1,
+          "pointTotal": 2
+        },
+        "nextPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "name": "Synthetic finish"
+        },
+        "previousPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "name": "Synthetic start"
+        }
+      },
+      "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+      "activeMatchesDesired": true,
+      "conflict": false,
+      "blocker": null
+    },
+    "uploadMode": "local_only",
+    "connectionState": "recording_locally",
+    "offlineReadiness": {
+      "ready": false,
+      "label": "Offline race not ready",
+      "checks": {
+        "courseApplied": true,
+        "nativeActive": true,
+        "nativeAvailable": true,
+        "racePackReady": false,
+        "racePackMatches": false,
+        "forecastValidNow": false,
+        "forecastCoversRace": false,
+        "ruleSetSupported": false
+      },
+      "missing": [
+        "no Race Pack has been prepared for this course"
+      ],
+      "uncertainty": [],
+      "forecastCoverage": "unknown",
+      "coverageQualification": null,
+      "packStoredNotApplicable": false,
+      "courseId": "race-plan-25",
+      "courseRevision": 1,
+      "packRevision": null,
+      "detail": "Missing: no Race Pack has been prepared for this course.",
+      "evaluatedAt": 1792065769250,
+      "navigation": {
+        "ready": true,
+        "label": "Live navigation ready",
+        "source": "native",
+        "missing": [],
+        "detail": "The Wake Logger course is active and live navigation is computing from it."
+      }
+    }
+  },
+  "beforeHost": {
+    "services": {
+      "signalk": {
+        "id": "20548eb84da4f49f861818db069eac3627bea8ee19ea3ed58ff396c46c36011d",
+        "image": "sha256:b5e6e271137e8885fc0cc5c6d824c0064734d0e3b400cc498e5c4d843dd6e169",
+        "startedAt": "2026-10-15T11:23:59.765368493Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {}
+      },
+      "api": {
+        "id": "69eb3fd321fc6bde5ba9f390c1ec236d4fbd683522e7087f2d19328d81e1cfc7",
+        "image": "sha256:7e506c8cbdd49e6ebbce516dc09b45a9b93781fd61fd9e11d93dcddff4b8037d",
+        "startedAt": "2026-10-15T11:29:01.791254962Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {}
+      },
+      "db": {
+        "id": "36dd04a0bea2d804e0599ade23652f90b74945afd3d828942de8e43c85043d3c",
+        "image": "sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5",
+        "startedAt": "2026-10-14T21:16:04.854195465Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {}
+      },
+      "minio": {
+        "id": "0c6267367694a728e3262d2eea04487dce2ae8402af8d583abf96b80130bdf04",
+        "image": "sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2",
+        "startedAt": "2026-10-14T21:16:04.865803896Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {}
+      },
+      "broker": {
+        "id": "f4a505b2ab44f83fd53bd9b15caf401327fb0233b2dfa276a0800e5d6022b6ed",
+        "image": "sha256:49bef06da8e75507cd5343e514400b229818d0b175fa986c06444a6b0a508281",
+        "startedAt": "2026-10-15T11:22:07.104220869Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {}
+      },
+      "frontend": {
+        "id": "c3b3e3f85a59842fcbbf6ba1bc80a5422f199687bc4bf92c06871b6c66a1389a",
+        "image": "sha256:ae95cc8c9a663cc696ce59a2f3add7a4bbab0134b7333e0d37f586f11c929763",
+        "startedAt": "2026-10-14T21:20:56.721626702Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_entry",
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {
+          "3000/tcp": [
+            {
+              "HostIp": "0.0.0.0",
+              "HostPort": "3010"
+            }
+          ]
+        }
+      },
+      "gateway": {
+        "id": "89999b6fd843ee47f060160107cafaec698a080cd1189cb6a4785d0db157a87f",
+        "image": "sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293",
+        "startedAt": "2026-10-15T11:22:32.871567598Z",
+        "running": true,
+        "networks": [
+          "wakelogger-scope-a_entry",
+          "wakelogger-scope-a_isolated"
+        ],
+        "ports": {
+          "3002/tcp": [
+            {
+              "HostIp": "0.0.0.0",
+              "HostPort": "3002"
+            }
+          ],
+          "8020/tcp": [
+            {
+              "HostIp": "0.0.0.0",
+              "HostPort": "8020"
+            }
+          ]
+        }
+      }
+    },
+    "hashes": {
+      "courses/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/state.json": "708f6596787b3550c680ce79faeb2caf7e9b74acdaeb8da14ec44fcb5ef61a02",
+      "recordings/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/state.json": "bb7f84b5658666e1d79b6faaf85dccb6599945e15c434cdfbe8b8e57ce485f8c",
+      "track-archive/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/72872737d61ef66d-b7a21084-985b-437a-a3f9-b1328842d6dd.wlt": "0d7da7c01d7026bcb38f2ef20c2383b2053098d9a2fb0e428ee432224b969d87",
+      "track-archive/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/4a0a05acb84e3d56-b472b1af-6aeb-4861-8f6e-5c87d557cec8.wlt": "29d7250580822641a6b2d1680a375cdb830c91f54d343bb73e5e83ee22fb44ee",
+      "track-archive/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/581523097ef8340a-f681eef9-928d-43bf-ace5-2206aa5d41b0.wlt": "e3fc536ece8b5120d201f4f66eb30c80004ddcbd31b315678e3de8919348f8f4",
+      "track-archive/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/manifest.json": "5dfe3f0dc6d413f545f217e7fa18a66f4bd07fe0739f346293a74070672c7261",
+      "track-archive/scopea-disposable-device/manifest.json": "454c031102ddf7b429766ffeece4b6e678f42c24f584031bae1fe987f63090cd",
+      "outbox/scopea-disposable-device.backend.json": "d22bd4f8e668354d7b891976e98eb7fb922d8cea9169fb3982f57a4dd872e5ab",
+      "outbox/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb.backend.json": "d22bd4f8e668354d7b891976e98eb7fb922d8cea9169fb3982f57a4dd872e5ab",
+      "outbox/scopea-disposable-device/metadata.json": "aaced25462cd3c7090928fba84666e9cd235fed9bdff14ce56b3f331fecf7758",
+      "outbox/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/metadata.json": "d22d17e12242f3bfaecb7034a0bbef084e4e82e85d481dae4c762a708ee6c358",
+      "outbox/7b0fddba-1a98-4872-b3ef-1b1df87e6ddb/segment-000000000001.log": "2b853317509c6576a379f8d047f27595d88af01e34354af0954cf79d4173b63b"
+    },
+    "disk": "Filesystem                    Size  Used Avail Use% Mounted on\nrpool/data/subvol-147-disk-0  153G  102G   52G  67% /\n",
+    "privateBackupRelativeToStateRoot": "the882-recovery-before-20261015"
+  },
+  "servedHashes": {
+    "app.mjs": "03c00d40b3e2faae762c341a98cb75ecc42ba91843aa5b0565d21e3bd5d26c77",
+    "leg-eta.mjs": "f4d225c42bfb83a30017bc5bb5dd1c73741aa9e2c28feadcd217c172484e8fe4",
+    "course-progress.mjs": "c3beb6cf8f6d9ffa18dfdc92d4c50528aaeb5aca4532e536a92c544d74c9245e",
+    "instruments.mjs": "d22e86d39b9db1a015e959ae51cf99e1fe2b73dc6cd5af486cc32bbb761b0ad4",
+    "tracking-controls.mjs": "be41b19a59d64f2a8ce94708a0458332ccb46abd8df50b98e63df4d40af9cc08"
+  },
+  "offRestart": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065796492,
+    "at": 1792065796694
+  },
+  "unreadableChoice": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": "No readable confirmed tracking choice; live tracking remains off. Confirm a choice in the onboard app.",
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065825065,
+    "at": 1792065825429
+  },
+  "choiceRecovered": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065825991,
+    "at": 1792065825997
+  },
+  "failedSave": {
+    "http": 503,
+    "status": {
+      "error": "tracking_persistence_failed",
+      "uploadMode": "local_only",
+      "liveTrackingEnabled": false,
+      "persistedUploadMode": "local_only",
+      "persistenceError": "EISDIR: illegal operation on a directory, rename '/home/node/.signalk/plugin-config-data/signalk-wakelogger/tracking-choice.json.3faf0bf8-f73a-475d-b991-79cc106f6b4e.tmp' -> '/home/node/.signalk/plugin-config-data/signalk-wakelogger/tracking-choice.json'",
+      "paired": true,
+      "recording": true,
+      "trackingSessionId": null,
+      "trackingState": "STOPPED",
+      "finishedTrip": {
+        "manifest": {
+          "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+          "startedAt": 1792064880901,
+          "firstSequence": 267,
+          "state": "complete",
+          "lastSequence": 397,
+          "endedAt": 1792065303258
+        },
+        "uploadPending": false,
+        "confirmationPending": false,
+        "cloudStatus": {
+          "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+          "lastSequence": 397,
+          "state": "ready",
+          "voyageId": 3,
+          "expectedSamples": 131,
+          "receivedSamples": 131,
+          "rejectedSamples": 0,
+          "missingSamples": 0,
+          "environmentPending": false
+        }
+      },
+      "available": true,
+      "connectionState": "recording_locally",
+      "historicalUpload": {
+        "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+        "throughSequence": 328,
+        "startedAt": 1792065205681,
+        "progressKnown": true,
+        "totalSamples": 2,
+        "remainingSamples": 0,
+        "uploadedSamples": 2,
+        "droppedSamples": 0,
+        "completedAt": 1792065218772
+      },
+      "lifetimeDroppedCount": 0,
+      "cohortDroppedSamples": 0,
+      "cohortProgressKnown": true,
+      "queue": {
+        "messageCount": 0,
+        "diskBytes": 208580,
+        "oldestCapturedAt": null,
+        "acknowledgedSequence": 397,
+        "currentSequence": 397,
+        "droppedCount": 0
+      },
+      "queueStatsAt": 1792065825991,
+      "at": 1792065826372
+    }
+  },
+  "pauseGuard": {
+    "guard": true,
+    "priorDurableChoiceEqual": true
+  },
+  "failedSaveRestart": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": "A previous save failed; uploads remain paused until this setting is saved successfully.",
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065853598,
+    "at": 1792065853922
+  },
+  "saveRecovery": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065853972,
+    "at": 1792065853973
+  },
+  "enabled": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065854309,
+    "at": 1792065854400
+  },
+  "newRecordingId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+  "beforeOnRestart": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "trackingState": "START_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 208580,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 397,
+      "currentSequence": 397,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065854309,
+    "at": 1792065856427
+  },
+  "afterOnRestart": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "trackingState": "START_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 220347,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 418,
+      "currentSequence": 418,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065883417,
+    "at": 1792065883542
+  },
+  "beforeReceiverRestart": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "trackingState": "START_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 220347,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 418,
+      "currentSequence": 418,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065883417,
+    "at": 1792065883734
+  },
+  "afterReceiverRestart": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "trackingState": "START_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 10,
+      "diskBytes": 236293,
+      "oldestCapturedAt": 1792065903005,
+      "acknowledgedSequence": 437,
+      "currentSequence": 447,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065913155,
+    "at": 1792065921682
+  },
+  "beforeFinish": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "trackingState": "MOVING",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "startedAt": 1792064880901,
+        "firstSequence": 267,
+        "state": "complete",
+        "lastSequence": 397,
+        "endedAt": 1792065303258
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+        "lastSequence": 397,
+        "state": "ready",
+        "voyageId": 3,
+        "expectedSamples": 131,
+        "receivedSamples": 131,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 307631,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 583,
+      "currentSequence": 583,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792066053162,
+    "at": 1792066056992
+  },
+  "finish": {
+    "http": 200,
+    "status": {
+      "uploadMode": "automatic",
+      "liveTrackingEnabled": true,
+      "persistedUploadMode": "automatic",
+      "persistenceError": null,
+      "paired": true,
+      "recording": true,
+      "trackingSessionId": null,
+      "trackingState": "STOPPED",
+      "finishedTrip": {
+        "manifest": {
+          "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+          "startedAt": 1792065855018,
+          "firstSequence": 398,
+          "state": "complete",
+          "lastSequence": 587,
+          "endedAt": 1792066056153
+        },
+        "uploadPending": true,
+        "confirmationPending": true,
+        "cloudStatus": null
+      },
+      "available": true,
+      "connectionState": "online",
+      "historicalUpload": {
+        "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+        "throughSequence": 328,
+        "startedAt": 1792065205681,
+        "progressKnown": true,
+        "totalSamples": 2,
+        "remainingSamples": 0,
+        "uploadedSamples": 2,
+        "droppedSamples": 0,
+        "completedAt": 1792065218772
+      },
+      "lifetimeDroppedCount": 0,
+      "cohortDroppedSamples": 0,
+      "cohortProgressKnown": true,
+      "queue": {
+        "messageCount": 1,
+        "diskBytes": 309833,
+        "oldestCapturedAt": 1792066056153,
+        "acknowledgedSequence": 586,
+        "currentSequence": 587,
+        "droppedCount": 0
+      },
+      "queueStatsAt": 1792066057065,
+      "at": 1792066057067
+    }
+  },
+  "receiverComplete": {
+    "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+    "voyage_id": 4,
+    "qualifies_as_trip": true,
+    "state": "ready",
+    "started_at": "2026-10-15T12:04:15.018000Z",
+    "ended_at": "2026-10-15T12:07:36.153000Z",
+    "expected_samples": 190,
+    "received_samples": 190,
+    "rejected_samples": 0,
+    "missing_samples": 0,
+    "upload_percent": 100,
+    "history": {
+      "reconstructing": false,
+      "provisional": false,
+      "upload_percent": 100,
+      "message": null
+    },
+    "updated_at": "2026-10-15T12:08:02.374699Z"
+  },
+  "offBeforeRetry": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "startedAt": 1792065855018,
+        "firstSequence": 398,
+        "state": "complete",
+        "lastSequence": 587,
+        "endedAt": 1792066056153
+      },
+      "uploadPending": false,
+      "confirmationPending": true,
+      "cloudStatus": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "lastSequence": 587,
+        "state": "uploading",
+        "voyageId": 4,
+        "expectedSamples": 190,
+        "receivedSamples": 190,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 309833,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 587,
+      "currentSequence": 587,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792066082689,
+    "at": 1792066082689
+  },
+  "finishRetryAfterRestart": {
+    "http": 200,
+    "sameManifest": true
+  },
+  "terminal": {
+    "uploadMode": "automatic",
+    "liveTrackingEnabled": true,
+    "persistedUploadMode": "automatic",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "startedAt": 1792065855018,
+        "firstSequence": 398,
+        "state": "complete",
+        "lastSequence": 587,
+        "endedAt": 1792066056153
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "lastSequence": 587,
+        "state": "ready",
+        "voyageId": 4,
+        "expectedSamples": 190,
+        "receivedSamples": 190,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "online",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 309833,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 587,
+      "currentSequence": 587,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792066111268,
+    "at": 1792066112035
+  },
+  "finalOff": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "startedAt": 1792065855018,
+        "firstSequence": 398,
+        "state": "complete",
+        "lastSequence": 587,
+        "endedAt": 1792066056153
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "lastSequence": 587,
+        "state": "ready",
+        "voyageId": 4,
+        "expectedSamples": 190,
+        "receivedSamples": 190,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "e886ddb6-1ea8-4a46-bee6-d3baa1ce341a",
+      "throughSequence": 328,
+      "startedAt": 1792065205681,
+      "progressKnown": true,
+      "totalSamples": 2,
+      "remainingSamples": 0,
+      "uploadedSamples": 2,
+      "droppedSamples": 0,
+      "completedAt": 1792065218772
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 309833,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 587,
+      "currentSequence": 587,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792066112212,
+    "at": 1792066112213
+  },
+  "finishedAt": "2026-10-15T12:08:32.214348+00:00"
+}
