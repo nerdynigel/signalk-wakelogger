@@ -65,6 +65,10 @@ samples to the isolated local API receiver (ACK 587→647); final state OFF.
 
 `docs/evidence/dev-tide-real-api.py` → `dev-tide-real-api.json`,
 `dev-tide-real-api-page.json`, screenshot `dev-tide-real-api-1365.png`.
+Correction (15 Oct, after independent review): the two committed receipts are
+redacted — the frontend origin is stored as `http://dev-web:3010`, and both
+drivers now sanitize every persisted URL at write time (live address kept in
+memory only). Technical results, evidence values and conclusions are unchanged.
 The real served website (web `3010`) was rendered against the real isolated API
 with **no mocks** (`/vessels/manage?vessel=4&tab=trips`):
 

@@ -4,11 +4,16 @@ no fixture writes beyond the two documented probes.
 """
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 import runpy
 
 import datetime
+
+# Persisted receipts must never carry the real DEV host address.
+PLACEHOLDER = 'http://dev-web:3010'
+sanitize = lambda value: re.sub(r'https?://[^/\s"\']+', PLACEHOLDER, str(value))
 
 C = runpy.run_path(str(Path(__file__).with_name('dev-feature-client.py')))
 ROOT, bundle, api, request, pc = C['ROOT'], C['bundle'], C['api'], C['request'], C['pc']
@@ -41,7 +46,7 @@ env['PLAYWRIGHT_BROWSERS_PATH'] = '/home/nigel/.cache/ms-playwright'
 url = bundle['frontend_url'] + '/vessels/manage?vessel=4&tab=trips'
 browser = subprocess.run(['/home/nigel/.nvm/versions/node/v24.21.0/bin/node', 'docs/evidence/dev-tide-real-api.cjs'],
                          input=json.dumps({'token': token, 'url': url}), text=True, cwd=ROOT, env=env, timeout=120)
-R['page'] = json.loads(pageReceipt.read_text()) if pageReceipt.exists() else {'ok': False}
+R['page'] = json.loads(sanitize(pageReceipt.read_text())) if pageReceipt.exists() else {'ok': False}
 receipt.write_text(json.dumps(R, indent=2) + '\n')
 assert browser.returncode == 0 and R['page'].get('ok'), 'real-API served website tide check failed'
 print('PASS real API tide receipt: provider backfill/fetch', R['endpoints']['backfill']['http'], R['endpoints']['fetch']['http'],
