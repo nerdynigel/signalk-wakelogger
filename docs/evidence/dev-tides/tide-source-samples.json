@@ -1,0 +1,31 @@
+{
+  "attribution": "Sanitized tide-only subset from independent THE-889 discovery revision 9a30f4e8-66e8-4270-860d-4f9a74f3f7fb. No raw uploads or positions. Trip76 bounds are minute precision as reported; trip77 bounds retain recorded milliseconds. Environment events are the reported bounding/in-trip subset, not all 17 stored events.",
+  "race": {
+    "datum": "MSL", "station": "Brisbane Bar", "source_type": "station", "atlas": "Australia", "timezone": "UTC",
+    "events": [
+      {"kind":"low","observed_at":"2026-10-10T05:22:55Z","height_m":-0.919},
+      {"kind":"high","observed_at":"2026-10-10T11:13:36Z","height_m":0.862},
+      {"kind":"low","observed_at":"2026-10-10T17:39:52Z","height_m":-1.030},
+      {"kind":"high","observed_at":"2026-10-10T23:47:30Z","height_m":0.965}
+    ]
+  },
+  "trips": [
+    {
+      "id":76,"start_time":"2026-10-10T00:59:00Z","end_time":"2026-10-10T04:28:00Z",
+      "route_source_type":"signalk_live","tide_start_height_m":0.493,"tide_end_height_m":-0.802,"tide_min_m":-0.897,"tide_max_m":0.493,
+      "tide_events":[
+        {"kind":"high","observed_at":"2026-10-09T23:09:27Z","height_m":0.912,"source":"worldtides"},
+        {"kind":"low","observed_at":"2026-10-10T05:22:55Z","height_m":-0.919,"source":"worldtides"}
+      ]
+    },
+    {
+      "id":77,"start_time":"2026-10-10T23:22:46.768Z","end_time":"2026-10-11T05:11:44.581Z",
+      "route_source_type":"signalk_live","tide_start_height_m":0.950,"tide_end_height_m":-0.704,"tide_min_m":-0.704,"tide_max_m":0.958,
+      "tide_events":[
+        {"kind":"low","observed_at":"2026-10-10T17:39:52Z","height_m":-1.030,"source":"worldtides"},
+        {"kind":"high","observed_at":"2026-10-10T23:47:30Z","height_m":0.965,"source":"worldtides"},
+        {"kind":"low","observed_at":"2026-10-11T06:03:12Z","height_m":-0.869,"source":"worldtides"}
+      ]
+    }
+  ]
+}

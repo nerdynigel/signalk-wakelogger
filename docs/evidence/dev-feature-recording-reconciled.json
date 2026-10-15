@@ -1,0 +1,156 @@
+{
+  "at": "2026-10-15T11:46:56.879216+00:00",
+  "synthetic": true,
+  "recordingId": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+  "beforeRetry": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "startedAt": 1792064622066,
+        "firstSequence": 134,
+        "state": "complete",
+        "lastSequence": 266,
+        "endedAt": 1792064756195
+      },
+      "uploadPending": true,
+      "confirmationPending": true,
+      "cloudStatus": null
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "351b68f7-f9d4-428c-a087-c206f1b57ea6",
+      "throughSequence": 134,
+      "startedAt": 1792064623147,
+      "progressKnown": true,
+      "totalSamples": 1,
+      "remainingSamples": 0,
+      "uploadedSamples": 1,
+      "droppedSamples": 0,
+      "completedAt": 1792064628746
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 148179,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 266,
+      "currentSequence": 266,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792064808764,
+    "at": 1792064815582
+  },
+  "retryHTTP": 200,
+  "sameManifest": true,
+  "receiver": {
+    "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+    "voyage_id": 2,
+    "qualifies_as_trip": true,
+    "state": "ready",
+    "started_at": "2026-10-15T11:43:42.066000Z",
+    "ended_at": "2026-10-15T11:45:56.195000Z",
+    "expected_samples": 133,
+    "received_samples": 133,
+    "rejected_samples": 0,
+    "missing_samples": 0,
+    "upload_percent": 100,
+    "history": {
+      "reconstructing": false,
+      "provisional": false,
+      "upload_percent": 100,
+      "message": null
+    },
+    "updated_at": "2026-10-15T11:46:21.468157Z"
+  },
+  "sentinel": {
+    "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+    "voyage_id": 1,
+    "qualifies_as_trip": true,
+    "state": "ready",
+    "started_at": "2026-10-15T11:25:21.952000Z",
+    "ended_at": "2026-10-15T11:27:36.102000Z",
+    "expected_samples": 133,
+    "received_samples": 133,
+    "rejected_samples": 0,
+    "missing_samples": 0,
+    "upload_percent": 100,
+    "history": {
+      "reconstructing": false,
+      "provisional": false,
+      "upload_percent": 100,
+      "message": null
+    },
+    "updated_at": "2026-10-15T11:31:10.180925Z"
+  },
+  "after": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "startedAt": 1792064622066,
+        "firstSequence": 134,
+        "state": "complete",
+        "lastSequence": 266,
+        "endedAt": 1792064756195
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "lastSequence": 266,
+        "state": "ready",
+        "voyageId": 2,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "351b68f7-f9d4-428c-a087-c206f1b57ea6",
+      "throughSequence": 134,
+      "startedAt": 1792064623147,
+      "progressKnown": true,
+      "totalSamples": 1,
+      "remainingSamples": 0,
+      "uploadedSamples": 1,
+      "droppedSamples": 0,
+      "completedAt": 1792064628746
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 148179,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 266,
+      "currentSequence": 266,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792064816875,
+    "at": 1792064816880
+  },
+  "boundaryAssertion": "pre-Finish GET queue can lag serialized final sample; Finish response exact durable lastSequence equals response queue.currentSequence"
+}

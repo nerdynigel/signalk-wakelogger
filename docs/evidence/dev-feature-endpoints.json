@@ -1,0 +1,175 @@
+{
+  "at": "2026-10-15T11:42:37.845255+00:00",
+  "synthetic": true,
+  "userId": 2,
+  "vesselId": 4,
+  "cases": [
+    {
+      "name": "anonymous-read-denied",
+      "http": 401,
+      "error": "non_json_error_response",
+      "preserved": true
+    },
+    {
+      "name": "readonly-control-denied",
+      "http": 401,
+      "error": "non_json_error_response",
+      "preserved": true
+    },
+    {
+      "name": "invalid-mode",
+      "http": 400,
+      "error": "invalid_upload_mode",
+      "preserved": true
+    },
+    {
+      "name": "enable-unconfirmed",
+      "http": 400,
+      "error": "tracking_confirmation_required",
+      "preserved": true
+    },
+    {
+      "name": "enable-stale-mode",
+      "http": 409,
+      "error": "tracking_changed",
+      "preserved": true
+    },
+    {
+      "name": "finish-readonly-denied",
+      "http": 401,
+      "error": "non_json_error_response",
+      "preserved": true
+    },
+    {
+      "name": "finish-missing-id",
+      "http": 400,
+      "error": "invalid_recording_id",
+      "preserved": true
+    },
+    {
+      "name": "finish-malformed-id",
+      "http": 400,
+      "error": "invalid_recording_id",
+      "preserved": true
+    },
+    {
+      "name": "finish-idle-unknown-id-noop",
+      "http": 200,
+      "error": null,
+      "preserved": true
+    }
+  ],
+  "before": {
+    "uploadMode": "local_only",
+    "persistedUploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+        "startedAt": 1792063521952,
+        "firstSequence": 1,
+        "state": "complete",
+        "lastSequence": 133,
+        "endedAt": 1792063656102
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+        "lastSequence": 133,
+        "state": "ready",
+        "voyageId": 1,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 73732,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 133,
+      "currentSequence": 133,
+      "droppedCount": 0
+    }
+  },
+  "servedHashes": {
+    "app.mjs": "03c00d40b3e2faae762c341a98cb75ecc42ba91843aa5b0565d21e3bd5d26c77",
+    "leg-eta.mjs": "f4d225c42bfb83a30017bc5bb5dd1c73741aa9e2c28feadcd217c172484e8fe4",
+    "course-progress.mjs": "c3beb6cf8f6d9ffa18dfdc92d4c50528aaeb5aca4532e536a92c544d74c9245e",
+    "instruments.mjs": "d22e86d39b9db1a015e959ae51cf99e1fe2b73dc6cd5af486cc32bbb761b0ad4",
+    "tracking-controls.mjs": "be41b19a59d64f2a8ce94708a0458332ccb46abd8df50b98e63df4d40af9cc08"
+  },
+  "nativeReadback": {
+    "courseSelected": false,
+    "legStart": null,
+    "position": {
+      "latitude": -33.855360000000005,
+      "longitude": 151.20268
+    },
+    "positionTimestamp": "2026-10-15T11:27:36.102Z",
+    "source": "THE903.internal.sentinel"
+  },
+  "sentinel": {
+    "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+    "voyage_id": 1,
+    "qualifies_as_trip": true,
+    "state": "ready",
+    "started_at": "2026-10-15T11:25:21.952000Z",
+    "ended_at": "2026-10-15T11:27:36.102000Z",
+    "expected_samples": 133,
+    "received_samples": 133,
+    "rejected_samples": 0,
+    "missing_samples": 0,
+    "upload_percent": 100,
+    "history": {
+      "reconstructing": false,
+      "provisional": false,
+      "upload_percent": 100,
+      "message": null
+    },
+    "updated_at": "2026-10-15T11:31:10.180925Z"
+  },
+  "after": {
+    "uploadMode": "local_only",
+    "persistedUploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+        "startedAt": 1792063521952,
+        "firstSequence": 1,
+        "state": "complete",
+        "lastSequence": 133,
+        "endedAt": 1792063656102
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+        "lastSequence": 133,
+        "state": "ready",
+        "voyageId": 1,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 73732,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 133,
+      "currentSequence": 133,
+      "droppedCount": 0
+    }
+  }
+}

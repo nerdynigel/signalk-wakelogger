@@ -1,0 +1,2497 @@
+{
+  "at": "2026-10-15T11:47:49.711358+00:00",
+  "synthetic": true,
+  "observations": [
+    {
+      "ageSeconds": 0.188,
+      "course": {
+        "desired": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "cachedCourse": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "legStart": {
+          "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+          "observedAt": 1792064955142,
+          "startedAt": 1792064955142,
+          "position": null,
+          "positionTimestamp": null
+        },
+        "acknowledgement": {
+          "v": 1,
+          "revision": 1,
+          "status": "applied",
+          "activation": "active",
+          "mapReadiness": "unknown"
+        },
+        "routePoints": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "native": {
+          "available": true,
+          "course": {
+            "startTime": "2026-10-15T11:49:15.114Z",
+            "targetArrivalTime": null,
+            "arrivalCircle": 0,
+            "activeRoute": {
+              "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "name": "THE882 synthetic ETA proof",
+              "reverse": false,
+              "pointIndex": 1,
+              "pointTotal": 2
+            },
+            "nextPoint": {
+              "type": "RoutePoint",
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "name": "Synthetic finish"
+            },
+            "previousPoint": {
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "type": "RoutePoint",
+              "name": "Synthetic start"
+            }
+          },
+          "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "activeMatchesDesired": true,
+          "conflict": false,
+          "blocker": null
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "offlineReadiness": {
+          "ready": false,
+          "label": "Offline race not ready",
+          "checks": {
+            "courseApplied": true,
+            "nativeActive": true,
+            "nativeAvailable": true,
+            "racePackReady": false,
+            "racePackMatches": false,
+            "forecastValidNow": false,
+            "forecastCoversRace": false,
+            "ruleSetSupported": false
+          },
+          "missing": [
+            "no Race Pack has been prepared for this course"
+          ],
+          "uncertainty": [],
+          "forecastCoverage": "unknown",
+          "coverageQualification": null,
+          "packStoredNotApplicable": false,
+          "courseId": "race-plan-25",
+          "courseRevision": 1,
+          "packRevision": null,
+          "detail": "Missing: no Race Pack has been prepared for this course.",
+          "evaluatedAt": 1792064955312,
+          "navigation": {
+            "ready": true,
+            "label": "Live navigation ready",
+            "source": "native",
+            "missing": [],
+            "detail": "The Wake Logger course is active and live navigation is computing from it."
+          }
+        }
+      },
+      "navigation": {
+        "position": {
+          "meta": {
+            "description": "The position of the vessel in 2 or 3 dimensions (WGS84 datum)",
+            "properties": {
+              "longitude": {
+                "type": "number",
+                "description": "Longitude",
+                "units": "deg",
+                "example": 4.98765245
+              },
+              "latitude": {
+                "type": "number",
+                "description": "Latitude",
+                "units": "deg",
+                "example": 52.0987654
+              },
+              "altitude": {
+                "type": "number",
+                "description": "Altitude",
+                "units": "m"
+              }
+            }
+          },
+          "value": {
+            "latitude": -33.86,
+            "longitude": 151.21002165992348
+          },
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:48:01.903Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": {
+                "latitude": -33.855360000000005,
+                "longitude": 151.20268
+              },
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": {
+                "latitude": -33.86072,
+                "longitude": 151.20535999999998
+              },
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21002165992348
+              },
+              "timestamp": "2026-10-15T11:48:01.903Z"
+            }
+          }
+        },
+        "speedOverGround": {
+          "meta": {
+            "description": "Vessel speed over ground. If converting from AIS 'HIGH' value, set to 102.2 (Ais max value) and add warning in notifications",
+            "units": "m/s",
+            "displayUnits": {
+              "category": "speed",
+              "targetUnit": "kn",
+              "formula": "value * 1.94384",
+              "inverseFormula": "value * 0.514444",
+              "symbol": "kn",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 0,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:48:01.903Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 0,
+              "timestamp": "2026-10-15T11:48:01.903Z"
+            }
+          }
+        },
+        "courseOverGroundTrue": {
+          "meta": {
+            "description": "Course over ground (true)",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 3.141592653589793,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:48:01.903Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 3.141592653589793,
+              "timestamp": "2026-10-15T11:48:01.903Z"
+            }
+          }
+        },
+        "headingTrue": {
+          "meta": {
+            "description": "The current true north heading of the vessel, equals 'headingMagnetic adjusted for magneticVariation'",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 1.1,
+          "$source": "THE882.synthetic.feature-proof",
+          "timestamp": "2026-10-15T11:45:56.195Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            }
+          }
+        },
+        "courseGreatCircle": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              }
+            }
+          }
+        },
+        "courseRhumbline": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:15.114Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:15.114Z"
+              }
+            }
+          }
+        }
+      },
+      "racePlan": {
+        "calculationAuthority": "cloud",
+        "lastLocalCalculationAt": null,
+        "reason": "no_race_pack",
+        "warning": null,
+        "forecastCoverage": null,
+        "warnings": [],
+        "observationsReady": false,
+        "observationReadiness": {
+          "ready": false,
+          "reason": "no_position",
+          "sampleCount": 21,
+          "qualifyingSampleCount": 20,
+          "coveredSeconds": 95,
+          "latestSampleAgeSeconds": 203
+        },
+        "cadenceSeconds": 900,
+        "pack": {
+          "available": false,
+          "packId": null,
+          "revision": null,
+          "sha256": null,
+          "ruleSetVersion": null,
+          "courseId": null,
+          "racePlanId": null,
+          "courseDefinitionDigest": null,
+          "generatedAt": null,
+          "validFrom": null,
+          "validUntil": null,
+          "coverage": null,
+          "appliedAt": null,
+          "applicable": false,
+          "currentAt": "unknown"
+        },
+        "observations": {
+          "sampleCount": 21,
+          "windowSeconds": 300,
+          "windSource": "derived",
+          "twsKnots": 7.56,
+          "twdDeg": 128.6,
+          "position": null,
+          "lastUpdateAt": 1792064881912
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "latestSnapshot": null
+      },
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": null,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21002165992348
+        },
+        "direction": 63.025357464390595,
+        "distanceNm": null,
+        "bearingDeg": null,
+        "xteM": null,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Navigation inputs unavailable",
+        "etaProvisional": false
+      }
+    },
+    {
+      "ageSeconds": 20.039,
+      "course": {
+        "desired": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "cachedCourse": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "legStart": {
+          "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+          "observedAt": 1792064955142,
+          "startedAt": 1792064955142,
+          "position": null,
+          "positionTimestamp": null
+        },
+        "acknowledgement": {
+          "v": 1,
+          "revision": 1,
+          "status": "applied",
+          "activation": "active",
+          "mapReadiness": "unknown"
+        },
+        "routePoints": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "native": {
+          "available": true,
+          "course": {
+            "startTime": "2026-10-15T11:49:15.114Z",
+            "targetArrivalTime": null,
+            "arrivalCircle": 0,
+            "activeRoute": {
+              "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "name": "THE882 synthetic ETA proof",
+              "reverse": false,
+              "pointIndex": 1,
+              "pointTotal": 2
+            },
+            "nextPoint": {
+              "type": "RoutePoint",
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "name": "Synthetic finish"
+            },
+            "previousPoint": {
+              "type": "RoutePoint",
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "name": "Synthetic start"
+            }
+          },
+          "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "activeMatchesDesired": true,
+          "conflict": false,
+          "blocker": null
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "offlineReadiness": {
+          "ready": false,
+          "label": "Offline race not ready",
+          "checks": {
+            "courseApplied": true,
+            "nativeActive": true,
+            "nativeAvailable": true,
+            "racePackReady": false,
+            "racePackMatches": false,
+            "forecastValidNow": false,
+            "forecastCoversRace": false,
+            "ruleSetSupported": false
+          },
+          "missing": [
+            "no Race Pack has been prepared for this course"
+          ],
+          "uncertainty": [],
+          "forecastCoverage": "unknown",
+          "coverageQualification": null,
+          "packStoredNotApplicable": false,
+          "courseId": "race-plan-25",
+          "courseRevision": 1,
+          "packRevision": null,
+          "detail": "Missing: no Race Pack has been prepared for this course.",
+          "evaluatedAt": 1792064975155,
+          "navigation": {
+            "ready": true,
+            "label": "Live navigation ready",
+            "source": "native",
+            "missing": [],
+            "detail": "The Wake Logger course is active and live navigation is computing from it."
+          }
+        }
+      },
+      "navigation": {
+        "position": {
+          "meta": {
+            "description": "The position of the vessel in 2 or 3 dimensions (WGS84 datum)",
+            "properties": {
+              "longitude": {
+                "type": "number",
+                "description": "Longitude",
+                "units": "deg",
+                "example": 4.98765245
+              },
+              "latitude": {
+                "type": "number",
+                "description": "Latitude",
+                "units": "deg",
+                "example": 52.0987654
+              },
+              "altitude": {
+                "type": "number",
+                "description": "Altitude",
+                "units": "m"
+              }
+            }
+          },
+          "value": {
+            "latitude": -33.86,
+            "longitude": 151.21041153854583
+          },
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:49:35.113Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": {
+                "latitude": -33.855360000000005,
+                "longitude": 151.20268
+              },
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": {
+                "latitude": -33.86072,
+                "longitude": 151.20535999999998
+              },
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21041153854583
+              },
+              "timestamp": "2026-10-15T11:49:35.113Z"
+            }
+          }
+        },
+        "speedOverGround": {
+          "meta": {
+            "description": "Vessel speed over ground. If converting from AIS 'HIGH' value, set to 102.2 (Ais max value) and add warning in notifications",
+            "units": "m/s",
+            "displayUnits": {
+              "category": "speed",
+              "targetUnit": "kn",
+              "formula": "value * 1.94384",
+              "inverseFormula": "value * 0.514444",
+              "symbol": "kn",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 0,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:49:35.113Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 0,
+              "timestamp": "2026-10-15T11:49:35.113Z"
+            }
+          }
+        },
+        "courseOverGroundTrue": {
+          "meta": {
+            "description": "Course over ground (true)",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 3.141592653589793,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:49:35.113Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 3.141592653589793,
+              "timestamp": "2026-10-15T11:49:35.113Z"
+            }
+          }
+        },
+        "headingTrue": {
+          "meta": {
+            "description": "The current true north heading of the vessel, equals 'headingMagnetic adjusted for magneticVariation'",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 1.1,
+          "$source": "THE882.synthetic.feature-proof",
+          "timestamp": "2026-10-15T11:45:56.195Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            }
+          }
+        },
+        "courseGreatCircle": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              }
+            }
+          }
+        },
+        "courseRhumbline": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:22.799Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:22.799Z"
+              }
+            }
+          }
+        },
+        "course": {
+          "calcValues": {
+            "calcMethod": {
+              "value": "GreatCircle",
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "Calculation type used (GreatCircle or Rhumbline)."
+              }
+            },
+            "bearingTrackTrue": {
+              "value": 1.5708935705227702,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The bearing of a line between previousPoint and nextPoint, relative to true north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingTrackMagnetic": {
+              "value": 1.5708935705227702,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The bearing of a line between previousPoint and nextPoint, relative to magnetic north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "crossTrackError": {
+              "value": -0.0036192244216672297,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The distance from the vessel's present position to the closest point on a line (track) between previousPoint and nextPoint. A negative number indicates that the vessel is currently to the left of this line (and thus must steer right to compensate), a positive number means the vessel is to the right of the line (steer left to compensate).",
+                "units": "m",
+                "displayUnits": {
+                  "category": "distance",
+                  "targetUnit": "naut-mile",
+                  "formula": "value * 0.0005399568034557236",
+                  "inverseFormula": "value / 0.0005399568034557236",
+                  "symbol": "nmi",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "previousPoint": {
+              "distance": {
+                "value": 38.00000000036382,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:49:35.119Z",
+                "meta": {
+                  "description": "The distance in meters between the vessel's present position and the previousPoint.",
+                  "units": "m",
+                  "displayUnits": {
+                    "category": "distance",
+                    "targetUnit": "naut-mile",
+                    "formula": "value * 0.0005399568034557236",
+                    "inverseFormula": "value / 0.0005399568034557236",
+                    "symbol": "nmi",
+                    "displayFormat": "0.0"
+                  }
+                }
+              }
+            },
+            "distance": {
+              "value": 1808.728591063044,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The distance in meters between the vessel's present position and the nextPoint.",
+                "units": "m",
+                "displayUnits": {
+                  "category": "distance",
+                  "targetUnit": "naut-mile",
+                  "formula": "value * 0.0005399568034557236",
+                  "inverseFormula": "value / 0.0005399568034557236",
+                  "symbol": "nmi",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingTrue": {
+              "value": 1.570891569545585,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The bearing of a line between the vessel's current position and nextPoint, relative to true north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingMagnetic": {
+              "value": 1.570891569545585,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The bearing of a line between the vessel's current position and nextPoint, relative to magnetic north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "velocityMadeGood": {
+              "value": 0,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The velocity component of the vessel towards the nextPoint.",
+                "units": "m/s",
+                "displayUnits": {
+                  "category": "speed",
+                  "targetUnit": "kn",
+                  "formula": "value * 1.94384",
+                  "inverseFormula": "value * 0.514444",
+                  "symbol": "kn",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "timeToGo": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "Time in seconds to reach nextPoint's perpendicular with current speed & direction.",
+                "units": "s",
+                "displayUnits": {
+                  "category": "time",
+                  "targetUnit": "hour",
+                  "formula": "value * 0.0002777777777777778",
+                  "inverseFormula": "value / 0.0002777777777777778",
+                  "symbol": "hour",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "estimatedTimeOfArrival": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The estimated time of arrival at nextPoint position."
+              }
+            },
+            "route": {
+              "timeToGo": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:49:35.119Z",
+                "meta": {
+                  "description": "Time in seconds to reach final destination with current speed & direction.",
+                  "units": "s",
+                  "displayUnits": {
+                    "category": "time",
+                    "targetUnit": "hour",
+                    "formula": "value * 0.0002777777777777778",
+                    "inverseFormula": "value / 0.0002777777777777778",
+                    "symbol": "hour",
+                    "displayFormat": "0.0"
+                  }
+                }
+              },
+              "estimatedTimeOfArrival": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:49:35.119Z",
+                "meta": {
+                  "description": "The estimated time of arrival at final destination."
+                }
+              },
+              "distance": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:49:35.119Z",
+                "meta": {
+                  "description": "The remaining distance along the route to reach the final destination.",
+                  "units": "m",
+                  "displayUnits": {
+                    "category": "distance",
+                    "targetUnit": "naut-mile",
+                    "formula": "value * 0.0005399568034557236",
+                    "inverseFormula": "value / 0.0005399568034557236",
+                    "symbol": "nmi",
+                    "displayFormat": "0.0"
+                  }
+                }
+              }
+            },
+            "targetSpeed": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:49:35.119Z",
+              "meta": {
+                "description": "The average speed required to arrive at the destination at the targetArrivalTime.",
+                "units": "m/s",
+                "displayUnits": {
+                  "category": "speed",
+                  "targetUnit": "kn",
+                  "formula": "value * 1.94384",
+                  "inverseFormula": "value * 0.514444",
+                  "symbol": "kn",
+                  "displayFormat": "0.0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "racePlan": {
+        "calculationAuthority": "cloud",
+        "lastLocalCalculationAt": null,
+        "reason": "cloud_authority",
+        "warning": null,
+        "forecastCoverage": null,
+        "warnings": [],
+        "observationsReady": false,
+        "observationReadiness": {
+          "ready": false,
+          "reason": "too_few_samples",
+          "sampleCount": 21,
+          "qualifyingSampleCount": 16,
+          "coveredSeconds": 75,
+          "latestSampleAgeSeconds": 223
+        },
+        "cadenceSeconds": 900,
+        "pack": {
+          "available": false,
+          "packId": null,
+          "revision": null,
+          "sha256": null,
+          "ruleSetVersion": null,
+          "courseId": null,
+          "racePlanId": null,
+          "courseDefinitionDigest": null,
+          "generatedAt": null,
+          "validFrom": null,
+          "validUntil": null,
+          "coverage": null,
+          "appliedAt": null,
+          "applicable": false,
+          "currentAt": "unknown"
+        },
+        "observations": {
+          "sampleCount": 21,
+          "windowSeconds": 300,
+          "windSource": "derived",
+          "twsKnots": 7.56,
+          "twdDeg": 128.6,
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.21041153854583
+          },
+          "lastUpdateAt": 1792064975117
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "latestSnapshot": null
+      },
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 2,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.21041153854583
+        },
+        "direction": 63.025357464390595,
+        "distanceNm": 0.9766353083493757,
+        "bearingDeg": 90.00545700764366,
+        "xteM": -0.0036192244216672297,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Collecting leg average; plan speed unavailable",
+        "etaProvisional": false
+      }
+    },
+    {
+      "ageSeconds": 61.025,
+      "course": {
+        "desired": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "cachedCourse": {
+          "v": 1,
+          "action": "activate",
+          "revision": 1,
+          "courseId": "race-plan-25",
+          "name": "THE882 synthetic ETA proof",
+          "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+          "start": {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "marks": [],
+          "finish": {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "racePlanId": 25,
+          "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+          "activeWaypointIndex": 1
+        },
+        "legStart": {
+          "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+          "observedAt": 1792064955142,
+          "startedAt": 1792064955142,
+          "position": null,
+          "positionTimestamp": null
+        },
+        "acknowledgement": {
+          "v": 1,
+          "revision": 1,
+          "status": "applied",
+          "activation": "active",
+          "mapReadiness": "unknown"
+        },
+        "routePoints": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "native": {
+          "available": true,
+          "course": {
+            "startTime": "2026-10-15T11:49:15.114Z",
+            "targetArrivalTime": null,
+            "arrivalCircle": 0,
+            "activeRoute": {
+              "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "name": "THE882 synthetic ETA proof",
+              "reverse": false,
+              "pointIndex": 1,
+              "pointTotal": 2
+            },
+            "nextPoint": {
+              "type": "RoutePoint",
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "name": "Synthetic finish"
+            },
+            "previousPoint": {
+              "type": "RoutePoint",
+              "position": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "name": "Synthetic start"
+            }
+          },
+          "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "activeMatchesDesired": true,
+          "conflict": false,
+          "blocker": null
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "offlineReadiness": {
+          "ready": false,
+          "label": "Offline race not ready",
+          "checks": {
+            "courseApplied": true,
+            "nativeActive": true,
+            "nativeAvailable": true,
+            "racePackReady": false,
+            "racePackMatches": false,
+            "forecastValidNow": false,
+            "forecastCoversRace": false,
+            "ruleSetSupported": false
+          },
+          "missing": [
+            "no Race Pack has been prepared for this course"
+          ],
+          "uncertainty": [],
+          "forecastCoverage": "unknown",
+          "coverageQualification": null,
+          "packStoredNotApplicable": false,
+          "courseId": "race-plan-25",
+          "courseRevision": 1,
+          "packRevision": null,
+          "detail": "Missing: no Race Pack has been prepared for this course.",
+          "evaluatedAt": 1792065016152,
+          "navigation": {
+            "ready": true,
+            "label": "Live navigation ready",
+            "source": "native",
+            "missing": [],
+            "detail": "The Wake Logger course is active and live navigation is computing from it."
+          }
+        }
+      },
+      "navigation": {
+        "position": {
+          "meta": {
+            "description": "The position of the vessel in 2 or 3 dimensions (WGS84 datum)",
+            "properties": {
+              "longitude": {
+                "type": "number",
+                "description": "Longitude",
+                "units": "deg",
+                "example": 4.98765245
+              },
+              "latitude": {
+                "type": "number",
+                "description": "Latitude",
+                "units": "deg",
+                "example": 52.0987654
+              },
+              "altitude": {
+                "type": "number",
+                "description": "Altitude",
+                "units": "m"
+              }
+            }
+          },
+          "value": {
+            "latitude": -33.86,
+            "longitude": 151.2117327938771
+          },
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:50:16.152Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": {
+                "latitude": -33.855360000000005,
+                "longitude": 151.20268
+              },
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": {
+                "latitude": -33.86072,
+                "longitude": 151.20535999999998
+              },
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.2117327938771
+              },
+              "timestamp": "2026-10-15T11:50:16.152Z"
+            }
+          }
+        },
+        "speedOverGround": {
+          "meta": {
+            "description": "Vessel speed over ground. If converting from AIS 'HIGH' value, set to 102.2 (Ais max value) and add warning in notifications",
+            "units": "m/s",
+            "displayUnits": {
+              "category": "speed",
+              "targetUnit": "kn",
+              "formula": "value * 1.94384",
+              "inverseFormula": "value * 0.514444",
+              "symbol": "kn",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 0,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:50:16.152Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 2.6,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 0,
+              "timestamp": "2026-10-15T11:50:16.152Z"
+            }
+          }
+        },
+        "courseOverGroundTrue": {
+          "meta": {
+            "description": "Course over ground (true)",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 3.141592653589793,
+          "$source": "THE882.synthetic.eta",
+          "timestamp": "2026-10-15T11:50:16.152Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            },
+            "THE882.synthetic.eta": {
+              "value": 3.141592653589793,
+              "timestamp": "2026-10-15T11:50:16.152Z"
+            }
+          }
+        },
+        "headingTrue": {
+          "meta": {
+            "description": "The current true north heading of the vessel, equals 'headingMagnetic adjusted for magneticVariation'",
+            "units": "rad",
+            "displayUnits": {
+              "category": "angle",
+              "targetUnit": "degree",
+              "formula": "value * 57.29577951308231",
+              "inverseFormula": "value / 57.29577951308231",
+              "symbol": "\u00b0",
+              "displayFormat": "0.0"
+            }
+          },
+          "value": 1.1,
+          "$source": "THE882.synthetic.feature-proof",
+          "timestamp": "2026-10-15T11:45:56.195Z",
+          "values": {
+            "THE903.internal.sentinel": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:27:36.102Z"
+            },
+            "THE882.synthetic.feature-proof": {
+              "value": 1.1,
+              "timestamp": "2026-10-15T11:45:56.195Z"
+            }
+          }
+        },
+        "courseGreatCircle": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              }
+            }
+          }
+        },
+        "courseRhumbline": {
+          "activeRoute": {
+            "href": {
+              "meta": {
+                "description": "A reference (URL) to the presently active route, in resources."
+              },
+              "value": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "startTime": {
+              "meta": {
+                "description": "The time this route was activated"
+              },
+              "value": "2026-10-15T11:49:15.114Z",
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            }
+          },
+          "nextPoint": {
+            "value": {
+              "href": {
+                "value": null,
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              },
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              }
+            },
+            "position": {
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.23
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "arrivalCircle": {
+              "value": 0,
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            }
+          },
+          "previousPoint": {
+            "position": {
+              "meta": {
+                "description": "The position of previousPoint in two dimensions",
+                "properties": {
+                  "longitude": {
+                    "type": "number",
+                    "description": "Longitude",
+                    "units": "deg",
+                    "example": 4.98765245
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Latitude",
+                    "units": "deg",
+                    "example": 52.0987654
+                  },
+                  "altitude": {
+                    "type": "number",
+                    "description": "Altitude",
+                    "units": "m"
+                  }
+                }
+              },
+              "value": {
+                "latitude": -33.86,
+                "longitude": 151.21
+              },
+              "$source": "courseApi",
+              "timestamp": "2026-10-15T11:49:54.408Z"
+            },
+            "value": {
+              "type": {
+                "value": "RoutePoint",
+                "$source": "courseApi",
+                "timestamp": "2026-10-15T11:49:54.408Z"
+              }
+            }
+          }
+        },
+        "course": {
+          "calcValues": {
+            "calcMethod": {
+              "value": "GreatCircle",
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "Calculation type used (GreatCircle or Rhumbline)."
+              }
+            },
+            "bearingTrackTrue": {
+              "value": 1.5708935705227702,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The bearing of a line between previousPoint and nextPoint, relative to true north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingTrackMagnetic": {
+              "value": 1.5708935705227702,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The bearing of a line between previousPoint and nextPoint, relative to magnetic north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "crossTrackError": {
+              "value": -0.01421096983996169,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The distance from the vessel's present position to the closest point on a line (track) between previousPoint and nextPoint. A negative number indicates that the vessel is currently to the left of this line (and thus must steer right to compensate), a positive number means the vessel is to the right of the line (steer left to compensate).",
+                "units": "m",
+                "displayUnits": {
+                  "category": "distance",
+                  "targetUnit": "naut-mile",
+                  "formula": "value * 0.0005399568034557236",
+                  "inverseFormula": "value / 0.0005399568034557236",
+                  "symbol": "nmi",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "previousPoint": {
+              "distance": {
+                "value": 159.999999997149,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:50:16.158Z",
+                "meta": {
+                  "description": "The distance in meters between the vessel's present position and the previousPoint.",
+                  "units": "m",
+                  "displayUnits": {
+                    "category": "distance",
+                    "targetUnit": "naut-mile",
+                    "formula": "value * 0.0005399568034557236",
+                    "inverseFormula": "value / 0.0005399568034557236",
+                    "symbol": "nmi",
+                    "displayFormat": "0.0"
+                  }
+                }
+              }
+            },
+            "distance": {
+              "value": 1686.728591581249,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The distance in meters between the vessel's present position and the nextPoint.",
+                "units": "m",
+                "displayUnits": {
+                  "category": "distance",
+                  "targetUnit": "naut-mile",
+                  "formula": "value * 0.0005399568034557236",
+                  "inverseFormula": "value / 0.0005399568034557236",
+                  "symbol": "nmi",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingTrue": {
+              "value": 1.5708851453558135,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The bearing of a line between the vessel's current position and nextPoint, relative to true north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "bearingMagnetic": {
+              "value": 1.5708851453558135,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The bearing of a line between the vessel's current position and nextPoint, relative to magnetic north.",
+                "units": "rad",
+                "displayUnits": {
+                  "category": "angle",
+                  "targetUnit": "degree",
+                  "formula": "value * 57.29577951308231",
+                  "inverseFormula": "value / 57.29577951308231",
+                  "symbol": "\u00b0",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "velocityMadeGood": {
+              "value": 0,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The velocity component of the vessel towards the nextPoint.",
+                "units": "m/s",
+                "displayUnits": {
+                  "category": "speed",
+                  "targetUnit": "kn",
+                  "formula": "value * 1.94384",
+                  "inverseFormula": "value * 0.514444",
+                  "symbol": "kn",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "timeToGo": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "Time in seconds to reach nextPoint's perpendicular with current speed & direction.",
+                "units": "s",
+                "displayUnits": {
+                  "category": "time",
+                  "targetUnit": "hour",
+                  "formula": "value * 0.0002777777777777778",
+                  "inverseFormula": "value / 0.0002777777777777778",
+                  "symbol": "hour",
+                  "displayFormat": "0.0"
+                }
+              }
+            },
+            "estimatedTimeOfArrival": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The estimated time of arrival at nextPoint position."
+              }
+            },
+            "route": {
+              "timeToGo": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:50:16.158Z",
+                "meta": {
+                  "description": "Time in seconds to reach final destination with current speed & direction.",
+                  "units": "s",
+                  "displayUnits": {
+                    "category": "time",
+                    "targetUnit": "hour",
+                    "formula": "value * 0.0002777777777777778",
+                    "inverseFormula": "value / 0.0002777777777777778",
+                    "symbol": "hour",
+                    "displayFormat": "0.0"
+                  }
+                }
+              },
+              "estimatedTimeOfArrival": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:50:16.158Z",
+                "meta": {
+                  "description": "The estimated time of arrival at final destination."
+                }
+              },
+              "distance": {
+                "value": null,
+                "$source": "course-provider",
+                "timestamp": "2026-10-15T11:50:16.158Z",
+                "meta": {
+                  "description": "The remaining distance along the route to reach the final destination.",
+                  "units": "m",
+                  "displayUnits": {
+                    "category": "distance",
+                    "targetUnit": "naut-mile",
+                    "formula": "value * 0.0005399568034557236",
+                    "inverseFormula": "value / 0.0005399568034557236",
+                    "symbol": "nmi",
+                    "displayFormat": "0.0"
+                  }
+                }
+              }
+            },
+            "targetSpeed": {
+              "value": null,
+              "$source": "course-provider",
+              "timestamp": "2026-10-15T11:50:16.158Z",
+              "meta": {
+                "description": "The average speed required to arrive at the destination at the targetArrivalTime.",
+                "units": "m/s",
+                "displayUnits": {
+                  "category": "speed",
+                  "targetUnit": "kn",
+                  "formula": "value * 1.94384",
+                  "inverseFormula": "value * 0.514444",
+                  "symbol": "kn",
+                  "displayFormat": "0.0"
+                }
+              }
+            }
+          }
+        }
+      },
+      "racePlan": {
+        "calculationAuthority": "cloud",
+        "lastLocalCalculationAt": null,
+        "reason": "cloud_authority",
+        "warning": null,
+        "forecastCoverage": null,
+        "warnings": [],
+        "observationsReady": false,
+        "observationReadiness": {
+          "ready": false,
+          "reason": "too_few_samples",
+          "sampleCount": 22,
+          "qualifyingSampleCount": 8,
+          "coveredSeconds": 35,
+          "latestSampleAgeSeconds": 264
+        },
+        "cadenceSeconds": 900,
+        "pack": {
+          "available": false,
+          "packId": null,
+          "revision": null,
+          "sha256": null,
+          "ruleSetVersion": null,
+          "courseId": null,
+          "racePlanId": null,
+          "courseDefinitionDigest": null,
+          "generatedAt": null,
+          "validFrom": null,
+          "validUntil": null,
+          "coverage": null,
+          "appliedAt": null,
+          "applicable": false,
+          "currentAt": "unknown"
+        },
+        "observations": {
+          "sampleCount": 22,
+          "windowSeconds": 300,
+          "windSource": "derived",
+          "twsKnots": 7.56,
+          "twdDeg": 128.6,
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.2117327938771
+          },
+          "lastUpdateAt": 1792065016156
+        },
+        "uploadMode": "automatic",
+        "connectionState": "online",
+        "latestSnapshot": null
+      },
+      "result": {
+        "points": [
+          {
+            "id": "route-point-7",
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "id": "route-point-8",
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "index": 1,
+        "matches": true,
+        "reverse": false,
+        "routeSource": "cached",
+        "readOnly": false,
+        "navSource": "signalk",
+        "next": {
+          "id": "route-point-8",
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "previous": {
+          "id": "route-point-7",
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "pointPercent": 9,
+        "position": {
+          "latitude": -33.86,
+          "longitude": 151.2117327938771
+        },
+        "direction": 63.025357464390595,
+        "distanceNm": 0.9107605786075859,
+        "bearingDeg": 90.00508892868294,
+        "xteM": -0.01421096983996169,
+        "vmgKn": null,
+        "timeToGo": null,
+        "eta": null,
+        "etaReason": "Leg start position unavailable",
+        "etaProvisional": false
+      }
+    }
+  ],
+  "before": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": null,
+    "trackingState": "STOPPED",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "startedAt": 1792064622066,
+        "firstSequence": 134,
+        "state": "complete",
+        "lastSequence": 266,
+        "endedAt": 1792064756195
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "lastSequence": 266,
+        "state": "ready",
+        "voyageId": 2,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "351b68f7-f9d4-428c-a087-c206f1b57ea6",
+      "throughSequence": 134,
+      "startedAt": 1792064623147,
+      "progressKnown": true,
+      "totalSamples": 1,
+      "remainingSamples": 0,
+      "uploadedSamples": 1,
+      "droppedSamples": 0,
+      "completedAt": 1792064628746
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 148179,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 266,
+      "currentSequence": 266,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792064878755,
+    "at": 1792064879742
+  },
+  "routeId": 4,
+  "planId": 25,
+  "selected": {
+    "device_id": "7b0fddba-1a98-4872-b3ef-1b1df87e6ddb",
+    "desired_revision": 1,
+    "ack_revision": null,
+    "status": "pending",
+    "desired": {
+      "race_plan_id": 25,
+      "course_id": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "action": "activate"
+    },
+    "error": null,
+    "activation": null,
+    "active_route_matches": null,
+    "map_readiness": "unknown",
+    "blocker": null,
+    "device_online": true,
+    "updated_at": "2026-10-15T11:48:01.931399+00:00"
+  },
+  "marker": {
+    "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+    "observedAt": 1792064955142,
+    "startedAt": 1792064955142,
+    "position": null,
+    "positionTimestamp": null
+  },
+  "finalOff": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+    "trackingState": "STOP_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "startedAt": 1792064622066,
+        "firstSequence": 134,
+        "state": "complete",
+        "lastSequence": 266,
+        "endedAt": 1792064756195
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "lastSequence": 266,
+        "state": "ready",
+        "voyageId": 2,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "f403a2c2-0718-4e89-baa5-3c5462ce19da",
+      "throughSequence": 268,
+      "startedAt": 1792064946243,
+      "progressKnown": true,
+      "totalSamples": 1,
+      "remainingSamples": 0,
+      "uploadedSamples": 1,
+      "droppedSamples": 0,
+      "completedAt": 1792064946675
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 1,
+      "diskBytes": 176359,
+      "oldestCapturedAt": 1792065015152,
+      "acknowledgedSequence": 326,
+      "currentSequence": 327,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792065016234,
+    "at": 1792065016235
+  },
+  "initialUnknownStart": {
+    "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+    "observedAt": 1792064881959,
+    "startedAt": null,
+    "position": null,
+    "positionTimestamp": null
+  },
+  "resumeBefore": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+    "trackingState": "START_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "startedAt": 1792064622066,
+        "firstSequence": 134,
+        "state": "complete",
+        "lastSequence": 266,
+        "endedAt": 1792064756195
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+        "lastSequence": 266,
+        "state": "ready",
+        "voyageId": 2,
+        "expectedSamples": 133,
+        "receivedSamples": 133,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "f403a2c2-0718-4e89-baa5-3c5462ce19da",
+      "throughSequence": 268,
+      "startedAt": 1792064946243,
+      "progressKnown": true,
+      "totalSamples": 1,
+      "remainingSamples": 0,
+      "uploadedSamples": 1,
+      "droppedSamples": 0,
+      "completedAt": 1792064946675
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 0,
+      "diskBytes": 149314,
+      "oldestCapturedAt": null,
+      "acknowledgedSequence": 268,
+      "currentSequence": 268,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792064948764,
+    "at": 1792064954914
+  },
+  "explicitActivation": {
+    "desired": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "cachedCourse": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "legStart": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792064955142,
+      "startedAt": 1792064955142,
+      "position": null,
+      "positionTimestamp": null
+    },
+    "acknowledgement": {
+      "v": 1,
+      "revision": 1,
+      "status": "applied",
+      "activation": "active",
+      "mapReadiness": "unknown"
+    },
+    "routePoints": [
+      {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      }
+    ],
+    "native": {
+      "available": true,
+      "course": {
+        "startTime": "2026-10-15T11:49:15.114Z",
+        "targetArrivalTime": null,
+        "arrivalCircle": 0,
+        "activeRoute": {
+          "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "name": "THE882 synthetic ETA proof",
+          "reverse": false,
+          "pointIndex": 1,
+          "pointTotal": 2
+        },
+        "nextPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "name": "Synthetic finish"
+        },
+        "previousPoint": {
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "type": "RoutePoint",
+          "name": "Synthetic start"
+        }
+      },
+      "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+      "activeMatchesDesired": true,
+      "conflict": false,
+      "blocker": null
+    },
+    "uploadMode": "automatic",
+    "connectionState": "connecting"
+  }
+}
