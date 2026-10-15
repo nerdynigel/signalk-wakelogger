@@ -1,0 +1,94 @@
+{
+  "services": {
+    "api": {
+      "id": "69eb3fd321fc6bde5ba9f390c1ec236d4fbd683522e7087f2d19328d81e1cfc7",
+      "image": "sha256:7e506c8cbdd49e6ebbce516dc09b45a9b93781fd61fd9e11d93dcddff4b8037d",
+      "startedAt": "2026-10-15T12:05:04.435121393Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "signalk": {
+      "id": "20548eb84da4f49f861818db069eac3627bea8ee19ea3ed58ff396c46c36011d",
+      "image": "sha256:b5e6e271137e8885fc0cc5c6d824c0064734d0e3b400cc498e5c4d843dd6e169",
+      "startedAt": "2026-10-15T12:08:23.290567521Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "broker": {
+      "id": "f4a505b2ab44f83fd53bd9b15caf401327fb0233b2dfa276a0800e5d6022b6ed",
+      "image": "sha256:49bef06da8e75507cd5343e514400b229818d0b175fa986c06444a6b0a508281",
+      "startedAt": "2026-10-15T11:22:07.104220869Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "db": {
+      "id": "36dd04a0bea2d804e0599ade23652f90b74945afd3d828942de8e43c85043d3c",
+      "image": "sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5",
+      "startedAt": "2026-10-14T21:16:04.854195465Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "frontend": {
+      "id": "c3b3e3f85a59842fcbbf6ba1bc80a5422f199687bc4bf92c06871b6c66a1389a",
+      "image": "sha256:ae95cc8c9a663cc696ce59a2f3add7a4bbab0134b7333e0d37f586f11c929763",
+      "startedAt": "2026-10-14T21:20:56.721626702Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_entry",
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "gateway": {
+      "id": "89999b6fd843ee47f060160107cafaec698a080cd1189cb6a4785d0db157a87f",
+      "image": "sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293",
+      "startedAt": "2026-10-15T11:22:32.871567598Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_entry",
+        "wakelogger-scope-a_isolated"
+      ]
+    },
+    "minio": {
+      "id": "0c6267367694a728e3262d2eea04487dce2ae8402af8d583abf96b80130bdf04",
+      "image": "sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2",
+      "startedAt": "2026-10-14T21:16:04.865803896Z",
+      "running": true,
+      "networks": [
+        "wakelogger-scope-a_isolated"
+      ]
+    }
+  },
+  "internalNetwork": true,
+  "apiSourceHashes": {
+    "app/services/signalk_race_packs.py": "a961c63b643fa484ac123485ded92b7b676837429a3f9a28d6439670c039f4ab",
+    "app/routers/race_plans.py": "3e32a5a78c94ffcc262e52adafa40d58885a31f2292e17d3687c0185114845b8",
+    "app/services/tide_daily.py": "1695525cb022a7564ca2499e23dc1897140228b7a08a101e2e67c00e8fc1ed72",
+    "app/models/voyage_environment_snapshot.py": "47a56e0a2ebec4e2545d03e6def43dcd506dd644702c2a10ec58bf9bd66164e2"
+  },
+  "targetDisk": "Filesystem                    Size  Used Avail Use% Mounted on\nrpool/data/subvol-147-disk-0  153G  102G   52G  67% /\n",
+  "at": "2026-10-15T14:31:20.257030+00:00",
+  "tracking": {
+    "uploadMode": "local_only",
+    "persistedUploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "STOP_CANDIDATE",
+    "queue": {
+      "messageCount": 792,
+      "diskBytes": 695105,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1439,
+      "droppedCount": 0
+    }
+  },
+  "localDisk": "Filesystem                    Size  Used Avail Use% Mounted on\nrpool/data/subvol-127-disk-0  260G  139G  121G  54% /\ntmpfs                          32G  190M   32G   1% /tmp\n"
+}

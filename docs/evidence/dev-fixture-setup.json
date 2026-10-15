@@ -1,0 +1,1394 @@
+{
+  "at": "2026-10-15T14:30:13.953408+00:00",
+  "before": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "STOP_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "startedAt": 1792065855018,
+        "firstSequence": 398,
+        "state": "complete",
+        "lastSequence": 587,
+        "endedAt": 1792066056153
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "lastSequence": 587,
+        "state": "ready",
+        "voyageId": 4,
+        "expectedSamples": 190,
+        "receivedSamples": 190,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 792,
+      "uploadedSamples": 60,
+      "droppedSamples": 0
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 792,
+      "diskBytes": 695105,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1439,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792074610917,
+    "at": 1792074613947
+  },
+  "courseBefore": {
+    "desired": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "cachedCourse": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "legStart": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792068033686,
+      "startedAt": 1792068033686,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21593339508965
+      },
+      "positionTimestamp": 1792068032773
+    },
+    "acknowledgement": {
+      "v": 1,
+      "revision": 1,
+      "status": "applied",
+      "activation": "active",
+      "mapReadiness": "unknown"
+    },
+    "routePoints": [
+      {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      }
+    ],
+    "native": {
+      "available": true,
+      "course": {
+        "startTime": "2026-10-15T12:40:33.675Z",
+        "targetArrivalTime": null,
+        "arrivalCircle": 0,
+        "activeRoute": {
+          "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "name": "THE882 synthetic ETA proof",
+          "reverse": false,
+          "pointIndex": 1,
+          "pointTotal": 2
+        },
+        "nextPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "name": "Synthetic finish"
+        },
+        "previousPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "name": "Synthetic start"
+        }
+      },
+      "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+      "activeMatchesDesired": true,
+      "conflict": false,
+      "blocker": null
+    },
+    "uploadMode": "local_only",
+    "connectionState": "recording_locally",
+    "offlineReadiness": {
+      "ready": false,
+      "label": "Offline race not ready",
+      "checks": {
+        "courseApplied": true,
+        "nativeActive": true,
+        "nativeAvailable": true,
+        "racePackReady": false,
+        "racePackMatches": false,
+        "forecastValidNow": false,
+        "forecastCoversRace": false,
+        "ruleSetSupported": false
+      },
+      "missing": [
+        "no Race Pack has been prepared for this course"
+      ],
+      "uncertainty": [],
+      "forecastCoverage": "unknown",
+      "coverageQualification": null,
+      "packStoredNotApplicable": false,
+      "courseId": "race-plan-25",
+      "courseRevision": 1,
+      "packRevision": null,
+      "detail": "Missing: no Race Pack has been prepared for this course.",
+      "evaluatedAt": 1792074613951,
+      "navigation": {
+        "ready": true,
+        "label": "Live navigation ready",
+        "source": "native",
+        "missing": [],
+        "detail": "The Wake Logger course is active and live navigation is computing from it."
+      }
+    }
+  },
+  "recordingsBefore": [
+    {
+      "id": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+      "voyage_id": null,
+      "qualifies_as_trip": false,
+      "state": "recording",
+      "started_at": "2026-10-15T12:18:42.214000Z",
+      "ended_at": null,
+      "expected_samples": null,
+      "received_samples": 60,
+      "rejected_samples": 0,
+      "missing_samples": null,
+      "upload_percent": null,
+      "history": {
+        "reconstructing": false,
+        "provisional": true,
+        "upload_percent": null,
+        "message": "Recording in progress"
+      },
+      "updated_at": "2026-10-15T12:50:50.099174Z"
+    },
+    {
+      "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+      "voyage_id": 4,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T12:04:15.018000Z",
+      "ended_at": "2026-10-15T12:07:36.153000Z",
+      "expected_samples": 190,
+      "received_samples": 190,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T12:08:31.130849Z"
+    },
+    {
+      "id": "b472b1af-6aeb-4861-8f6e-5c87d557cec8",
+      "voyage_id": 3,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:48:00.901000Z",
+      "ended_at": "2026-10-15T11:55:03.258000Z",
+      "expected_samples": 131,
+      "received_samples": 131,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:56:08.784385Z"
+    },
+    {
+      "id": "b7a21084-985b-437a-a3f9-b1328842d6dd",
+      "voyage_id": 2,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:43:42.066000Z",
+      "ended_at": "2026-10-15T11:45:56.195000Z",
+      "expected_samples": 133,
+      "received_samples": 133,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:46:55.935320Z"
+    },
+    {
+      "id": "f681eef9-928d-43bf-ace5-2206aa5d41b0",
+      "voyage_id": 1,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T11:25:21.952000Z",
+      "ended_at": "2026-10-15T11:27:36.102000Z",
+      "expected_samples": 133,
+      "received_samples": 133,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T11:31:10.180925Z"
+    }
+  ],
+  "fixture": {
+    "mode": "setup",
+    "manifest": {
+      "v": 1,
+      "packId": "THE882.synthetic.fixture.20261015",
+      "revision": 3,
+      "racePlanId": 25,
+      "generatedAt": "2026-10-15T14:30:25.389099Z",
+      "validFrom": "2026-10-15T13:30:25.389099Z",
+      "validUntil": "2026-10-16T02:30:25.389099Z",
+      "ruleSetVersion": "race_plan_dynamic_v1",
+      "encoding": "gzip+base64",
+      "chunkCount": 1,
+      "sha256": "0e9a9dbd48bf41468dbf3969b43bbbca08a4fae4d1d6c6ead23b5d3750e9bcb7"
+    },
+    "acks": [],
+    "snapshotId": 2,
+    "cacheId": 2,
+    "synthetic": true,
+    "receivedByPlugin": false
+  },
+  "recalculate": {
+    "vessel_id": 4,
+    "race_route_id": 4,
+    "route_name": "THE882 synthetic ETA leg",
+    "planning_mode": "route",
+    "forecast_area": null,
+    "expected_duration_hours": 3.0,
+    "planned_start_time": "2026-10-15T11:47:59.765604Z",
+    "available_crew_count": null,
+    "forecast_source": "manual",
+    "forecast_twd_deg": 180.0,
+    "forecast_tws_knots": 12.0,
+    "forecast_gust_knots": 15.0,
+    "forecast_notes": null,
+    "estimated_total_hours": 0.235,
+    "estimated_finish_time": "2026-10-15T12:02:04.283251Z",
+    "forecast_snapshot_json": {
+      "source": "manual",
+      "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+      "twd_deg": 180.0,
+      "tws_knots": 12.0,
+      "gust_knots": 15.0,
+      "notes": null,
+      "created_at": "2026-10-15T14:30:29.338858+00:00",
+      "tide_snapshot": {
+        "source": "worldtides",
+        "source_type": "model",
+        "station": null,
+        "station_id": null,
+        "atlas": "THE882 synthetic",
+        "station_search_radius_km": null,
+        "distance_km": null,
+        "latitude": -33.86,
+        "longitude": 151.22,
+        "reference_method": "route_midpoint",
+        "response_latitude": null,
+        "response_longitude": null,
+        "local_date": "2026-10-15",
+        "timezone": "UTC",
+        "datum": "LAT",
+        "requested_datum": "LAT",
+        "provider_timezone": "UTC",
+        "cached": true,
+        "events": [
+          {
+            "kind": "high",
+            "observed_at": "2026-10-15T00:00:00+00:00",
+            "height_m": 1.8
+          },
+          {
+            "kind": "low",
+            "observed_at": "2026-10-15T06:00:00+00:00",
+            "height_m": 0.2
+          },
+          {
+            "kind": "high",
+            "observed_at": "2026-10-15T12:00:00+00:00",
+            "height_m": 1.8
+          },
+          {
+            "kind": "low",
+            "observed_at": "2026-10-15T18:00:00+00:00",
+            "height_m": 0.2
+          }
+        ],
+        "route_span_km": 1.8,
+        "warning": "Tide source: model prediction \u2014 no nearby tide station was used."
+      }
+    },
+    "calculation_snapshot_json": {
+      "calculation_version": "race_plan_preview_v1",
+      "vessel_id": 4,
+      "vessel_name": "THE903 internal transport sentinel",
+      "race_route_id": 4,
+      "race_route_name": "THE882 synthetic ETA leg",
+      "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+      "available_crew_count": null,
+      "forecast_source": "manual",
+      "forecast_snapshot_json": {
+        "source": "manual",
+        "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+        "twd_deg": 180.0,
+        "tws_knots": 12.0,
+        "gust_knots": 15.0,
+        "notes": null,
+        "created_at": "2026-10-15T14:30:29.338858+00:00",
+        "tide_snapshot": {
+          "source": "worldtides",
+          "source_type": "model",
+          "station": null,
+          "station_id": null,
+          "atlas": "THE882 synthetic",
+          "station_search_radius_km": null,
+          "distance_km": null,
+          "latitude": -33.86,
+          "longitude": 151.22,
+          "reference_method": "route_midpoint",
+          "response_latitude": null,
+          "response_longitude": null,
+          "local_date": "2026-10-15",
+          "timezone": "UTC",
+          "datum": "LAT",
+          "requested_datum": "LAT",
+          "provider_timezone": "UTC",
+          "cached": true,
+          "events": [
+            {
+              "kind": "high",
+              "observed_at": "2026-10-15T00:00:00+00:00",
+              "height_m": 1.8
+            },
+            {
+              "kind": "low",
+              "observed_at": "2026-10-15T06:00:00+00:00",
+              "height_m": 0.2
+            },
+            {
+              "kind": "high",
+              "observed_at": "2026-10-15T12:00:00+00:00",
+              "height_m": 1.8
+            },
+            {
+              "kind": "low",
+              "observed_at": "2026-10-15T18:00:00+00:00",
+              "height_m": 0.2
+            }
+          ],
+          "route_span_km": 1.8,
+          "warning": "Tide source: model prediction \u2014 no nearby tide station was used."
+        }
+      },
+      "estimated_total_hours": 0.235,
+      "estimated_finish_time": "2026-10-15T12:02:04.283251+00:00",
+      "race_headsail": null,
+      "sail_change_policy": {
+        "reef_changes_allowed": true,
+        "jib_changes_allowed": false
+      },
+      "race_mainsail_configuration": null,
+      "jib_changes": [],
+      "route_waypoints": [
+        {
+          "sequence": 1,
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        {
+          "sequence": 2,
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        }
+      ],
+      "tide_snapshot_json": {
+        "source": "worldtides",
+        "source_type": "model",
+        "station": null,
+        "station_id": null,
+        "atlas": "THE882 synthetic",
+        "station_search_radius_km": null,
+        "distance_km": null,
+        "latitude": -33.86,
+        "longitude": 151.22,
+        "reference_method": "route_midpoint",
+        "response_latitude": null,
+        "response_longitude": null,
+        "local_date": "2026-10-15",
+        "timezone": "UTC",
+        "datum": "LAT",
+        "requested_datum": "LAT",
+        "provider_timezone": "UTC",
+        "cached": true,
+        "events": [
+          {
+            "kind": "high",
+            "observed_at": "2026-10-15T00:00:00+00:00",
+            "height_m": 1.8
+          },
+          {
+            "kind": "low",
+            "observed_at": "2026-10-15T06:00:00+00:00",
+            "height_m": 0.2
+          },
+          {
+            "kind": "high",
+            "observed_at": "2026-10-15T12:00:00+00:00",
+            "height_m": 1.8
+          },
+          {
+            "kind": "low",
+            "observed_at": "2026-10-15T18:00:00+00:00",
+            "height_m": 0.2
+          }
+        ],
+        "route_span_km": 1.8,
+        "warning": "Tide source: model prediction \u2014 no nearby tide station was used."
+      },
+      "warnings": [
+        "No active sail inventory is available for this vessel.",
+        "Tide source: model prediction \u2014 no nearby tide station was used."
+      ],
+      "legs": [
+        {
+          "sequence": 1,
+          "from_waypoint": {
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "to_waypoint": {
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "bearing_deg": 90.0,
+          "distance_nm": 0.997,
+          "route_twa_deg": 90.0,
+          "sailing_course_deg": 90.0,
+          "target_twa_deg": null,
+          "target_twa_source": null,
+          "tacking_required": false,
+          "tack": "starboard",
+          "wind_side": "starboard",
+          "sails_out_side": null,
+          "forecast_twd_deg": 180.0,
+          "forecast_tws_knots": 12.0,
+          "forecast_gust_knots": 15.0,
+          "forecast_source": "manual",
+          "forecast_sample_time": "2026-10-15T11:47:59.765604Z",
+          "forecast_latitude": null,
+          "forecast_longitude": null,
+          "forecast_weather_code": null,
+          "forecast_weather_summary": null,
+          "forecast_rain_mm": null,
+          "forecast_wave_height_m": null,
+          "forecast_wave_direction_deg": null,
+          "forecast_current_velocity_kn": null,
+          "forecast_current_direction_deg": null,
+          "forecast_current_direction_convention": null,
+          "forecast_sea_level_height_msl_m": null,
+          "forecast_sea_surface_temperature_c": null,
+          "forecast_time_delta_min": null,
+          "twa_deg": 90.0,
+          "point_of_sail": "beam reach",
+          "estimated_boat_speed_knots": 4.25,
+          "estimated_boat_speed_source": "performance_fields",
+          "estimated_boat_speed_polar_context": null,
+          "estimated_sog_knots": 4.25,
+          "apparent_wind_from_deg": 160.5,
+          "awa_deg": 70.5,
+          "aws_knots": 12.73,
+          "apparent_gust_speed_knots": 15.59,
+          "apparent_gust_angle_deg": 74.2,
+          "wave_angle_to_leg_deg": null,
+          "current_angle_to_leg_deg": null,
+          "current_along_leg_kn": null,
+          "current_cross_leg_kn": null,
+          "estimated_start_time": "2026-10-15T11:47:59.765604Z",
+          "estimated_finish_time": "2026-10-15T12:02:04.283251Z",
+          "estimated_duration_hours": 0.235,
+          "candidate_sails": [],
+          "recommended_sail": null,
+          "recommended_sail_plan": null,
+          "recommendation_confidence": "low",
+          "reefing_recommendation": {
+            "status": "none",
+            "notes": [],
+            "warnings": [
+              "No active mainsail reef thresholds are recorded."
+            ]
+          },
+          "leg_warnings": [
+            "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+            "No suitable active sail was found for this leg."
+          ],
+          "sail_plan_warnings": [
+            "No active mainsail reef thresholds are recorded."
+          ],
+          "provider_warnings": [],
+          "warnings": [
+            "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+            "No suitable active sail was found for this leg.",
+            "No active mainsail reef thresholds are recorded."
+          ],
+          "jib_change": null,
+          "race_mainsail_configuration": null
+        }
+      ]
+    },
+    "race_headsail": null,
+    "sail_change_policy": {
+      "reef_changes_allowed": true,
+      "jib_changes_allowed": false
+    },
+    "race_mainsail_configuration": null,
+    "jib_changes": [],
+    "route_waypoints": [
+      {
+        "sequence": 1,
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      {
+        "sequence": 2,
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      }
+    ],
+    "tide_snapshot_json": {
+      "source": "worldtides",
+      "source_type": "model",
+      "station": null,
+      "station_id": null,
+      "atlas": "THE882 synthetic",
+      "station_search_radius_km": null,
+      "distance_km": null,
+      "latitude": -33.86,
+      "longitude": 151.22,
+      "reference_method": "route_midpoint",
+      "response_latitude": null,
+      "response_longitude": null,
+      "local_date": "2026-10-15",
+      "timezone": "UTC",
+      "datum": "LAT",
+      "requested_datum": "LAT",
+      "provider_timezone": "UTC",
+      "cached": true,
+      "events": [
+        {
+          "kind": "high",
+          "observed_at": "2026-10-15T00:00:00+00:00",
+          "height_m": 1.8
+        },
+        {
+          "kind": "low",
+          "observed_at": "2026-10-15T06:00:00+00:00",
+          "height_m": 0.2
+        },
+        {
+          "kind": "high",
+          "observed_at": "2026-10-15T12:00:00+00:00",
+          "height_m": 1.8
+        },
+        {
+          "kind": "low",
+          "observed_at": "2026-10-15T18:00:00+00:00",
+          "height_m": 0.2
+        }
+      ],
+      "route_span_km": 1.8,
+      "warning": "Tide source: model prediction \u2014 no nearby tide station was used."
+    },
+    "warnings": [
+      "No active sail inventory is available for this vessel.",
+      "Tide source: model prediction \u2014 no nearby tide station was used."
+    ],
+    "legs": [
+      {
+        "sequence": 1,
+        "from_waypoint": {
+          "sequence": null,
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21
+        },
+        "to_waypoint": {
+          "sequence": null,
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23
+        },
+        "bearing_deg": 90.0,
+        "distance_nm": 0.997,
+        "route_twa_deg": 90.0,
+        "sailing_course_deg": 90.0,
+        "target_twa_deg": null,
+        "target_twa_source": null,
+        "tacking_required": false,
+        "tack": "starboard",
+        "wind_side": "starboard",
+        "sails_out_side": null,
+        "forecast_twd_deg": 180.0,
+        "forecast_tws_knots": 12.0,
+        "forecast_gust_knots": 15.0,
+        "forecast_source": "manual",
+        "forecast_sample_time": "2026-10-15T11:47:59.765604Z",
+        "forecast_latitude": null,
+        "forecast_longitude": null,
+        "forecast_weather_code": null,
+        "forecast_weather_summary": null,
+        "forecast_rain_mm": null,
+        "forecast_wave_height_m": null,
+        "forecast_wave_direction_deg": null,
+        "forecast_current_velocity_kn": null,
+        "forecast_current_direction_deg": null,
+        "forecast_current_direction_convention": null,
+        "forecast_sea_level_height_msl_m": null,
+        "forecast_sea_surface_temperature_c": null,
+        "forecast_time_delta_min": null,
+        "twa_deg": 90.0,
+        "point_of_sail": "beam reach",
+        "estimated_boat_speed_knots": 4.25,
+        "estimated_boat_speed_source": "performance_fields",
+        "estimated_boat_speed_polar_context": null,
+        "estimated_sog_knots": 4.25,
+        "apparent_wind_from_deg": 160.5,
+        "awa_deg": 70.5,
+        "aws_knots": 12.73,
+        "apparent_gust_speed_knots": 15.59,
+        "apparent_gust_angle_deg": 74.2,
+        "wave_angle_to_leg_deg": null,
+        "current_angle_to_leg_deg": null,
+        "current_along_leg_kn": null,
+        "current_cross_leg_kn": null,
+        "estimated_start_time": "2026-10-15T11:47:59.765604Z",
+        "estimated_finish_time": "2026-10-15T12:02:04.283251Z",
+        "estimated_duration_hours": 0.235,
+        "candidate_sails": [],
+        "recommended_sail": null,
+        "recommended_sail_plan": null,
+        "race_mainsail_configuration": null,
+        "jib_change": null,
+        "recommendation_confidence": "low",
+        "reefing_recommendation": {
+          "status": "none",
+          "notes": [],
+          "warnings": [
+            "No active mainsail reef thresholds are recorded."
+          ]
+        },
+        "leg_warnings": [
+          "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+          "No suitable active sail was found for this leg."
+        ],
+        "sail_plan_warnings": [
+          "No active mainsail reef thresholds are recorded."
+        ],
+        "provider_warnings": [],
+        "warnings": [
+          "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+          "No suitable active sail was found for this leg.",
+          "No active mainsail reef thresholds are recorded."
+        ]
+      }
+    ]
+  },
+  "packAfter": {
+    "calculationAuthority": "onboard",
+    "lastLocalCalculationAt": null,
+    "reason": "no_race_pack",
+    "warning": null,
+    "forecastCoverage": null,
+    "warnings": [],
+    "observationsReady": false,
+    "observationReadiness": {
+      "ready": false,
+      "reason": "no_samples",
+      "sampleCount": 0,
+      "qualifyingSampleCount": 0,
+      "coveredSeconds": 0,
+      "latestSampleAgeSeconds": null
+    },
+    "cadenceSeconds": 900,
+    "pack": {
+      "available": false,
+      "packId": null,
+      "revision": null,
+      "sha256": null,
+      "ruleSetVersion": null,
+      "courseId": null,
+      "racePlanId": null,
+      "courseDefinitionDigest": null,
+      "generatedAt": null,
+      "validFrom": null,
+      "validUntil": null,
+      "coverage": null,
+      "appliedAt": null,
+      "applicable": false,
+      "currentAt": "unknown"
+    },
+    "observations": {
+      "sampleCount": 0,
+      "windowSeconds": 300,
+      "windSource": null,
+      "twsKnots": null,
+      "twdDeg": null,
+      "position": null,
+      "lastUpdateAt": 1792068191531
+    },
+    "uploadMode": "local_only",
+    "connectionState": "recording_locally",
+    "latestSnapshot": null
+  },
+  "voyageAfter": {
+    "recording_upload": {
+      "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+      "voyage_id": 4,
+      "qualifies_as_trip": true,
+      "state": "ready",
+      "started_at": "2026-10-15T12:04:15.018000Z",
+      "ended_at": "2026-10-15T12:07:36.153000Z",
+      "expected_samples": 190,
+      "received_samples": 190,
+      "rejected_samples": 0,
+      "missing_samples": 0,
+      "upload_percent": 100,
+      "history": {
+        "reconstructing": false,
+        "provisional": false,
+        "upload_percent": 100,
+        "message": null
+      },
+      "updated_at": "2026-10-15T12:08:31.130849Z"
+    },
+    "id": 4,
+    "vessel_id": 4,
+    "created_by_user_id": 2,
+    "created_by_display_name": "Paperclip disposable W42 QA 20261015111327",
+    "created_by_profile_photo_thumb_url": null,
+    "start_time": "2026-10-15T12:04:15.018000Z",
+    "end_time": "2026-10-15T12:07:36.153000Z",
+    "effective_start_time": "2026-10-15T12:04:15.018000Z",
+    "effective_end_time": "2026-10-15T12:07:36.153000Z",
+    "route_source_type": "signalk_live",
+    "distance_nm": 0.194,
+    "distance_method": "signalk_live",
+    "start_location_name": null,
+    "end_location_name": null,
+    "start_timezone": "Australia/Sydney",
+    "gps_trim_start_index": null,
+    "gps_trim_end_index": null,
+    "gps_trim_start_time_utc": null,
+    "gps_trim_end_time_utc": null,
+    "time_source_upload_id": null,
+    "track_source_upload_id": null,
+    "gps_trim_source_upload_id": null,
+    "race_route_id": 4,
+    "race_plan_id": 25,
+    "race_plan_snapshot": {
+      "source_plan_id": 25,
+      "name": "THE882 synthetic ETA proof",
+      "vessel_id": 4,
+      "race_route_id": 4,
+      "planning_mode": "route",
+      "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+      "status": "planned",
+      "forecast_source": "manual",
+      "forecast_snapshot_json": {
+        "source": "manual",
+        "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+        "twd_deg": 180.0,
+        "tws_knots": 12.0,
+        "gust_knots": 15.0,
+        "notes": null,
+        "created_at": "2026-10-15T11:47:59.804782+00:00",
+        "tide_snapshot": {
+          "source": "worldtides",
+          "source_type": "unavailable",
+          "latitude": -33.86,
+          "longitude": 151.22,
+          "reference_method": "route_midpoint",
+          "local_date": "2026-10-15",
+          "timezone": "UTC",
+          "datum": "LAT",
+          "requested_datum": "LAT",
+          "cached": false,
+          "events": [],
+          "warning": "Tide highs and lows are unavailable for this race plan."
+        }
+      },
+      "calculation_snapshot_json": {
+        "calculation_version": "race_plan_preview_v1",
+        "vessel_id": 4,
+        "vessel_name": "THE903 internal transport sentinel",
+        "race_route_id": 4,
+        "race_route_name": "THE882 synthetic ETA leg",
+        "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+        "available_crew_count": null,
+        "forecast_source": "manual",
+        "forecast_snapshot_json": {
+          "source": "manual",
+          "planned_start_time": "2026-10-15T11:47:59.765604+00:00",
+          "twd_deg": 180.0,
+          "tws_knots": 12.0,
+          "gust_knots": 15.0,
+          "notes": null,
+          "created_at": "2026-10-15T11:47:59.804782+00:00",
+          "tide_snapshot": {
+            "source": "worldtides",
+            "source_type": "unavailable",
+            "latitude": -33.86,
+            "longitude": 151.22,
+            "reference_method": "route_midpoint",
+            "local_date": "2026-10-15",
+            "timezone": "UTC",
+            "datum": "LAT",
+            "requested_datum": "LAT",
+            "cached": false,
+            "events": [],
+            "warning": "Tide highs and lows are unavailable for this race plan."
+          }
+        },
+        "estimated_total_hours": 0.235,
+        "estimated_finish_time": "2026-10-15T12:02:04.283251+00:00",
+        "race_headsail": null,
+        "sail_change_policy": {
+          "reef_changes_allowed": true,
+          "jib_changes_allowed": false
+        },
+        "race_mainsail_configuration": null,
+        "jib_changes": [],
+        "route_waypoints": [
+          {
+            "sequence": 1,
+            "name": "Synthetic start",
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          {
+            "sequence": 2,
+            "name": "Synthetic finish",
+            "latitude": -33.86,
+            "longitude": 151.23
+          }
+        ],
+        "tide_snapshot_json": {
+          "source": "worldtides",
+          "source_type": "unavailable",
+          "latitude": -33.86,
+          "longitude": 151.22,
+          "reference_method": "route_midpoint",
+          "local_date": "2026-10-15",
+          "timezone": "UTC",
+          "datum": "LAT",
+          "requested_datum": "LAT",
+          "cached": false,
+          "events": [],
+          "warning": "Tide highs and lows are unavailable for this race plan.",
+          "refresh_attempted_at": "2026-10-15T11:50:01.930260+00:00"
+        },
+        "warnings": [
+          "No active sail inventory is available for this vessel.",
+          "Tide highs and lows are unavailable for this race plan."
+        ],
+        "legs": [
+          {
+            "sequence": 1,
+            "from_waypoint": {
+              "name": "Synthetic start",
+              "latitude": -33.86,
+              "longitude": 151.21
+            },
+            "to_waypoint": {
+              "name": "Synthetic finish",
+              "latitude": -33.86,
+              "longitude": 151.23
+            },
+            "bearing_deg": 90.0,
+            "distance_nm": 0.997,
+            "route_twa_deg": 90.0,
+            "sailing_course_deg": 90.0,
+            "target_twa_deg": null,
+            "target_twa_source": null,
+            "tacking_required": false,
+            "tack": "starboard",
+            "wind_side": "starboard",
+            "sails_out_side": null,
+            "forecast_twd_deg": 180.0,
+            "forecast_tws_knots": 12.0,
+            "forecast_gust_knots": 15.0,
+            "forecast_source": "manual",
+            "forecast_sample_time": "2026-10-15T11:47:59.765604+00:00",
+            "forecast_latitude": null,
+            "forecast_longitude": null,
+            "forecast_weather_code": null,
+            "forecast_weather_summary": null,
+            "forecast_rain_mm": null,
+            "forecast_wave_height_m": null,
+            "forecast_wave_direction_deg": null,
+            "forecast_current_velocity_kn": null,
+            "forecast_current_direction_deg": null,
+            "forecast_current_direction_convention": null,
+            "forecast_sea_level_height_msl_m": null,
+            "forecast_sea_surface_temperature_c": null,
+            "forecast_time_delta_min": null,
+            "twa_deg": 90.0,
+            "point_of_sail": "beam reach",
+            "estimated_boat_speed_knots": 4.25,
+            "estimated_boat_speed_source": "performance_fields",
+            "estimated_boat_speed_polar_context": null,
+            "estimated_sog_knots": 4.25,
+            "apparent_wind_from_deg": 160.5,
+            "awa_deg": 70.5,
+            "aws_knots": 12.73,
+            "apparent_gust_speed_knots": 15.59,
+            "apparent_gust_angle_deg": 74.2,
+            "wave_angle_to_leg_deg": null,
+            "current_angle_to_leg_deg": null,
+            "current_along_leg_kn": null,
+            "current_cross_leg_kn": null,
+            "estimated_start_time": "2026-10-15T11:47:59.765604+00:00",
+            "estimated_finish_time": "2026-10-15T12:02:04.283251+00:00",
+            "estimated_duration_hours": 0.235,
+            "candidate_sails": [],
+            "recommended_sail": null,
+            "recommended_sail_plan": null,
+            "recommendation_confidence": "low",
+            "reefing_recommendation": {
+              "status": "none",
+              "notes": [],
+              "warnings": [
+                "No active mainsail reef thresholds are recorded."
+              ]
+            },
+            "leg_warnings": [
+              "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+              "No suitable active sail was found for this leg."
+            ],
+            "sail_plan_warnings": [
+              "No active mainsail reef thresholds are recorded."
+            ],
+            "provider_warnings": [],
+            "warnings": [
+              "Estimated speed uses a default hull speed because vessel performance fields are incomplete.",
+              "No suitable active sail was found for this leg.",
+              "No active mainsail reef thresholds are recorded."
+            ],
+            "jib_change": null,
+            "race_mainsail_configuration": null
+          }
+        ]
+      },
+      "snapshotted_at": "2026-10-15T12:06:16.797190+00:00"
+    },
+    "race_route_snapshot": {
+      "source_route_id": 4,
+      "name": "THE882 synthetic ETA leg",
+      "slug": "the882-synthetic-eta-leg-22b3c9",
+      "country": null,
+      "state_region": null,
+      "sailing_club": null,
+      "distance_nm": 0.997,
+      "is_public": false,
+      "points": [
+        {
+          "id": 7,
+          "sequence": 1,
+          "name": "Synthetic start",
+          "latitude": -33.86,
+          "longitude": 151.21,
+          "source_type": "manual",
+          "source_id": null,
+          "notes": null
+        },
+        {
+          "id": 8,
+          "sequence": 2,
+          "name": "Synthetic finish",
+          "latitude": -33.86,
+          "longitude": 151.23,
+          "source_type": "manual",
+          "source_id": null,
+          "notes": null
+        }
+      ],
+      "captured_at": "2026-10-15T12:06:16.798339+00:00"
+    },
+    "nmea_available": false,
+    "highest_speed_kn": 5.053996,
+    "average_speed_kn": 3.472294727421881,
+    "duration_hours": 0.05587083333333333,
+    "wind_speed_kn": null,
+    "wind_gust_kn": null,
+    "wind_direction_deg": null,
+    "wind_prevailing_direction_deg": null,
+    "wind_prevailing_direction_label": null,
+    "weather_summary": null,
+    "rain_mm": null,
+    "wave_height_m": null,
+    "wave_avg_m": null,
+    "wave_max_m": null,
+    "wave_direction_dominant_deg": null,
+    "wave_direction_dominant_label": null,
+    "current_speed_kn": null,
+    "vessel_visual_type": "sailing_monohull",
+    "tide_state": "rising",
+    "tide_height_m": 1.1,
+    "tide_start_height_m": 1.1,
+    "tide_end_height_m": 1.2,
+    "tide_min_m": 1.1,
+    "tide_max_m": 1.8,
+    "tide_events": [
+      {
+        "kind": "low",
+        "observed_at": "2026-10-15T09:04:15.018000Z",
+        "height_m": 0.2,
+        "source": "THE882.synthetic.fixture.20261015",
+        "confidence": null
+      },
+      {
+        "kind": "high",
+        "observed_at": "2026-10-15T12:05:55.585500Z",
+        "height_m": 1.8,
+        "source": "THE882.synthetic.fixture.20261015",
+        "confidence": null
+      },
+      {
+        "kind": "low",
+        "observed_at": "2026-10-15T15:07:36.153000Z",
+        "height_m": 0.2,
+        "source": "THE882.synthetic.fixture.20261015",
+        "confidence": null
+      }
+    ],
+    "card_photos": [],
+    "card_photo_count": 0,
+    "crew_summary": [],
+    "ai_review_ready": false,
+    "route_preview_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 152\" preserveAspectRatio=\"none\" data-route-preview-version=\"5\"><rect x=\"0\" y=\"0\" width=\"320\" height=\"152\" fill=\"#e7f0f7\" /><path d=\"M 0 38.0 H 320 M 0 76.0 H 320 M 0 114.0 H 320\" stroke=\"#c9dbe8\" stroke-width=\"1\" /><path d=\"M 80.0 0 V 152 M 160.0 0 V 152 M 240.0 0 V 152\" stroke=\"#c9dbe8\" stroke-width=\"1\" /><polyline points=\"114.8,76.0 115.3,76.0 115.7,76.0 116.2,76.0 116.7,76.0 117.1,76.0 117.6,76.0 118.1,76.0 118.5,76.0 119.0,76.0 119.5,76.0 119.9,76.0 120.4,76.0 120.9,76.0 121.3,76.0 121.8,76.0 122.3,76.0 122.7,76.0 123.6,76.0 124.1,76.0 124.6,76.0 125.0,76.0 125.5,76.0 126.0,76.0 126.4,76.0 126.9,76.0 127.4,76.0 127.8,76.0 128.3,76.0 128.8,76.0 129.2,76.0 129.7,76.0 130.2,76.0 130.6,76.0 131.1,76.0 131.6,76.0 132.0,76.0 132.5,76.0 133.0,76.0 133.4,76.0 133.9,76.0 134.4,76.0 134.8,76.0 135.3,76.0 135.8,76.0 136.2,76.0 136.7,76.0 137.2,76.0 137.6,76.0 138.1,76.0 138.6,76.0 139.0,76.0 139.5,76.0 140.0,76.0 140.9,76.0 141.4,76.0 141.8,76.0 142.3,76.0 142.8,76.0 143.2,76.0 143.7,76.0 144.2,76.0 144.6,76.0 145.1,76.0 145.6,76.0 146.0,76.0 146.5,76.0 147.0,76.0 147.4,76.0 147.9,76.0 148.3,76.0 148.8,76.0 149.3,76.0 149.7,76.0 150.2,76.0 150.7,76.0 151.1,76.0 151.6,76.0 152.1,76.0 152.5,76.0 153.0,76.0 153.5,76.0 153.9,76.0 154.4,76.0 154.9,76.0 155.3,76.0 155.8,76.0 156.3,76.0 156.7,76.0 157.2,76.0 158.1,76.0 158.6,76.0 159.1,76.0 159.5,76.0 160.0,76.0 160.5,76.0 160.9,76.0 161.4,76.0 161.9,76.0 162.3,76.0 162.8,76.0 163.3,76.0 163.7,76.0 164.2,76.0 164.7,76.0 165.1,76.0 165.6,76.0 166.1,76.0 166.5,76.0 167.0,76.0 167.5,76.0 167.9,76.0 168.4,76.0 168.9,76.0 169.3,76.0 169.8,76.0 170.3,76.0 170.7,76.0 171.2,76.0 171.7,76.0 172.1,76.0 172.6,76.0 173.0,76.0 173.5,76.0 174.0,76.0 174.4,76.0 174.9,76.0 175.4,76.0 175.8,76.0 176.3,76.0 177.2,76.0 177.7,76.0 178.2,76.0 178.6,76.0 179.1,76.0 179.6,76.0 180.0,76.0 180.5,76.0 181.0,76.0 181.4,76.0 181.9,76.0 182.4,76.0 182.8,76.0 183.3,76.0 183.8,76.0 184.2,76.0 184.7,76.0 185.2,76.0 185.6,76.0 186.1,76.0 186.6,76.0 187.0,76.0 187.5,76.0 188.0,76.0 188.4,76.0 188.9,76.0 189.4,76.0 189.8,76.0 190.3,76.0 190.8,76.0 191.2,76.0 191.7,76.0 192.2,76.0 192.6,76.0 193.1,76.0 193.6,76.0 194.0,76.0 194.5,76.0 195.0,76.0 195.9,76.0 196.4,76.0 196.8,76.0 197.3,76.0 197.7,76.0 198.2,76.0 198.7,76.0 199.1,76.0 199.6,76.0 200.1,76.0 200.5,76.0 201.0,76.0 201.5,76.0 201.9,76.0 202.4,76.0 202.9,76.0 203.3,76.0 203.8,76.0 204.3,76.0 204.7,76.0 205.2,76.0\" fill=\"none\" stroke=\"#e8f4fb\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"0.96\" /><polyline points=\"114.8,76.0 115.3,76.0 115.7,76.0 116.2,76.0 116.7,76.0 117.1,76.0 117.6,76.0 118.1,76.0 118.5,76.0 119.0,76.0 119.5,76.0 119.9,76.0 120.4,76.0 120.9,76.0 121.3,76.0 121.8,76.0 122.3,76.0 122.7,76.0 123.6,76.0 124.1,76.0 124.6,76.0 125.0,76.0 125.5,76.0 126.0,76.0 126.4,76.0 126.9,76.0 127.4,76.0 127.8,76.0 128.3,76.0 128.8,76.0 129.2,76.0 129.7,76.0 130.2,76.0 130.6,76.0 131.1,76.0 131.6,76.0 132.0,76.0 132.5,76.0 133.0,76.0 133.4,76.0 133.9,76.0 134.4,76.0 134.8,76.0 135.3,76.0 135.8,76.0 136.2,76.0 136.7,76.0 137.2,76.0 137.6,76.0 138.1,76.0 138.6,76.0 139.0,76.0 139.5,76.0 140.0,76.0 140.9,76.0 141.4,76.0 141.8,76.0 142.3,76.0 142.8,76.0 143.2,76.0 143.7,76.0 144.2,76.0 144.6,76.0 145.1,76.0 145.6,76.0 146.0,76.0 146.5,76.0 147.0,76.0 147.4,76.0 147.9,76.0 148.3,76.0 148.8,76.0 149.3,76.0 149.7,76.0 150.2,76.0 150.7,76.0 151.1,76.0 151.6,76.0 152.1,76.0 152.5,76.0 153.0,76.0 153.5,76.0 153.9,76.0 154.4,76.0 154.9,76.0 155.3,76.0 155.8,76.0 156.3,76.0 156.7,76.0 157.2,76.0 158.1,76.0 158.6,76.0 159.1,76.0 159.5,76.0 160.0,76.0 160.5,76.0 160.9,76.0 161.4,76.0 161.9,76.0 162.3,76.0 162.8,76.0 163.3,76.0 163.7,76.0 164.2,76.0 164.7,76.0 165.1,76.0 165.6,76.0 166.1,76.0 166.5,76.0 167.0,76.0 167.5,76.0 167.9,76.0 168.4,76.0 168.9,76.0 169.3,76.0 169.8,76.0 170.3,76.0 170.7,76.0 171.2,76.0 171.7,76.0 172.1,76.0 172.6,76.0 173.0,76.0 173.5,76.0 174.0,76.0 174.4,76.0 174.9,76.0 175.4,76.0 175.8,76.0 176.3,76.0 177.2,76.0 177.7,76.0 178.2,76.0 178.6,76.0 179.1,76.0 179.6,76.0 180.0,76.0 180.5,76.0 181.0,76.0 181.4,76.0 181.9,76.0 182.4,76.0 182.8,76.0 183.3,76.0 183.8,76.0 184.2,76.0 184.7,76.0 185.2,76.0 185.6,76.0 186.1,76.0 186.6,76.0 187.0,76.0 187.5,76.0 188.0,76.0 188.4,76.0 188.9,76.0 189.4,76.0 189.8,76.0 190.3,76.0 190.8,76.0 191.2,76.0 191.7,76.0 192.2,76.0 192.6,76.0 193.1,76.0 193.6,76.0 194.0,76.0 194.5,76.0 195.0,76.0 195.9,76.0 196.4,76.0 196.8,76.0 197.3,76.0 197.7,76.0 198.2,76.0 198.7,76.0 199.1,76.0 199.6,76.0 200.1,76.0 200.5,76.0 201.0,76.0 201.5,76.0 201.9,76.0 202.4,76.0 202.9,76.0 203.3,76.0 203.8,76.0 204.3,76.0 204.7,76.0 205.2,76.0\" fill=\"none\" stroke=\"#0f6ea8\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /></svg>",
+    "route_preview_point_count": 190,
+    "route_preview_updated_at": "2026-10-15T12:08:02.488890Z",
+    "source_policy": "gpx_time_dat_track",
+    "general_notes": "Provisional trip created from Wake Logger live movement detection.",
+    "signature_status": "draft",
+    "signed_at": null,
+    "signed_by": null,
+    "attested_subject_display_name": null,
+    "attested_subject_role_on_boat": null,
+    "signature_invalidated_at": null,
+    "signature_invalidation_reason": null,
+    "voyage_scope": "domestic",
+    "compliance_last_checked_at": null,
+    "compliance_last_result": null,
+    "last_destructive_trim_at": null,
+    "last_destructive_trim_start_at": null,
+    "last_destructive_trim_end_at": null,
+    "archived_at": null,
+    "created_at": "2026-10-15T12:06:16.452388Z",
+    "updated_at": "2026-10-15T12:08:02.374699Z"
+  },
+  "after": {
+    "uploadMode": "local_only",
+    "liveTrackingEnabled": false,
+    "persistedUploadMode": "local_only",
+    "persistenceError": null,
+    "paired": true,
+    "recording": true,
+    "trackingSessionId": "5f835fd9-cd30-45ab-bd08-454c2416e1ec",
+    "trackingState": "STOP_CANDIDATE",
+    "finishedTrip": {
+      "manifest": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "startedAt": 1792065855018,
+        "firstSequence": 398,
+        "state": "complete",
+        "lastSequence": 587,
+        "endedAt": 1792066056153
+      },
+      "uploadPending": false,
+      "confirmationPending": false,
+      "cloudStatus": {
+        "id": "1e25ce14-7a38-45d5-b3e6-89888dfb8e45",
+        "lastSequence": 587,
+        "state": "ready",
+        "voyageId": 4,
+        "expectedSamples": 190,
+        "receivedSamples": 190,
+        "rejectedSamples": 0,
+        "missingSamples": 0,
+        "environmentPending": false
+      }
+    },
+    "available": true,
+    "connectionState": "recording_locally",
+    "historicalUpload": {
+      "id": "bf855810-d9ec-41b3-b244-e932ac62608b",
+      "throughSequence": 1439,
+      "startedAt": 1792068621923,
+      "progressKnown": true,
+      "totalSamples": 852,
+      "remainingSamples": 792,
+      "uploadedSamples": 60,
+      "droppedSamples": 0
+    },
+    "lifetimeDroppedCount": 0,
+    "cohortDroppedSamples": 0,
+    "cohortProgressKnown": true,
+    "queue": {
+      "messageCount": 792,
+      "diskBytes": 695105,
+      "oldestCapturedAt": 1792066785242,
+      "acknowledgedSequence": 647,
+      "currentSequence": 1439,
+      "droppedCount": 0
+    },
+    "queueStatsAt": 1792074620916,
+    "at": 1792074629412
+  },
+  "courseAfter": {
+    "desired": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "cachedCourse": {
+      "v": 1,
+      "action": "activate",
+      "revision": 1,
+      "courseId": "race-plan-25",
+      "name": "THE882 synthetic ETA proof",
+      "updatedAt": "2026-10-15T11:48:01.931399+00:00",
+      "start": {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      "marks": [],
+      "finish": {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      },
+      "racePlanId": 25,
+      "courseDefinitionDigest": "2342f0a86d7362a72d32c5d90e6ba78a54c97a1607dd90f5b5fe6519477a59b0",
+      "activeWaypointIndex": 1
+    },
+    "legStart": {
+      "identity": "[\"race-plan-25\",1,\"2026-10-15T11:48:01.931399+00:00\",1,\"/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8\",false,[{\"id\":\"route-point-7\",\"name\":\"Synthetic start\",\"latitude\":-33.86,\"longitude\":151.21},{\"id\":\"route-point-8\",\"name\":\"Synthetic finish\",\"latitude\":-33.86,\"longitude\":151.23}]]",
+      "observedAt": 1792068033686,
+      "startedAt": 1792068033686,
+      "position": {
+        "latitude": -33.86,
+        "longitude": 151.21593339508965
+      },
+      "positionTimestamp": 1792068032773
+    },
+    "acknowledgement": {
+      "v": 1,
+      "revision": 1,
+      "status": "applied",
+      "activation": "active",
+      "mapReadiness": "unknown"
+    },
+    "routePoints": [
+      {
+        "id": "route-point-7",
+        "name": "Synthetic start",
+        "latitude": -33.86,
+        "longitude": 151.21
+      },
+      {
+        "id": "route-point-8",
+        "name": "Synthetic finish",
+        "latitude": -33.86,
+        "longitude": 151.23
+      }
+    ],
+    "native": {
+      "available": true,
+      "course": {
+        "startTime": "2026-10-15T12:40:33.675Z",
+        "targetArrivalTime": null,
+        "arrivalCircle": 0,
+        "activeRoute": {
+          "href": "/resources/routes/e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+          "name": "THE882 synthetic ETA proof",
+          "reverse": false,
+          "pointIndex": 1,
+          "pointTotal": 2
+        },
+        "nextPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.23
+          },
+          "name": "Synthetic finish"
+        },
+        "previousPoint": {
+          "type": "RoutePoint",
+          "position": {
+            "latitude": -33.86,
+            "longitude": 151.21
+          },
+          "name": "Synthetic start"
+        }
+      },
+      "ownedRouteId": "e2eacc4c-8f63-448b-abf5-b9d2a23ea6a8",
+      "activeMatchesDesired": true,
+      "conflict": false,
+      "blocker": null
+    },
+    "uploadMode": "local_only",
+    "connectionState": "recording_locally",
+    "offlineReadiness": {
+      "ready": false,
+      "label": "Offline race not ready",
+      "checks": {
+        "courseApplied": true,
+        "nativeActive": true,
+        "nativeAvailable": true,
+        "racePackReady": false,
+        "racePackMatches": false,
+        "forecastValidNow": false,
+        "forecastCoversRace": false,
+        "ruleSetSupported": false
+      },
+      "missing": [
+        "no Race Pack has been prepared for this course"
+      ],
+      "uncertainty": [],
+      "forecastCoverage": "unknown",
+      "coverageQualification": null,
+      "packStoredNotApplicable": false,
+      "courseId": "race-plan-25",
+      "courseRevision": 1,
+      "packRevision": null,
+      "detail": "Missing: no Race Pack has been prepared for this course.",
+      "evaluatedAt": 1792074629418,
+      "navigation": {
+        "ready": true,
+        "label": "Live navigation ready",
+        "source": "native",
+        "missing": [],
+        "detail": "The Wake Logger course is active and live navigation is computing from it."
+      }
+    }
+  },
+  "servedHashes": {
+    "app.mjs": "03c00d40b3e2faae762c341a98cb75ecc42ba91843aa5b0565d21e3bd5d26c77",
+    "leg-eta.mjs": "f4d225c42bfb83a30017bc5bb5dd1c73741aa9e2c28feadcd217c172484e8fe4",
+    "course-progress.mjs": "c3beb6cf8f6d9ffa18dfdc92d4c50528aaeb5aca4532e536a92c544d74c9245e",
+    "instruments.mjs": "d22e86d39b9db1a015e959ae51cf99e1fe2b73dc6cd5af486cc32bbb761b0ad4",
+    "tracking-controls.mjs": "be41b19a59d64f2a8ce94708a0458332ccb46abd8df50b98e63df4d40af9cc08"
+  }
+}
