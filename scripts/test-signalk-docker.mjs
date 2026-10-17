@@ -298,6 +298,7 @@ try {
     event.topic === 'wakelogger/v1/devices/dev_docker_e2e/status' && event.payload?.queueMessageCount === 0), 60_000)
 
   // --- Real Signal K native navigation gate ---------------------------------
+  const nativeGateStartedAt = Date.now()
   const pluginBase = 'http://signalk:3000/plugins/signalk-wakelogger'
   const courseUrl = `${pluginBase}/course`
   const skPut = (path, body) => query(`http://signalk:3000${path}`, 'PUT', body)
@@ -449,17 +450,27 @@ try {
   const staleEta = raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute)
   assert.equal(staleEta.eta, null, 'old replay must never claim a wall-clock ETA')
   assert.equal(staleEta.timeToGo, null)
-  const cachedStatus = { ...nextMotion.status, native: { ...nextMotion.status.native, activeMatchesDesired: false } }
-  const replayEta = raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock)
-  assert.ok(replayEta.eta, `source-clock cached ETA requires fresh actual sensor envelopes: ${replayEta.etaReason}`)
-  assert.ok(replayEta.timeToGo >= 0 && replayEta.timeToGo <= 86400)
+  // The durable leg baseline is observed on the activation clock (the plugin's
+  // clock), while the bundled replay deliberately keeps 2014 source stamps. The
+  // packaged status must expose the baseline, and the client must refuse to
+  // pair a baseline from one clock domain with envelopes from another instead
+  // of inventing an elapsed time. The positive leg-average path with same-clock
+  // envelopes is covered by the packaged webapp tests (test/webapp/eta.test.mjs,
+  // test/integration/onboard-race-plan.test.ts).
+  const marker = nextMotion.status.legStart
+  assert.ok(marker && Number.isFinite(marker.startedAt), 'the packaged status must expose the durable leg baseline')
+  assert.ok(marker.startedAt >= nativeGateStartedAt && marker.startedAt <= Date.now(),
+    'the leg baseline must be stamped on the activation clock')
+  const replayEta = raceProgress(nextMotion.status, nextMotion.navigation, {}, nextMotion.nativeRoute, null, nextMotion.sourceClock)
+  assert.equal(replayEta.eta, null, 'replay-clock envelopes must never pair with an activation-clock leg baseline')
+  assert.equal(replayEta.timeToGo, null)
   const staleMotion = { ...nextMotion.navigation, speedOverGround: { ...nextMotion.navigation.speedOverGround,
     timestamp: new Date(nextMotion.sourceClock - 31000).toISOString() } }
-  assert.equal(raceProgress(cachedStatus, staleMotion, {}, null, null, nextMotion.sourceClock).eta, null)
-  assert.equal(raceProgress(cachedStatus, nextMotion.navigation, {}, null, null, nextMotion.sourceClock).eta, replayEta.eta)
+  assert.equal(raceProgress(nextMotion.status, staleMotion, {}, nextMotion.nativeRoute, null, nextMotion.sourceClock).eta, null,
+    'a stale envelope must withhold the ETA even at the replay clock')
   process.stdout.write(`${JSON.stringify({ nativeEtaProof: { clock: 'bundled N2K replay', nativeWallClockEta: staleEta.eta,
-    nativeReason: staleEta.etaReason, cachedSourceClockEta: replayEta.eta, seconds: replayEta.timeToGo,
-    staleMotionRejected: true, recovery: true } })}\n`)
+    nativeReason: staleEta.etaReason, sourceClockWithheld: true, baselineStartedAt: marker.startedAt,
+    staleEnvelopeRejected: true, recovery: true } })}\n`)
   skPut('/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint', { value: 1 })
   assert.equal(readMotion().progress.index, 2, 'manual next-leg semantics survive continuous progress')
   process.stdout.write(`${JSON.stringify({ nativeCourseProgress: { clock: 'bundled N2K replay', from: firstMotion.progress.pointPercent, to: nextMotion.progress.pointPercent, fixedIndex: 1, staleWallClock: null, manualNextIndex: 2 } })}\n`)
