@@ -2,6 +2,34 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.11] - 2026-10-17
+
+### Live tracking asks before it changes
+
+- Turning **Live tracking** on or off now asks you to confirm the change and names its effect. The new setting is only reported once it has been saved onboard, and if the setting changed somewhere else the app re-reads it instead of overwriting it.
+- Live transmission can only be switched on by the confirmed control in the onboard app. The Signal K plugin settings page no longer turns uploads on by itself.
+
+### An ETA that follows the leg you are sailing
+
+- The Race tab's ETA and VMG are based on your net progress along the current leg — the leg-average speed actually being made good — instead of native time-to-go or a single speed sample. The value is labelled **Leg-average VMG (ground)**. During the first minute of a leg, a matching Wake Logger leg plan may provide a clearly labelled provisional estimate **(plan)**.
+- If the position, speed or course data needed for the estimate is missing, stale or out of sync, the ETA is withheld and the reason is shown instead. Estimates outside normal sailing speeds or more than a day away are not displayed.
+
+### Wind values labelled by their source
+
+- True wind angle is derived relative to the bow, never the boat's course, and is worked out separately for each velocity reference, so a ground-based result can no longer stand in for water wind.
+- Wind VMG is computed and labelled per reference (ground or water). A value that would mix references, or that is stale, is shown as unavailable instead of being displayed.
+
+### A clearer map, progress and finish
+
+- Course progress now shows the distance sailed along the active leg, so it advances smoothly between waypoints instead of jumping at each mark.
+- **Finish trip** is always a local save: cloud connection, upload queue and race readiness never block it, and a failed attempt explains the exact cause with a safe retry path.
+- The heading and tack/gybe guide label now names the current tack and stays visible, and the map frames the boat even before a course or track exists. Guides still take no tide or leeway into account.
+
+### Updating
+
+- Update Wake Logger in the Signal K App Store and restart Signal K if prompted. Your settings, pairing and recorded trips are retained.
+- After this update, **confirm Live tracking ON in the onboard app** to resume uploading new trips. Until you confirm, the plugin keeps recording locally and live transmission stays off — a saved setting or the plugin configuration page can no longer start transmitting by itself.
+
 ## [0.2.0-beta.10] - 2026-10-11
 
 ### Race-day navigation survives course activation failures
@@ -69,8 +97,6 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 - A source time more than 30 days before the delta was delivered is treated as a broken clock and replaced by receipt time, instead of being queued and later rejected by Wake Logger as outside the vessel's entitled capture window (for example a GPS reporting a stale 2014 default date).
 - The database outbox now declares sequences skipped by a seed or reset as dropped when it opens, matching the file outbox, so the cloud's contiguous acknowledgement can advance and later trips are not left waiting for history.
 
-## [Unreleased] - 2026-09-27
-
 ### Offline race readiness you can trust
 
 - One clear **Offline race ready** status now checks that the selected course is applied, the expected Signal K route is active, and a Race Pack that matches the course (id, race plan and course definition) is prepared with supported rules and a current forecast. Changing the course immediately invalidates readiness for the old pack, even though that pack is kept for history.
@@ -79,10 +105,6 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 ### Clearer navigation failures
 
 - Failed Signal K requests now keep the operation, method, path, HTTP status and a bounded, credential-safe reason. Advancing, setting or activating a course shows a human-readable message such as "Could not advance to the next course point to Mark 3 — Signal K rejected the active route update: <reason>", and the bounded detail is written to the plugin log. Tokens and passwords are never logged or displayed.
-
-### A track that survives reload
-
-- The onboard map now rebuilds the current recording's track from an independent durable onboard archive on open or reload, rather than starting at page-open time and rather than depending on whether telemetry has already been uploaded. New fixes append incrementally; long trips are decimated for display without changing the recording; and the complete geometry survives browser reload, page-resume and plugin restart with no Wake Logger/cloud connection. A tail-only cloud trip is marked "Reconstructing trip · N% history received" until its history converges.
 
 ### Standalone vessel instruments
 
