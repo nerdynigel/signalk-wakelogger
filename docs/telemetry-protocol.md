@@ -48,3 +48,14 @@ Trip evidence is also embedded in its source sample for durable recovery. The ev
 The retained status document includes `v`, `state` and `at`. A running plugin also reports `pluginVersion`, `queueMessageCount`, `queueDiskBytes`, optional `queueOldestCapturedAt`, `queueDroppedCount`, `acknowledgedSequence`, `currentSequence` and optional `trackingState`. These fields contain operational counters only—never credentials or telemetry values—and allow Wake Logger administrators to identify vessel-side backlog and loss.
 
 Status also reports `storageBackend`, `networkMode`, `modeReason`, `profileId`, `profileRevision`, `lastAcknowledgedAt`, `acknowledgementLatencyMs`, `reconnectCount` and `publishedBytes`. Profiles contain exactly the supported fields (`position`, `sog`, `cog`, `heading`, `depth`, `apparentWind`) with enabled flags and millisecond periods for `NORMAL`, `CONSTRAINED` and `OFFLINE`, plus bounded batching and replay byte rates. Position cannot be disabled. A profile acknowledgement reports `profileId`, `revision`, `status`, `at`, and a bounded error code when rejected.
+
+Recording manifests embedded in samples and retained status may include an
+optional `endReason` on `state: "complete"`: `explicit_finish` records the local
+Finish action; `stationary` records the automatic stop detector. The reason
+survives outbox acknowledgements and plugin restarts with the terminal manifest.
+Older manifests without it remain valid. Live tracking mode changes never close
+or replace a recording.
+
+An empty retained Race Pack manifest/chunk message deletes a broker cache entry.
+It is ignored without generating an acknowledgement or changing the applied
+pack. A versioned `action: "clear"` control is required to clear the applied pack.

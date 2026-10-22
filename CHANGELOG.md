@@ -2,6 +2,14 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.12] - 2026-10-22
+
+- **Finish trip** now confirms that subsequent movement starts a new trip card, and points you to **Live tracking** if you only want to upload saved history. Retrying cloud confirmation does not end a trip again.
+- Reconnecting or uploading saved trip history no longer raises a false Race Pack acknowledgement error when Wake Logger clears old MQTT cache chunks. Empty cache cleanup messages leave the applied course/forecast and its acknowledgement unchanged.
+- Completed recordings now include whether you selected **Finish trip** or the boat met the stationary stop rule, so the website can retain the exact trip boundary reason. Changing **Live tracking** still only changes uploading; recording continues under the same trip identity.
+
+Update Wake Logger from the Signal K App Store and restart Signal K if prompted. Your settings, pairing and recorded trips are retained. Keep Live tracking off to record locally; turn it on when you want to upload saved history. Select Finish trip only when you intend to end the trip.
+
 ## [0.2.0-beta.11] - 2026-10-17
 
 ### Live tracking asks before it changes

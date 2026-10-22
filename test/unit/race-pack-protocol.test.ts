@@ -46,6 +46,24 @@ async function applyEncoded(receiver: RacePackReceiver, encoded: ReturnType<type
 }
 
 describe('Race Pack protocol and storage', () => {
+  it('ignores retained MQTT deletions without rejecting the applied pack', async () => {
+    const directory = await temporaryDirectory('race-pack-tombstone-')
+    const store = new RacePackStore(directory)
+    const receiver = new RacePackReceiver({ store })
+    const encoded = encodeFixturePack(makeFixturePack(), { chunkCount: 2 })
+    await applyEncoded(receiver, encoded)
+    const applied = store.applied()
+    const acknowledgement = receiver.currentAck()
+
+    // Cloud cleanup deletes retained chunks with zero-byte MQTT messages.
+    expect(await receiver.acceptChunk(Buffer.alloc(0), 0)).toBeNull()
+    expect(await receiver.acceptChunk(Buffer.alloc(0), 1)).toBeNull()
+    expect(await receiver.acceptManifest(Buffer.alloc(0))).toBeNull()
+    expect(store.applied()).toEqual(applied)
+    expect(receiver.currentAck()).toEqual(acknowledgement)
+    expect(receiver.lastError()).toBeUndefined()
+  })
+
   it('assembles a retained manifest and out-of-order chunks into a validated pack', async () => {
     const directory = await temporaryDirectory('race-pack-')
     const store = new RacePackStore(directory)

@@ -795,6 +795,7 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
 })
 
 test('Finish trip saves onboard immediately and sends the visible recording identity without native route writes', async ({ page }, testInfo) => {
+  page.on('dialog', dialog => dialog.accept())
   const { writes, control } = await mockBoat(page)
   const recordingId = '00000000-0000-0000-0000-000000000075'
   control.trackingSessionId = recordingId
@@ -838,7 +839,30 @@ test('Finish trip saves onboard immediately and sends the visible recording iden
   expect(writes).toEqual([])
 })
 
+test('cancelling Finish keeps the current trip recording without a finish request', async ({ page }) => {
+  const { control } = await mockBoat(page)
+  control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
+  let requests = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', route => {
+    requests += 1
+    return route.fulfill({ status: 500 })
+  })
+  await page.goto('/')
+  const dialogSeen = new Promise(resolve => page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain('new trip card')
+    expect(dialog.message()).toContain('Live tracking')
+    await dialog.dismiss()
+    resolve()
+  }))
+  await page.getByRole('button', { name: 'Finish trip', exact: true }).click()
+  await dialogSeen
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  expect(requests).toBe(0)
+  expect(control.trackingSessionId).toBe('00000000-0000-0000-0000-000000000075')
+})
+
 test('Finish trip refreshes after a stale recording conflict without closing the new trip', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control, writes } = await mockBoat(page)
   control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
   let submitted
@@ -911,18 +935,25 @@ test('cancel in either direction and reload never change live tracking', async (
   await page.goto('/signalk-wakelogger/')
   const toggle = page.getByRole('switch', { name: 'Live tracking' })
   await expect(toggle).toBeEnabled()
-  page.once('dialog', dialog => dialog.dismiss())
+  const chooseDialog = accept => new Promise(resolve => page.once('dialog', async dialog => {
+    await (accept ? dialog.accept() : dialog.dismiss())
+    resolve()
+  }))
+  let dialogHandled = chooseDialog(false)
   await toggle.focus()
   await toggle.press('Space')
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   expect(writes).toHaveLength(0)
-  page.once('dialog', dialog => dialog.accept())
+  dialogHandled = chooseDialog(true)
   await toggle.click()
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   await page.reload()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  page.once('dialog', dialog => dialog.dismiss())
+  dialogHandled = chooseDialog(false)
   await toggle.click()
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   expect(writes).toHaveLength(1)
 })
@@ -1009,6 +1040,7 @@ test('Finish is independent of upload queue and race conflict; refresh failure r
 })
 
 test('Finish reports unsafe tail and timeout uncertainty, then releases busy state for retry', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control, writes } = await mockBoat(page)
   control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
   let attempts = 0
@@ -1039,6 +1071,7 @@ test('Finish reports unsafe tail and timeout uncertainty, then releases busy sta
 })
 
 test('automatic closure during manual Finish is shown as ended without a second write', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control } = await mockBoat(page)
   const id = '00000000-0000-0000-0000-000000000075'
   control.trackingSessionId = id

@@ -37,6 +37,8 @@ Pairing codes are single-use. If a code expires or is rejected, generate a new o
 
 Recording and uploading are separate. Keep Signal K and the Wake Logger plugin running, with your boat's navigation data available, for the trip to be recorded.
 
+Keep one trip running for the full outing. Turning Live tracking off or on does not finish it. **Finish trip** ends the current trip; subsequent movement starts a new one. Finished manifests include the closure reason for the supporting website's durable diagnostics.
+
 **For normal use:** Confirm **Live tracking** on in the onboard Wake Logger app. If internet access drops, the plugin stores readings onboard and resumes uploads when the connection returns, provided your confirmed choice is still on.
 
 **To deliberately defer uploading:** Pair first, then confirm **Live tracking** off on the onboard Wake Logger map. The plugin keeps recording locally, up to your storage and age limits. Confirm it on when you are ready to send your live position and upload stored history. Changing the switch does not end a trip or restart recording, and the confirmed setting survives restarts and configuration updates. Both directions require confirmation. New installations and upgrades without a readable confirmed choice start with live tracking off; confirm it on in the onboard app when ready. Saving the legacy upload mode in plugin settings cannot enable live tracking.

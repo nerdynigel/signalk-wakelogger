@@ -6,10 +6,23 @@ import { CourseProgressionService, SignalKRequestError, boundedDetail, parseSign
 import { describeNavigationFailure } from '../../webapp/navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning } from '../../webapp/offline-readiness.mjs'
 import { instrumentReadings, liveNavigationStrip, formatReading, parseSignalKTimestamp } from '../../webapp/instruments.mjs'
-import { trackingPresentation, finishTripPresentation } from '../../webapp/tracking-controls.mjs'
+import { trackingPresentation, finishTripPresentation, confirmTripFinish } from '../../webapp/tracking-controls.mjs'
 import { trackCoordinates, appendTrackPoint, bootstrapTrack, needsRebootstrap, trackBounds, shouldAutoFitTrack } from '../../webapp/track.mjs'
 
 const origin = 'http://boat.local:3000'
+
+test('Finish distinguishes ending a trip from uploading history and retries do not finish again', () => {
+  const active = { uploadMode: 'local_only', paired: true, available: true,
+    recording: true, trackingSessionId: 'active', connectionState: 'offline' }
+  let message
+  assert.equal(confirmTripFinish(active, text => { message = text; return false }), false)
+  assert.match(message, /Further movement will start a new trip card/)
+  assert.match(message, /turn Live tracking on instead/)
+  assert.equal(confirmTripFinish(active, () => true), true)
+  const retry = { ...active, trackingSessionId: null,
+    finishedTrip: { confirmationPending: true, manifest: { id: 'closed' } } }
+  assert.equal(confirmTripFinish(retry, () => { throw new Error('Retry must not finish again') }), true)
+})
 const point = (latitude, longitude) => ({ latitude, longitude })
 
 test('chart discovery preserves native tile coordinates and prioritizes local charts', () => {
