@@ -795,6 +795,7 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
 })
 
 test('Finish trip saves onboard immediately and sends the visible recording identity without native route writes', async ({ page }, testInfo) => {
+  page.on('dialog', dialog => dialog.accept())
   const { writes, control } = await mockBoat(page)
   const recordingId = '00000000-0000-0000-0000-000000000075'
   control.trackingSessionId = recordingId
@@ -838,7 +839,30 @@ test('Finish trip saves onboard immediately and sends the visible recording iden
   expect(writes).toEqual([])
 })
 
+test('cancelling Finish keeps the current trip recording without a finish request', async ({ page }) => {
+  const { control } = await mockBoat(page)
+  control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
+  let requests = 0
+  await page.route('**/plugins/signalk-wakelogger/tracking/finish', route => {
+    requests += 1
+    return route.fulfill({ status: 500 })
+  })
+  await page.goto('/')
+  const dialogSeen = new Promise(resolve => page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain('new trip card')
+    expect(dialog.message()).toContain('Live tracking')
+    await dialog.dismiss()
+    resolve()
+  }))
+  await page.getByRole('button', { name: 'Finish trip', exact: true }).click()
+  await dialogSeen
+  await expect(page.locator('#finish-trip')).toBeEnabled()
+  expect(requests).toBe(0)
+  expect(control.trackingSessionId).toBe('00000000-0000-0000-0000-000000000075')
+})
+
 test('Finish trip refreshes after a stale recording conflict without closing the new trip', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control, writes } = await mockBoat(page)
   control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
   let submitted
@@ -1009,6 +1033,7 @@ test('Finish is independent of upload queue and race conflict; refresh failure r
 })
 
 test('Finish reports unsafe tail and timeout uncertainty, then releases busy state for retry', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control, writes } = await mockBoat(page)
   control.trackingSessionId = '00000000-0000-0000-0000-000000000075'
   let attempts = 0
@@ -1039,6 +1064,7 @@ test('Finish reports unsafe tail and timeout uncertainty, then releases busy sta
 })
 
 test('automatic closure during manual Finish is shown as ended without a second write', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept())
   const { control } = await mockBoat(page)
   const id = '00000000-0000-0000-0000-000000000075'
   control.trackingSessionId = id

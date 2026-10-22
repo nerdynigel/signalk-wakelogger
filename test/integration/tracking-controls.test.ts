@@ -136,14 +136,14 @@ it('finishes offline through the local route without samples, navigation writes 
   const statuses = vi.spyOn(WakeLoggerTransport.prototype, 'updateStatus')
   const f = await fixture()
   try {
+    const committed = vi.spyOn(RecordingStore.prototype, 'committed')
     f.ingest()
-    let checkpoint: any
-    // A slow CI filesystem can take longer than vi.waitFor's 1s default to
-    // flush the checkpoint; the assertion inside the poll is the real check.
-    await vi.waitFor(async () => {
-      checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
-      expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
-    }, { timeout: 15000 })
+    // Wait for the real durable commit without repeatedly opening its rename
+    // target. On Windows those reads can prevent the sampler's atomic rename.
+    await vi.waitFor(() => expect(committed).toHaveBeenCalled(), { timeout: 15000 })
+    await committed.mock.results[0]!.value
+    const checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+    expect(checkpoint.committed.sequence).toBeGreaterThan(0)
     const id = checkpoint.active.id
     const result = await f.request('POST', { expectedRecordingId: id }, '/tracking/finish')
     expect(result.code).toBe(200)

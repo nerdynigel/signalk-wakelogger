@@ -40,3 +40,15 @@ Owner proof (R. George, 2026-10-10): plugin 0.2.0-beta.8 on a vessel acked `{"st
 - [x] Prepare PR #21 for merge and tagged trusted publication. Publication still requires a merge to main, the matching tag and the npm environment maintainer review; App Store promotion then uses the maintainer passkey.
 
 Release review: candidate beta.10 contains the race-navigation resilience changes plus release metadata and public customer notes. GitHub verified 278 tests (one opt-in broker test skipped), browser/broker gates, packaged Signal K recovery and reusable plugin compatibility. No npm version or dist-tag was changed during preparation.
+
+## Publish beta.12 (22 October 2026)
+
+- [x] Merge website trip-continuity and GPX fixes (Wake Logger PR #82).
+- [x] Prepare plugin beta.12 metadata, pinned artwork URLs and customer release notes.
+- [x] Update Finish browser scenarios for confirmation; verify cancelling does not finish.
+- [x] Remove Windows checkpoint polling that competes with atomic rename; await actual durable commit.
+- [ ] Pass final local and GitHub release checks, audit and packaged Signal K Docker gate.
+- [ ] Merge plugin PR #24 and tag the exact merged commit for trusted publication.
+- [ ] Verify npm provenance, beta/latest tags, artwork and Signal K discovery metadata.
+
+Website production deployment and trip 78/79 repair remain outside this publication. Production access remains read-only.
