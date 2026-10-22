@@ -935,18 +935,25 @@ test('cancel in either direction and reload never change live tracking', async (
   await page.goto('/signalk-wakelogger/')
   const toggle = page.getByRole('switch', { name: 'Live tracking' })
   await expect(toggle).toBeEnabled()
-  page.once('dialog', dialog => dialog.dismiss())
+  const chooseDialog = accept => new Promise(resolve => page.once('dialog', async dialog => {
+    await (accept ? dialog.accept() : dialog.dismiss())
+    resolve()
+  }))
+  let dialogHandled = chooseDialog(false)
   await toggle.focus()
   await toggle.press('Space')
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   expect(writes).toHaveLength(0)
-  page.once('dialog', dialog => dialog.accept())
+  dialogHandled = chooseDialog(true)
   await toggle.click()
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   await page.reload()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  page.once('dialog', dialog => dialog.dismiss())
+  dialogHandled = chooseDialog(false)
   await toggle.click()
+  await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   expect(writes).toHaveLength(1)
 })

@@ -257,20 +257,22 @@ it('separates consecutive recordings so A and B never merge', async () => {
     const old = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString()
     // Recording A.
     f.ingest({ latitude: -27.4, longitude: 153.17 }, old(45))
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBe(1), { timeout: 10000 })
     f.ingest({ latitude: -27.401, longitude: 153.171 }, old(44))
-    await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(1), { timeout: 10000 })
+    // Observe each durable sample before replacing the latest native fix;
+    // elapsed sleeps do not establish that a busy runner sampled it.
+    await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBe(2), { timeout: 10000 })
     const first = (await f.request('GET', '/track')).data
     // A > 30 minute interruption closes A and starts recording B.
     f.ingest({ latitude: -27.3, longitude: 153.2 }, old(5))
-    await new Promise((resolve) => setTimeout(resolve, 600))
-    f.ingest({ latitude: -27.301, longitude: 153.201 }, old(4))
     await vi.waitFor(async () => {
       const track = (await f.request('GET', '/track')).data
       expect(track.recording?.id).toBeTruthy()
       expect(track.recording.id).not.toBe(first.recording.id)
-      return track.points.length >= 1
+      expect(track.points).toHaveLength(1)
     }, { timeout: 10000 })
+    f.ingest({ latitude: -27.301, longitude: 153.201 }, old(4))
+    await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBe(2), { timeout: 10000 })
     const second = (await f.request('GET', '/track')).data
     // The current view is recording B only and never merges A's geometry.
     expect(second.points.every((point: any) => point.latitude >= -27.31)).toBe(true)
