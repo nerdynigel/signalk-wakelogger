@@ -82,3 +82,10 @@ export function finishTripFailure(error) {
   if (error.detail === 'tracking_unavailable') return prefix + 'Recorder unavailable. Reconnect to Signal K and wait for it to become ready.'
   return prefix + 'Check recorder status and try again.'
 }
+
+export function confirmTripFinish(status, confirm) {
+  const finish = finishTripPresentation(status)
+  if (finish.disabled) return false
+  if (finish.retry) return true
+  return confirm('End this trip? Further movement will start a new trip card. To upload saved history while keeping this trip running, cancel and turn Live tracking on instead.') === true
+}

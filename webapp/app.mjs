@@ -3,7 +3,7 @@ import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
-import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure } from './tracking-controls.mjs'
+import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure, confirmTripFinish } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
@@ -903,6 +903,7 @@ async function refreshTracking() {
 $('finish-trip').onclick = async () => {
   const finish = finishTripPresentation(trackingStatus, { changing: trackingChanging, finishing: finishingTrip })
   if (finish.disabled) return
+  if (!confirmTripFinish(trackingStatus, message => window.confirm(message))) return
   const expectedRecordingId = finish.recordingId
   finishingTrip = true
   ++trackingRequest

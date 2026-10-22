@@ -4,6 +4,7 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## Unreleased
 
+- **Finish trip** now confirms that subsequent movement starts a new trip card, and points you to **Live tracking** if you only want to upload saved history. Retrying cloud confirmation does not end a trip again.
 - Reconnecting or uploading saved trip history no longer raises a false Race Pack acknowledgement error when Wake Logger clears old MQTT cache chunks. Empty cache cleanup messages leave the applied course/forecast and its acknowledgement unchanged.
 - Completed recordings now include whether you selected **Finish trip** or the boat met the stationary stop rule, so the website can retain the exact trip boundary reason. Changing **Live tracking** still only changes uploading; recording continues under the same trip identity.
 
