@@ -123,6 +123,7 @@ export class RecordingStore {
     const committed = this.snapshot.committed
     if (!committed || committed.id !== active.id || committed.sequence < active.firstSequence || (durableSequence !== undefined && committed.sequence !== durableSequence) || (this.snapshot.lastSequence ?? 0) > committed.sequence) throw new Error('recording_not_committed')
     const closed: RecordingManifest = { ...active, state: 'complete', lastSequence: committed.sequence,
+      endReason: 'explicit_finish',
       endedAt: Math.max(active.startedAt, committed.capturedAt) }
     const next = structuredClone(this.snapshot)
     next.closed.push(closed)
@@ -183,6 +184,7 @@ export class RecordingStore {
       if (state.state === 'STOPPED') {
         const closed: RecordingManifest = {
           ...next.active, state: evidence?.event === 'trip_stopped' ? 'complete' : 'cancelled',
+          endReason: evidence?.event === 'trip_stopped' ? 'stationary' : undefined,
           endedAt: Math.max(next.active.startedAt, evidence?.effectiveAt ?? draft.capturedAt), lastSequence: sequence
         }
         next.closed.push(closed)

@@ -30,6 +30,7 @@ export interface TripEvidence {
 }
 
 export interface RecordingManifest {
+  endReason?: 'explicit_finish' | 'stationary'
   id: string
   startedAt: number
   firstSequence: number

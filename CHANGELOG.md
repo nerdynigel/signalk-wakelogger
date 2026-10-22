@@ -2,6 +2,11 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased
+
+- Reconnecting or uploading saved trip history no longer raises a false Race Pack acknowledgement error when Wake Logger clears old MQTT cache chunks. Empty cache cleanup messages leave the applied course/forecast and its acknowledgement unchanged.
+- Completed recordings now include whether you selected **Finish trip** or the boat met the stationary stop rule, so the website can retain the exact trip boundary reason. Changing **Live tracking** still only changes uploading; recording continues under the same trip identity.
+
 ## [0.2.0-beta.11] - 2026-10-17
 
 ### Live tracking asks before it changes

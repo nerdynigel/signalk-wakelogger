@@ -310,6 +310,9 @@ export class RacePackReceiver {
   }
 
   async acceptManifest(payload: Buffer): Promise<RacePackAck | null> {
+    // MQTT uses a zero-byte retained publish to remove a broker cache entry.
+    // Only the versioned clear control is allowed to clear the applied pack.
+    if (payload.length === 0) return null
     let control: RacePackControl
     try { control = parseRacePackControl(payload) } catch (error) {
       if (error instanceof RacePackProtocolError && error.code === 'manifest_unsupported_version') return this.reject(payload, 'manifest_unsupported_version')
@@ -347,6 +350,9 @@ export class RacePackReceiver {
   }
 
   async acceptChunk(payload: Buffer, topicIndex: number): Promise<RacePackAck | null> {
+    // Cloud cleanup reaches current subscribers too. It has no pack identity
+    // and must never produce a rejection acknowledgement.
+    if (payload.length === 0) return null
     if (!Number.isSafeInteger(topicIndex) || topicIndex < 0 || topicIndex >= RACE_PACK_LIMITS.maxChunks) return this.reject(payload, 'chunk_topic_index_invalid')
     let chunk: RacePackChunk
     try { chunk = parseRacePackChunk(payload) } catch (error) {
