@@ -1,5 +1,6 @@
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
+import { waypointLaylines, laylineCoordinates } from './waypoint-laylines.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
@@ -21,6 +22,7 @@ const map = L.map('map', { zoomControl: true }).setView([0, 0], 2)
 const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
 const guideLayer = L.layerGroup().addTo(map)
+const laylineLayer = L.layerGroup().addTo(map)
 let vesselMarker = null, guideViewportInitialized = false
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
@@ -362,6 +364,7 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
   guideLayer.clearLayers()
+  laylineLayer.clearLayers()
   const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => !['awa', 'aws'].includes(reading.id)) : view.readings
   const leg = progress?.matches && progress.previous && progress.next ? { from: progress.previous, to: progress.next } : null
   const guides = vesselGuideBearings(readings, leg, environmentUnavailable ? null : view.guideWind)
@@ -373,6 +376,53 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   element.dataset.currentTack = guides.currentTack || ''
   const oppositeSide = guides.currentTack === 'port' ? 'starboard' : 'port'
   $('guide-legend').textContent = guides.heading === null ? 'Heading guide unavailable · fresh GPS and true heading required' : `Heading · true${guides.currentTack ? ` · ${guides.currentTack}` : ''}${guides.kind ? ` · Mirrored ${guides.kind} guide · ${oppositeSide} · current true-wind angle; no tide or leeway correction` : ''}`
+  const target = progress?.next
+  const finished = trackingStatus?.finishedTrip && !trackingStatus?.trackingSessionId
+  const laylines = waypointLaylines({
+    position: guides.position, target: finished ? null : target,
+    headingDeg: guides.heading, oppositeCourseDeg: guides.maneuverBearing,
+    currentTack: guides.currentTack, kind: guides.kind, trueWindFromDeg: guides.trueWindFrom,
+  })
+  element.dataset.laylineStatus = laylines.status
+  element.dataset.laylineDistanceM = laylines.distanceM === null ? '' : String(laylines.distanceM)
+  if (laylines.approaches.length) {
+    const distance = Math.min(10000000, Math.max(50000, map.distance([target.latitude, target.longitude], [guides.position.latitude, guides.position.longitude]) * 2))
+    for (const approach of laylines.approaches) {
+      const ray = L.polyline(laylineCoordinates(target, approach.backBearingDeg, distance, map.getCenter().lng), {
+        color: approach.side === 'port' ? '#dc2626' : '#15803d', weight: 1.5, opacity: 0.85, dashArray: '4 6',
+        className: `waypoint-${approach.side}-layline`,
+      }).bindTooltip(`${approach.side === 'port' ? 'Port' : 'Starboard'} waypoint layline`).addTo(laylineLayer)
+      const path = ray.getElement()
+      path?.setAttribute('data-target-lat', String(target.latitude))
+      path?.setAttribute('data-target-lon', String(target.longitude))
+      path?.setAttribute('data-approach-bearing', String(approach.bearingDeg))
+    }
+    if (laylines.maneuverPoint) {
+      const point = laylines.maneuverPoint
+      const longitude = point.longitude + Math.round((map.getCenter().lng - point.longitude) / 360) * 360
+      L.circleMarker([point.latitude, longitude], { radius: 5, color: '#b45309', fillColor: '#fff', fillOpacity: 1, weight: 2, className: 'waypoint-maneuver-point' })
+        .bindTooltip(`Estimated ${laylines.kind} point`).addTo(laylineLayer)
+    }
+    const summary = document.createElement('div')
+    summary.id = 'waypoint-layline-summary'
+    summary.style.marginTop = '5px'
+    const label = document.createElement('strong')
+    label.textContent = `Laylines · ${target.name || 'Next mark'}${progress.readOnly ? ' · cached course' : ''}`
+    const sides = document.createElement('div')
+    for (const [side, colour] of [['Port', '#dc2626'], ['Starboard', '#15803d']]) {
+      if (sides.childNodes.length) sides.append(' · ')
+      const name = document.createElement('span')
+      name.style.color = colour
+      name.textContent = side
+      sides.append(name)
+    }
+    const estimate = document.createElement('div')
+    estimate.textContent = laylines.status === 'ready' ? `Estimated ${laylines.kind} in ${(laylines.distanceM / 1852).toFixed(2)} NM` : laylines.reason
+    const basis = document.createElement('div')
+    basis.textContent = 'Mirrored-angle estimate · no current or leeway correction.'
+    summary.append(label, sides, estimate, basis)
+    $('guide-legend').append(summary)
+  }
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
   element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)

@@ -2,6 +2,12 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased — Waypoint laylines
+
+- See port and starboard approaches to your next course mark, plus an estimated tack/gybe point and distance. The display follows the selected course and also works offline from cached course data, clearly labelled.
+- Fresh GPS, true heading and valid ground wind are required. Laylines mirror the current sailing angle, without current/leeway correction, polars or hazard checks. Missing or stale readings remove the estimate. Existing ETA and navigation controls are unchanged.
+- When released, update the plugin and reload the onboard app. No new settings, sensors or pairing steps are needed if the existing live guides already work.
+
 ## [0.2.0-beta.12] - 2026-10-22
 
 - **Finish trip** now confirms that subsequent movement starts a new trip card, and points you to **Live tracking** if you only want to upload saved history. Retrying cloud confirmation does not end a trip again.

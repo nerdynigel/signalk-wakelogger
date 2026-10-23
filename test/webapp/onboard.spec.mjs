@@ -1246,3 +1246,75 @@ test('leg-average ETA page suppresses stale samples, recovers, persists on reloa
   expect(errors).toEqual([])
   expect(fixture.writes).toEqual([])
 })
+
+for (const width of [1280, 390]) test(`waypoint laylines follow native and cached marks without navigation writes ${width}`, async ({ page }, testInfo) => {
+  test.setTimeout(120000)
+  await page.setViewportSize({ width, height: 900 })
+  let latitude = -27.41, heading = 330, wind = 0, age = 0, magnetic = false, index = 1, cached = false, clear = false, reverse = false
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  const coursePoints = [
+    { name: 'Start', latitude: -27.42, longitude: 153.18 },
+    { name: 'Northern mark', latitude: -27.39, longitude: 153.18 },
+    { name: 'Finish', latitude: -27.37, longitude: 153.18 },
+  ]
+  const measurement = value => ({ value, timestamp: new Date(Date.now() - age).toISOString() })
+  const { writes, control } = await mockBoat(page, {
+    courseState: () => {
+      const course = { ...desired, action: clear ? 'clear' : 'activate', start: coursePoints[0], marks: [coursePoints[1]], finish: coursePoints[2], activeWaypointIndex: index }
+      return { desired: course, cachedCourse: course, native: { activeMatchesDesired: !cached, course: { activeRoute: { pointIndex: index, reverse } } } }
+    },
+    navigationOverride: () => ({ position: measurement({ latitude, longitude: 153.18 }), [magnetic ? 'headingMagnetic' : 'headingTrue']: measurement(heading*Math.PI/180) }),
+    environment: () => ({ wind: { speedOverGround: measurement(12/1.9438444924406), directionTrue: measurement(wind*Math.PI/180) } }),
+  })
+  await page.goto('/signalk-wakelogger/')
+  const summary = page.locator('#waypoint-layline-summary'), map = page.locator('#map')
+  const port = page.locator('.waypoint-port-layline'), marker = page.locator('.waypoint-maneuver-point')
+  await expect(summary).toContainText('Northern mark')
+  await expect(summary).toContainText('Estimated tack in 0.69 NM')
+  await expect(port).toHaveAttribute('data-approach-bearing', '30')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.39')
+  await expect(marker).toHaveCount(1)
+  await page.screenshot({ path: testInfo.outputPath(`waypoint-laylines-${width}.png`), fullPage: true })
+  latitude = -27.405
+  await expect.poll(async () => Number(await map.getAttribute('data-layline-distance-m'))).toBeLessThan(1000)
+  heading = 30
+  await expect(marker).toHaveCount(1)
+  index = 2
+  await expect(summary).toContainText('Finish')
+  const distance = await map.getAttribute('data-layline-distance-m')
+  await page.locator('.leaflet-control-zoom-in').click()
+  await expect(map).toHaveAttribute('data-layline-distance-m', distance)
+  await page.locator('#fullscreen').click()
+  await expect(summary).toContainText('Finish')
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(summary).toContainText('Finish')
+  cached = true
+  await expect(summary).toContainText('cached course')
+  cached = false; reverse = true; index = 1; latitude = -27.37; wind = 180; heading = 150
+  await expect(summary).toContainText('Northern mark')
+  await expect(summary).not.toContainText('cached course')
+  await expect(marker).toHaveCount(1)
+  reverse = false; index = 0
+  await expect(summary).toContainText('Start')
+  magnetic = true
+  await expect(port).toHaveCount(0)
+  magnetic = false; age = 31000
+  await expect(port).toHaveCount(0)
+  age = 0
+  await expect(port).toHaveCount(1)
+  // Age retained readings independently of successful polling.
+  await page.route('**/signalk/v1/api/vessels/self/navigation', route => route.fulfill({ status: 503, json: {} }))
+  await expect(port).toHaveCount(0)
+  await page.unroute('**/signalk/v1/api/vessels/self/navigation')
+  await expect(port).toHaveCount(1)
+  clear = true
+  await expect(port).toHaveCount(0)
+  clear = false
+  await expect(port).toHaveCount(1)
+  control.finishedTrip = { uploadPending: true }
+  await expect(port).toHaveCount(0)
+  expect(errors).toEqual([])
+  expect(writes).toEqual([])
+})
