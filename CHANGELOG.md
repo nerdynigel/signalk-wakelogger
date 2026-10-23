@@ -231,3 +231,7 @@ This remains a beta release.
 - Connected Signal K position and supported navigation readings to Wake Logger.
 - Added pairing, live updates and onboard storage for readings waiting to upload.
 - Added automatic retries and connection status information.
+
+## Developer tooling — real-trip replay (unreleased)
+
+- Added isolated replay tooling for testing recorded sailing instruments through Signal K, the Wake Logger plugin and the development website, including pause/resume and source comparisons. It creates a dedicated test vessel and preserves production recordings and normal device configurations.

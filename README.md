@@ -112,3 +112,7 @@ The onboard map shows red **Port** and green **Starboard** approaches to the nex
 Laylines also work from the selected cached course when native activation is unavailable, labelled **cached course**, and do not need cloud access. They follow native course reversal and mark advancement when available. No course is activated or advanced by displaying laylines.
 
 These are mirrored-angle estimates without current/leeway correction, polars, hazard checks or tack alerts. They are separate from the existing leg-average ETA. When released, update the plugin through the Signal K App Store and reload the onboard app to obtain this display; no pairing or settings changes are needed.
+
+## Local real-trip replay (development)
+
+The [real sailing replay tools](scripts/replay/README.md) feed an original Yacht Devices sailing clip into an isolated Signal K instance and a dedicated development vessel. They provide real-time playback, pause/resume, course controls and source-to-cloud comparisons. Historical sensor timestamps are rebased consistently; personal recordings and device credentials remain outside Git. These are operator tools in the source repository, not an additional feed enabled by installing the published plugin.
