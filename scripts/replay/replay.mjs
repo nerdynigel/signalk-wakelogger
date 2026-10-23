@@ -29,8 +29,8 @@ function readEnvironment() {
   return config;
 }
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function api(url,method='GET',body,token) {
-  const response=await fetch(url,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(token?{authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(10000)});
+async function api(url,method='GET',body,token,timeoutMs=10000) {
+  const response=await fetch(url,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(token?{authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(timeoutMs)});
   const value=await response.json();
   if(!response.ok) throw new Error(`${method} ${new URL(url).pathname}: HTTP ${response.status}: ${JSON.stringify(value)}`);
   return value;
@@ -100,7 +100,9 @@ async function provision(reset=false) {
   const pairing=await api(`${base}/v1/vessels/${state.vesselId}/telemetry/pairing-codes`,'POST',{},auth);
   const planBody={vessel_id:state.vesselId,race_route_id:state.routeId,name:`Replay 2026-06-28 ${runId.slice(0,8)}`,
     planned_start_time:new Date().toISOString(),status:'planned',forecast_source:'open-meteo'};
-  const plan=state.planId ? await api(`${base}/v1/race-plan/${state.planId}`,'PATCH',planBody,auth) : await api(`${base}/v1/race-plan`,'POST',planBody,auth);
+  // Normal forecast-provider retries can take longer than ordinary local API
+  // reads. Leave the previous replay intact until this preparation succeeds.
+  const plan=state.planId ? await api(`${base}/v1/race-plan/${state.planId}`,'PATCH',planBody,auth,120000) : await api(`${base}/v1/race-plan`,'POST',planBody,auth,120000);
   state={...state,runId,runDir,planId:plan.id,container:'wakelogger-real-trip-replay',sourceVoyageId:48,
     sourceStart:'2026-06-28T03:06:00Z',sourceEnd:'2026-06-28T03:26:00Z',
     webUrl:`${environment.publicWebOrigin}/vessels/manage?vessel=${state.vesselId}&tab=live`,
