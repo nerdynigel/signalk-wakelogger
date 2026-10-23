@@ -26,7 +26,7 @@ module.exports = app => {
     registerWithRouter(router) {
       const reader = router.access?.('readonly') ?? router;
       const writer = router.access?.('readwrite') ?? router;
-      reader.get('/',(_req,res)=>res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SAGS sailing replay</title>
+      reader.get('/controls',(_req,res)=>res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SAGS sailing replay</title>
         <style>body{font:16px system-ui;background:#102c3b;color:#fff;max-width:720px;margin:40px auto;padding:20px}button,a{display:inline-block;padding:12px 18px;margin:5px;border-radius:8px}button{cursor:pointer}a{color:#8de0f0}pre{white-space:pre-wrap}#status{line-height:1.8}</style>
         <h1>SAGS sailing replay</h1><p>28 June 2026 · 1:06–1:26 pm AEST · original instruments at real speed.</p>
         <p>Confirm Live tracking on in the onboard app before starting. The first 30 seconds initialize the instruments; the website then waits for normal trip qualification.</p>

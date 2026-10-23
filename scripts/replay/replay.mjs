@@ -106,6 +106,7 @@ async function provision(reset=false) {
   state={...state,runId,runDir,planId:plan.id,container:'wakelogger-real-trip-replay',sourceVoyageId:48,
     sourceStart:'2026-06-28T03:06:00Z',sourceEnd:'2026-06-28T03:26:00Z',
     webUrl:`${environment.publicWebOrigin}/vessels/manage?vessel=${state.vesselId}&tab=live`,
+    controlsUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/plugins/wakelogger-real-trip-replay/controls`,
     port,phase:'provisioning',initialForecastBasis:'Normal current-time test forecast provider; original sailing sensors remain the live observations',
     pluginUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/signalk-wakelogger/`,createdAt:new Date().toISOString()};
   save(stateFile,state);

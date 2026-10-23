@@ -67,7 +67,7 @@ Keep this configuration and token files private; do not commit them.
 
 Provisioning prints the vessel and onboard URLs. Open the onboard app and
 confirm **Live tracking on**, then open the replay controls at
-`http://TEST_HOST:3003/plugins/wakelogger-real-trip-replay/`.
+`http://TEST_HOST:3003/plugins/wakelogger-real-trip-replay/controls`.
 
 ## Playback and recorded data
 
