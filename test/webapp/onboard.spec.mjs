@@ -424,7 +424,7 @@ test('losing GPS does not blank independent wind and depth', async ({ page }) =>
   const grid = page.locator('#instruments-grid')
   await expect(grid).toContainText('TW')
   await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
-  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: /^TW(?:\s|$)/ })).toHaveCount(1)
+  await expect(grid.locator('[data-reading="tws"]')).toHaveAttribute('data-available', 'true')
   await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
 })
 
@@ -982,7 +982,7 @@ test('stale tracking confirmation reads current state without retrying a write',
   expect(writes).toBe(1)
 })
 
-test('one true wind pair and angle arrows match the chartplotter and fall back to water wind', async ({ page }) => {
+test('one true wind pair and angle arrows match the chartplotter with water wind', async ({ page }) => {
   let direct = false
   const entry = value => ({ value, timestamp: new Date().toISOString() })
   await mockBoat(page, { course: false,
@@ -1006,6 +1006,42 @@ test('one true wind pair and angle arrows match the chartplotter and fall back t
   await expect(strip).toHaveAttribute('data-wind-basis', 'water')
   await page.reload()
   await expect(twa).toContainText('30° P')
+})
+
+for (const width of [390, 1280]) test(`one sailing wind set prefers water and falls back to GPS at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 844 })
+  let waterFresh = true
+  const entry = (value, water = false) => ({ value, timestamp: new Date(Date.now() - (water && !waterFresh ? 40000 : 0)).toISOString() })
+  const guidance = () => {
+    const at = Date.now()
+    return new GuidanceEngine().update({ at, heading: { value: 90, at }, wind: { east: 12 * Math.sin(130 * Math.PI / 180), north: 12 * Math.cos(130 * Math.PI / 180), at } })
+  }
+  const { writes } = await mockBoat(page, { course: false, guidance,
+    navigationOverride: () => ({ headingTrue: entry(Math.PI / 2), speedThroughWater: entry(4 / 1.9438444924406), speedOverGround: entry(6 / 1.9438444924406), courseOverGroundTrue: entry(Math.PI / 2) }),
+    environment: () => ({ wind: { speedTrue: entry(8 / 1.9438444924406, true), angleTrueWater: entry(-Math.PI / 6, true), speedOverGround: entry(12 / 1.9438444924406), angleTrueGround: entry(40 * Math.PI / 180) } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid')
+  for (const id of ['twa', 'tws', 'twd', 'vmg-wind']) await expect(grid.locator(`[data-reading="${id}"]`)).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa"]')).toContainText('30° P')
+  await expect(grid.locator('[data-reading="tws"]')).toContainText('8.0 kn')
+  await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
+  await expect(grid.locator('[data-reading="vmg-wind"]')).toContainText('3.5 kn')
+  await expect(grid).not.toContainText('(ground)')
+  await expect(grid).not.toContainText('(water)')
+  await page.screenshot({ path: testInfo.outputPath(`single-wind-${width}.png`), fullPage: true })
+  await page.locator('#race-tab').click()
+  const twa = page.locator('#race-live-nav [data-reading="twa"]')
+  await expect(twa).toContainText('30° P')
+  waterFresh = false
+  await expect(twa).toContainText('40° S')
+  await expect(twa).toHaveAttribute('data-wind-basis', 'ground')
+  await expect(page.locator('#race-live-nav [data-reading="tws"]')).toContainText('12.0 kn')
+  waterFresh = true
+  await expect(twa).toContainText('30° P')
+  await page.reload()
+  await expect(grid.locator('[data-reading="twa"]')).toContainText('30° P')
+  expect(writes).toEqual([])
 })
 
 test('Finish explains no recording, automatic closure and unavailable recorder', async ({ page }, testInfo) => {
@@ -1098,12 +1134,14 @@ test('VMG tiles and Race strip survive water-only input, loss and recovery', asy
     environment: () => ({ wind: state === 'missing' ? {} : { angleTrueWater: entry(state === 'downwind' ? Math.PI : Math.PI / 3) } })
   })
   await page.goto('/signalk-wakelogger/')
-  const water = page.locator('#instruments-grid .instrument').filter({ hasText: 'VMG to wind (water)' })
+  const water = page.locator('#instruments-grid [data-reading="vmg-wind"]')
+  await expect(water).toHaveCount(1)
+  await expect(page.locator('#instruments-grid [data-reading="vmg-wind-ground"], #instruments-grid [data-reading="vmg-wind-water"]')).toHaveCount(0)
   await expect(water).toContainText('1.9 kn')
   await expect(water).toHaveAttribute('data-available', 'true')
   await page.locator('#race-tab').click()
-  const strip = page.locator('#race-live-nav [data-reading="vmg-wind-ground"]')
-  await expect(strip).toContainText('VMG to wind (water)')
+  const strip = page.locator('#race-live-nav [data-reading="vmg-wind"]')
+  await expect(strip).toContainText('VMG to wind')
   await expect(strip).toContainText('1.9 kn')
   state = 'missing'
   await expect(strip).toHaveAttribute('data-available', 'false')

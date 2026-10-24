@@ -238,9 +238,9 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   }
 
   // Keep both physical references internally, but select one consistent pair
-  // for the live UI. Ground is the shared cloud/chartplotter basis; water is a
-  // complete fallback when GPS motion is unavailable.
-  const displayCandidates = ['ground', 'water'].map(basis => {
+  // for the live UI. Sailing instruments use water-referenced true wind;
+  // GPS-referenced wind is the fallback when water wind is unavailable.
+  const displayCandidates = ['water', 'ground'].map(basis => {
     let speed = basis === 'ground' ? groundWindSpeed : waterWindSpeed
     let angle = readings.find(r => r.id === `twa-${basis}`)
     const velocity = basis === 'ground' ? [sog, cog] : [stw, trueHeading]
@@ -259,7 +259,7 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
       const result = boundedDerivation([{ reading: trueHeading }, { reading: trueWindDirection }], () => signedWindAngle(trueWindDirection.value - trueHeading.value))
       if (result.value !== null) angle = readingObject({ id: 'twa', value: result.value, unit: '°', label: 'TW Angle', group: 'Wind', basis, reference: basis, source: 'derived', timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh' })
     }
-    let direction = trueWindDirection
+    let direction = basis === 'ground' ? trueWindDirection : { ...trueWindDirection, basis, value: null, available: false, freshness: 'missing' }
     if (angle.available && trueHeading) {
       const result = boundedDerivation([{ reading: trueHeading }, { reading: angle }], () => normalizeDegrees(trueHeading.value + angle.value))
       if (result.value !== null) direction = readingObject({ id: 'twd', value: result.value, unit: '°', label: 'TW Direction', group: 'Wind', basis, reference: 'true', source: 'derived', timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh' })
@@ -280,7 +280,7 @@ export function instrumentDisplayReadings(view, snapshot = null, now = Date.now(
   const selected = view.displayWind
   const published = snapshot?.windAt == null ? null : guidanceWind(snapshot, now)
   const wind = { ...selected }
-  if (published && (selected.basis === 'ground' || published.twsKn !== null && published.twaDeg !== null)) {
+  if (published && selected.basis === 'ground') {
     wind.basis = 'ground'
     const make = (reading, value, at = snapshot.windAt) => ({ ...reading, basis: 'ground', source: 'guidance', timestamp: at, ageSeconds: Math.max(0, Math.round((now - at) / 1000)), value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
     wind.speed = make(selected.speed, published.twsKn)
@@ -293,17 +293,17 @@ export function instrumentDisplayReadings(view, snapshot = null, now = Date.now(
     aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
     tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
     twd: () => ({ ...wind.direction, id: 'twd', label: 'TW Direction', direction: true, unit: '°' }),
-    'twa-ground': () => ({ ...wind.angle, basis: wind.basis, id: 'twa', label: 'TW Angle', angle: true, unit: '°' })
+    'twa-ground': () => ({ ...wind.angle, basis: wind.basis, id: 'twa', label: 'TW Angle', angle: true, unit: '°' }),
+    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), id: 'vmg-wind', label: 'VMG to wind' })
   }
-  return view.readings.filter(r => r.id !== 'twa-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
+  return view.readings.filter(r => r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
 }
 export function liveNavigationStrip(view, snapshot = null, now = Date.now()) {
   if (!view || !Array.isArray(view.readings)) return []
   const display = instrumentDisplayReadings(view, snapshot, now)
   const byId = Object.fromEntries(display.map(r => [r.id, r]))
-  const vmg = [byId['vmg-wind-ground'], byId['vmg-wind-water']].find(r => r?.available) ?? byId['vmg-wind-ground']
-  return ['aws', 'awa', 'tws', 'twa', 'twd', 'sog', 'heading', 'vmg-wind-ground'].map(id => {
-    const reading = id === 'vmg-wind-ground' ? vmg : byId[id]
+  return ['aws', 'awa', 'tws', 'twa', 'twd', 'sog', 'heading', 'vmg-wind'].map(id => {
+    const reading = byId[id]
     return { id, label: reading?.label ?? id, value: reading?.available ? reading.value : null,
       formatted: formatReading(reading?.available ? reading : { ...reading, value: null }),
       unit: reading?.unit ?? null, freshness: reading?.freshness ?? 'missing', available: reading?.available === true,
