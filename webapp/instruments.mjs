@@ -7,6 +7,7 @@
 // or invalid timestamps are marked unknown rather than fresh, derived values
 // require fresh, reference-compatible inputs bounded by their oldest input, and
 // forecast data is never substituted for a live reading.
+import { guidanceWind, windAngleText, windDirectionText, signedWindAngle } from './wind-readout.mjs'
 import { deriveTrueWindSample, normalizeDegrees } from './wind-derivation.mjs'
 
 const MPS_TO_KNOTS = 1.9438444924406
@@ -236,32 +237,79 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
     }))
   }
 
+  // Keep both physical references internally, but select one consistent pair
+  // for the live UI. Sailing instruments use water-referenced true wind;
+  // GPS-referenced wind is the fallback when water wind is unavailable.
+  const displayCandidates = ['water', 'ground'].map(basis => {
+    let speed = basis === 'ground' ? groundWindSpeed : waterWindSpeed
+    let angle = readings.find(r => r.id === `twa-${basis}`)
+    const velocity = basis === 'ground' ? [sog, cog] : [stw, trueHeading]
+    if ((!speed.available || !angle.available) && trueHeading && aws && awa && velocity.every(Boolean)) {
+      const result = boundedDerivation([aws, awa, trueHeading, ...velocity].map(reading => ({ reading })), () => deriveTrueWindSample({
+        awsKnots: aws.value, awaDeg: awa.value, headingDeg: trueHeading.value,
+        ...(basis === 'ground' ? { sogKnots: sog.value, cogDeg: cog.value } : { stwKnots: stw.value })
+      }))
+      if (result.value) {
+        const make = (id, value, unit) => readingObject({ id, value, unit, label: id, group: 'Wind', basis, reference: basis, source: 'derived', timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh' })
+        if (!speed.available) speed = make('tws', result.value.twsKnots, 'kn')
+        if (!angle.available) angle = make('twa', signedWindAngle(result.value.twdDeg - trueHeading.value), '°')
+      }
+    }
+    if (basis === 'ground' && !angle.available && trueHeading && trueWindDirection.available) {
+      const result = boundedDerivation([{ reading: trueHeading }, { reading: trueWindDirection }], () => signedWindAngle(trueWindDirection.value - trueHeading.value))
+      if (result.value !== null) angle = readingObject({ id: 'twa', value: result.value, unit: '°', label: 'TW Angle', group: 'Wind', basis, reference: basis, source: 'derived', timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh' })
+    }
+    let direction = basis === 'ground' ? trueWindDirection : { ...trueWindDirection, basis, value: null, available: false, freshness: 'missing' }
+    if (angle.available && trueHeading) {
+      const result = boundedDerivation([{ reading: trueHeading }, { reading: angle }], () => normalizeDegrees(trueHeading.value + angle.value))
+      if (result.value !== null) direction = readingObject({ id: 'twd', value: result.value, unit: '°', label: 'TW Direction', group: 'Wind', basis, reference: 'true', source: 'derived', timestamp: result.bound, ageSeconds: result.age, freshness: 'fresh' })
+    }
+    return { basis, speed, angle, direction }
+  })
+  const displayWind = displayCandidates.find(c => c.speed.available && c.angle.available)
+    ?? displayCandidates.find(c => c.speed.available) ?? displayCandidates.find(c => c.angle.available) ?? displayCandidates[0]
   const available = readings.filter((item) => item.available).length
-  return { readings, available, total: readings.length, evaluatedAt: now, staleSeconds, guideWind: { speed: groundWindSpeed, direction: trueWindDirection, angle: readings.find(reading => reading.id === 'twa-ground') } }
+  return { readings, displayWind, available, total: readings.length, evaluatedAt: now, staleSeconds, guideWind: { speed: groundWindSpeed, direction: trueWindDirection, angle: readings.find(reading => reading.id === 'twa-ground') } }
 }
 
 // A compact live-navigation summary embedded in the Race tab, so the crew can
 // always see true wind, boat speed and heading even when native activation is
 // rejected or the Race Pack is missing. It reads stale/missing state verbatim
 // and never substitutes forecast data for a live reading.
-export function liveNavigationStrip(view) {
+export function instrumentDisplayReadings(view, snapshot = null, now = Date.now()) {
+  const selected = view.displayWind
+  const published = guidanceWind(snapshot, now)
+  const wind = { ...selected }
+  if (published) {
+    wind.basis = published.basis
+    const make = (reading, value, at = published.at) => ({ ...reading, basis: published.basis, source: 'guidance', timestamp: at, ageSeconds: Number.isFinite(at) ? Math.max(0, Math.round((now - at) / 1000)) : null, value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
+    // A lone measured speed remains useful when no coherent wind solution can
+    // be formed. It must not supply an unrelated direction or a layline.
+    wind.speed = published.basis === 'unavailable' && selected.speed.source === 'direct' && selected.speed.available ? selected.speed : make(selected.speed, published.twsKn)
+    wind.angle = make(selected.angle, published.twaDeg, Number.isFinite(published.at) ? Math.min(published.at, snapshot.headingAt) : null)
+    wind.direction = make(selected.direction, published.twdDeg)
+  }
+  const heading = guidanceWind(snapshot, now)?.headingDeg
+  const aliases = {
+    heading: r => published && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
+    aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
+    tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
+    twd: () => ({ ...wind.direction, id: 'twd', label: 'TWD', direction: true, unit: '°' }),
+    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), ...(published ? { basis: wind.basis, value: published.vmgKn, available: published.vmgKn !== null, freshness: published.vmgKn === null ? 'missing' : 'fresh', source: 'guidance', timestamp: published.vmgAt, ageSeconds: Number.isFinite(published.vmgAt) ? Math.max(0, Math.round((now - published.vmgAt) / 1000)) : null } : {}), id: 'vmg-wind', label: 'VMG to wind', unit: 'kn' })
+  }
+  return view.readings.filter(r => r.id !== 'twa-ground' && r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
+}
+export function liveNavigationStrip(view, snapshot = null, now = Date.now()) {
   if (!view || !Array.isArray(view.readings)) return []
-  const byId = Object.fromEntries(view.readings.map((reading) => [reading.id, reading]))
-  const wind = [byId['twa-ground'], byId['twa-water']].find((reading) => reading?.available)
-    ?? byId['twa-ground'] ?? byId['twa-water']
-  const vmg = [byId['vmg-wind-ground'], byId['vmg-wind-water']].find((reading) => reading?.available)
-    ?? byId['vmg-wind-ground']
-  const item = (id, label, reading = byId[id]) => reading
-    ? { id, label, value: reading.available ? reading.value : null, formatted: formatReading(reading), unit: reading.unit ?? null, freshness: reading.freshness, available: reading.available === true }
-    : { id, label, value: null, formatted: 'Unavailable', unit: null, freshness: 'missing', available: false }
-  return [
-    item('tws', 'True wind speed'),
-    item('twd', 'True wind direction'),
-    item('twa', wind ? wind.label : 'True wind angle', wind),
-    item('sog', 'Boat speed (SOG)'),
-    item('heading', 'Heading'),
-    item('vmg-wind-ground', vmg?.label ?? 'VMG to wind', vmg)
-  ]
+  const display = instrumentDisplayReadings(view, snapshot, now)
+  const byId = Object.fromEntries(display.map(r => [r.id, r]))
+  return ['aws', 'awa', 'tws', 'twd', 'sog', 'heading', 'vmg-wind'].map(id => {
+    const reading = byId[id]
+    return { id, label: reading?.label ?? id, value: reading?.available ? reading.value : null,
+      formatted: formatReading(reading?.available ? reading : { ...reading, value: null }),
+      unit: reading?.unit ?? null, freshness: reading?.freshness ?? 'missing', available: reading?.available === true,
+      angle: Boolean(reading?.angle), direction: Boolean(reading?.direction), basis: reading?.basis ?? null }
+  })
 }
 
 export function formatReading(reading) {
@@ -272,6 +320,8 @@ export function formatReading(reading) {
     if (reading.freshness === 'unknown') return 'Timestamp unknown'
     return 'Unavailable'
   }
+  if (reading.angle) return windAngleText(reading.value)
+  if (reading.direction) return windDirectionText(reading.value)
   const decimals = Number.isInteger(reading.decimals) ? reading.decimals : 1
   return `${reading.value.toFixed(decimals)}${reading.unit ? ` ${reading.unit}` : ''}`
 }

@@ -104,3 +104,63 @@ Vessel roles and sharing settings in Wake Logger control who can see your data. 
 For help with your account, pairing or trips, contact support through [Wake Logger](https://wakelogger.com/). When reporting a problem, include your plugin version, Signal K version and the status shown—never your pairing code or credentials.
 
 See the **Changelog** tab for what's new in each release.
+
+### Waypoint laylines
+
+The onboard map shows red **Port** and green **Starboard** approaches to the next mark in the selected course, with an estimated tack/gybe point. It uses fresh GPS, true heading and ground true wind (direct or derived from apparent wind and ground motion). A missing or stale required reading removes the estimate. An unavailable forward intersection removes the estimated maneuver point.
+
+Laylines also work from the selected cached course when native activation is unavailable and do not need cloud access. They follow native course reversal and mark advancement when available. No course is activated or advanced by displaying laylines.
+
+These are mirrored-angle estimates without current/leeway correction, polars, hazard checks or tack alerts. They are separate from the existing leg-average ETA. When released, update the plugin through the Signal K App Store and reload the onboard app to obtain this display; no pairing or settings changes are needed.
+
+## Local real-trip replay (development)
+
+The [real sailing replay tools](scripts/replay/README.md) feed an original Yacht Devices sailing clip into an isolated Signal K instance and a dedicated development vessel. They provide real-time playback, pause/resume, course controls and source-to-cloud comparisons. Historical sensor timestamps are rebased consistently; personal recordings and device credentials remain outside Git. These are operator tools in the source repository, not an additional feed enabled by installing the published plugin.
+
+### Sailing guidance (development)
+
+Live heading and wind use a shared, source-clock-based filter. The plugin publishes
+one versioned guidance sample for both the onboard and website maps. Raw sensor
+readings and saved track fields remain unchanged. The measured bow heading and
+geometric bearing to the mark retain their meanings; current-adjusted predicted
+ground tracks and the optional **Steer** value are separate.
+
+Actual `steering.rudderAngle` is optional. It can corroborate a turn, and contributes
+to leeway only with an explicitly validated vessel calibration. Missing, stale or
+invalid rudder falls back to the validated heel model. Without a calibration,
+measured leeway is used if available; no generic rudder correction is invented.
+The opposite tack uses the heel model or symmetric measured leeway, never the
+present rudder setting. A longitudinal STW log is assumed by the heel model.
+Provided current is preferred. Derived current requires independent leeway and
+aligned heading, STW, SOG and COG; heading minus COG alone is insufficient.
+
+Advanced plugin configuration accepts `guidance.enabled`, a validated
+`guidance.calibration`, and a validated `guidance.polar`. Calibration coefficients
+and polars must come from vessel measurements. Polar speeds represent through-water
+velocity magnitude; convert ground-speed observations to that frame before
+validation. Port/starboard heel coefficients refer to the sign of measured heel.
+There are no default coefficients.
+Extreme heel/pitch and genuine maneuvers suppress steady-sailing predictions;
+this does not perform full mast-motion compensation. `/guidance` is read-only and
+reports the same durable sample used by the cloud (or a local sample when the
+active upload profile omits these readings). Source expiry is checked again by
+each display. No map information box is added.
+
+The canonical math is `src/guidance/core.ts`. `npm run build` generates its browser
+module and manifest. When updating the website, also run
+`node scripts/generate-guidance.mjs --frontend-root=/path/to/frontend` and commit
+both generated artifacts together. `test/guidance.test.ts` covers physical vector
+oracles and sensor fallback; browser tests cover both desktop and mobile.
+
+Live wind readouts use one matched true-wind speed/angle pair. The primary live
+basis matches the website's ground wind; a complete water-based pair remains
+available when ground motion is missing. Both calculation bases remain internal
+for navigation and diagnostics. TWA and AWA use port/starboard bow angles; TWD
+is the separate true-north bearing. TWA never substitutes GPS COG for compass
+heading. Fresh canonical guidance supplies the same filtered true wind and
+heading used by the website. Wind source/age checks remain in force.
+
+The shared display formatter and arrow path are `webapp/wind-readout.mjs`.
+The guidance generator copies it to the website and records its SHA-256 in the
+manifest. Keep generated website artifacts with their source change. Wind
+readout updates do not change recorded sensor values or tack/layline geometry.

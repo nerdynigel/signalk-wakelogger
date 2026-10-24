@@ -1,5 +1,9 @@
+import { WIND_ARROW_PATH } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
-import { vesselGuideBearings, projectBearing } from './vessel-guides.mjs'
+import { GuidanceService } from './guidance-service.mjs'
+import { guidanceBearings } from './sailing-guidance.mjs'
+import { vesselGuideBearings, projectBearing, bearingBetween } from './vessel-guides.mjs'
+import { waypointLaylines, laylineCoordinates } from './waypoint-laylines.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
@@ -7,7 +11,7 @@ import { trackingPresentation, finishedTripPresentation, finishTripPresentation,
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
-import { instrumentReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
+import { instrumentReadings, instrumentDisplayReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
 import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
@@ -21,6 +25,10 @@ const map = L.map('map', { zoomControl: true }).setView([0, 0], 2)
 const routeLayer = L.layerGroup().addTo(map)
 const vesselLayer = L.layerGroup().addTo(map)
 const guideLayer = L.layerGroup().addTo(map)
+const laylineLayer = L.layerGroup().addTo(map)
+const fallbackGuidance = new GuidanceService()
+const guideRays = new Map(), laylineRays = new Map()
+let maneuverMarker = null, serverGuidance = null, guidanceEndpoint = false, guidanceEnabled = true, steeringData = {}
 let vesselMarker = null, guideViewportInitialized = false
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
@@ -322,11 +330,12 @@ function renderInstruments() {
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
-  grid.replaceChildren(...view.readings.map(instrumentTile))
+  const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
+  grid.replaceChildren(...visible.map(instrumentTile))
   const state = $('signal-k-state')
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
   else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
-  else state.textContent = `Signal K connected · ${view.available}/${view.total} readings live`
+  else state.textContent = `Signal K connected · ${visible.filter(r => r.available).length}/${visible.length} readings live`
   renderRaceLiveNav(view)
 }
 
@@ -344,7 +353,7 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view).map((item) => {
+  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map((item) => {
     const row = document.createElement('div')
     row.className = 'race-live-nav-item'
     row.dataset.reading = item.id
@@ -355,28 +364,87 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
     const value = document.createElement('span')
     value.className = 'value'
     value.textContent = item.formatted
-    row.append(label, value)
+    const values = document.createElement('span')
+    values.className = 'wind-value-row'
+    values.append(value)
+    const arrow = windIndicator(item)
+    if (arrow) values.append(arrow)
+    row.dataset.windBasis = item.basis || ''
+    row.append(label, values)
     return row
   }))
 }
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
-  guideLayer.clearLayers()
   const readings = signalKAvailable === false ? [] : environmentUnavailable ? view.readings.filter(reading => !['awa', 'aws'].includes(reading.id)) : view.readings
   const leg = progress?.matches && progress.previous && progress.next ? { from: progress.previous, to: progress.next } : null
-  const guides = vesselGuideBearings(readings, leg, environmentUnavailable ? null : view.guideWind)
+  const rawGuides = vesselGuideBearings(readings, leg, environmentUnavailable ? null : view.guideWind)
+  const position = readings.find(r => r.id === 'position')
+  const coordinate = position?.value
+  const validPosition = position?.freshness === 'fresh' && coordinate && Number.isFinite(coordinate.latitude) && Math.abs(coordinate.latitude) <= 90 && Number.isFinite(coordinate.longitude) && Math.abs(coordinate.longitude) <= 180
+  const now = Date.now()
+  if (!guidanceEndpoint) fallbackGuidance.seedRest(navigationData, environmentUnavailable ? {} : environmentData, steeringData, now)
+  const snapshot = guidanceEndpoint ? serverGuidance : fallbackGuidance.snapshot(now, trackingStatus?.trackingSessionId ?? '')
+  const bearingTo = point => point && validPosition ? Math.atan2(Math.sin((point.longitude-coordinate.longitude)*Math.PI/180)*Math.cos(point.latitude*Math.PI/180), Math.cos(coordinate.latitude*Math.PI/180)*Math.sin(point.latitude*Math.PI/180)-Math.sin(coordinate.latitude*Math.PI/180)*Math.cos(point.latitude*Math.PI/180)*Math.cos((point.longitude-coordinate.longitude)*Math.PI/180))*180/Math.PI : null
+  const model = guidanceBearings(validPosition && signalKAvailable !== false ? snapshot : null, now, { targetBearingDeg: bearingTo(progress?.next), legBearingDeg: leg ? bearingBetween(leg.from, leg.to) : null })
+  const guides = guidanceEnabled ? { position: validPosition ? coordinate : null, heading: model.headingDeg, maneuverBearing: model.oppositeCourseDeg, kind: model.kind, currentTack: model.currentTack, trueWindFrom: model.trueWindFromDeg, trueWindSpeed: model.trueWindSpeedKn } : rawGuides
+  metric('steer-heading', guidanceEnabled ? model.courseToSteerDeg : null, '°', 0)
   const element = $('map')
   element.dataset.headingGuideBearing = guides.heading === null ? '' : String(guides.heading)
   element.dataset.oppositeTackBearing = guides.kind === 'tack' ? String(guides.maneuverBearing) : ''
   element.dataset.oppositeGybeBearing = guides.kind === 'gybe' ? String(guides.maneuverBearing) : ''
   element.dataset.maneuverGuideKind = guides.kind || ''
   element.dataset.currentTack = guides.currentTack || ''
+  element.dataset.courseSource = progress?.readOnly ? 'cached' : progress?.matches ? 'native' : 'unavailable'
   const oppositeSide = guides.currentTack === 'port' ? 'starboard' : 'port'
-  $('guide-legend').textContent = guides.heading === null ? 'Heading guide unavailable · fresh GPS and true heading required' : `Heading · true${guides.currentTack ? ` · ${guides.currentTack}` : ''}${guides.kind ? ` · Mirrored ${guides.kind} guide · ${oppositeSide} · current true-wind angle; no tide or leeway correction` : ''}`
+  const target = progress?.next
+  const finished = trackingStatus?.finishedTrip && !trackingStatus?.trackingSessionId
+  const laylines = waypointLaylines({
+    position: guides.position, target: finished ? null : target,
+    headingDeg: guidanceEnabled ? model.currentCourseDeg : guides.heading, oppositeCourseDeg: guides.maneuverBearing,
+    currentTack: guides.currentTack, kind: guides.kind, trueWindFromDeg: guides.trueWindFrom, groundCorrected: model.corrected,
+  })
+  element.dataset.currentCorrected = String(model.corrected)
+  element.dataset.courseToSteerDeg = model.courseToSteerDeg === null ? '' : String(model.courseToSteerDeg)
+  element.dataset.groundCourseDeg = model.currentCourseDeg === null ? '' : String(model.currentCourseDeg)
+  element.dataset.waterCourseDeg = model.waterCourseDeg == null ? '' : String(model.waterCourseDeg)
+  element.dataset.sailingWindFromDeg = guides.trueWindFrom == null ? '' : String(guides.trueWindFrom)
+  element.dataset.guidanceVersion = snapshot?.algorithm || 'legacy'
+  element.dataset.leewayBasis = snapshot?.leewayBasis || 'unavailable'
+  element.dataset.guidanceAt = snapshot?.at === undefined ? '' : String(snapshot.at)
+  element.dataset.laylineStatus = laylines.status
+  element.dataset.laylineDistanceM = laylines.distanceM === null ? '' : String(laylines.distanceM)
+  if (laylines.approaches.length) {
+    const distance = Math.min(10000000, Math.max(50000, map.distance([target.latitude, target.longitude], [guides.position.latitude, guides.position.longitude]) * 2))
+    for (const approach of laylines.approaches) {
+      const coordinates = laylineCoordinates(target, approach.backBearingDeg, distance, map.getCenter().lng)
+      let ray = laylineRays.get(approach.side)
+      if (ray) ray.setLatLngs(coordinates)
+      else { ray = L.polyline(coordinates, {
+        color: approach.side === 'port' ? '#dc2626' : '#15803d', weight: 1.5, opacity: 0.85, dashArray: '4 6',
+        className: `waypoint-${approach.side}-layline`,
+      }).bindTooltip(`${approach.side === 'port' ? 'Port' : 'Starboard'} waypoint layline`).addTo(laylineLayer); laylineRays.set(approach.side, ray) }
+      const path = ray.getElement()
+      path?.setAttribute('data-target-lat', String(target.latitude))
+      path?.setAttribute('data-target-lon', String(target.longitude))
+      path?.setAttribute('data-approach-bearing', String(approach.bearingDeg))
+    }
+    if (laylines.maneuverPoint) {
+      const point = laylines.maneuverPoint
+      const longitude = point.longitude + Math.round((map.getCenter().lng - point.longitude) / 360) * 360
+      if (maneuverMarker) maneuverMarker.setLatLng([point.latitude, longitude])
+      else maneuverMarker = L.circleMarker([point.latitude, longitude], { radius: 5, color: '#b45309', fillColor: '#fff', fillOpacity: 1, weight: 2, className: 'waypoint-maneuver-point' }).addTo(laylineLayer)
+      maneuverMarker.bindTooltip(`Estimated ${laylines.kind} point`)
+    } else if (maneuverMarker) { maneuverMarker.remove(); maneuverMarker = null }
+  } else {
+    for (const ray of laylineRays.values()) ray.remove()
+    laylineRays.clear()
+    if (maneuverMarker) { maneuverMarker.remove(); maneuverMarker = null }
+  }
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
-  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle · no tide or leeway correction`}`)
-  if (guides.heading === null) return
+  element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`}`)
+  if (guides.heading === null) { for (const ray of guideRays.values()) ray.remove(); guideRays.clear(); return }
   const location = L.latLng(guides.position.latitude, guides.position.longitude)
   const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
   if (vesselMarker) vesselMarker.setLatLng(location).setIcon(icon)
@@ -387,13 +455,24 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   const distance = Math.min(50000, metresPerPixel * Math.max(map.getSize().x, map.getSize().y) * 2)
   const start = [origin.latitude, origin.longitude]
   element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
+  const activeRays = new Set()
   const draw = (bearing, options, label) => {
     const end = projectBearing(origin, bearing, distance)
     const longitude = end.longitude + Math.round((origin.longitude - end.longitude) / 360) * 360
-    L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer)
+    const key = options.className
+    activeRays.add(key)
+    let ray = guideRays.get(key)
+    if (ray) ray.setLatLngs([start, [end.latitude, longitude]]).bindTooltip(label)
+    else { ray = L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
+    const path = ray.getElement()
+    path?.setAttribute('data-bearing-deg', String(bearing))
+    path?.setAttribute('data-origin-lat', String(start[0])); path?.setAttribute('data-origin-lon', String(start[1]))
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
-  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · mirrored current true-wind angle at current motion · no tide or leeway correction`)
+  if (guidanceEnabled && Number.isFinite(model.waterCourseDeg)) draw(model.waterCourseDeg, { color: '#0891b2', weight: 2, opacity: 0.95, dashArray: '5 5', className: 'water-course-guide' }, `Course through water (leeway) · ${Math.round(model.waterCourseDeg)}° true`)
+  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`)
+  if (model.courseToSteerDeg !== null && guidanceEnabled) draw(model.courseToSteerDeg, { color: '#7c3aed', weight: 1.5, dashArray: '2 5', className: 'required-heading-guide' }, `Steer ${Math.round(model.courseToSteerDeg)}° true`)
+  for (const [key, ray] of guideRays) if (!activeRays.has(key)) { ray.remove(); guideRays.delete(key) }
   // With no course/history there was no initial fit, leaving the vessel at
   // world zoom. Frame one fresh fix while preserving later viewport intent.
   if (!guideViewportInitialized && viewportMode === 'auto' && !trackUserControlled && !track.length && !progress?.points?.length) {
@@ -404,9 +483,38 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
 
 }
 
+function windSnapshot(view) {
+  if (!guidanceEnabled) return null
+  // Recording samples need a GPS fix. Standalone instruments can continue from
+  // their own sensor clocks while position-dependent guidance is withheld.
+  if (!guidanceEndpoint || view?.readings.find(reading => reading.id === 'position')?.freshness !== 'fresh') {
+    const now = Date.now()
+    fallbackGuidance.seedRest(navigationData, environmentUnavailable ? {} : environmentData, steeringData, now)
+    return fallbackGuidance.snapshot(now, trackingStatus?.trackingSessionId ?? '')
+  }
+  return serverGuidance
+}
+function windIndicator(reading) {
+  if ((!reading.angle && !reading.direction) || !reading.available || !Number.isFinite(reading.value)) return null
+  const arrow = document.createElement('span')
+  arrow.className = 'wind-angle-arrow'
+  arrow.dataset.angleDeg = String(reading.value)
+  arrow.dataset.directionDeg = String(((reading.value + 180) % 360 + 360) % 360)
+  arrow.style.transform = `rotate(${reading.value + 180}deg)`
+  arrow.setAttribute('aria-hidden', 'true')
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', WIND_ARROW_PATH)
+  path.setAttribute('fill', 'currentColor')
+  svg.append(path); arrow.append(svg)
+  return arrow
+}
 function instrumentTile(reading) {
   const tile = document.createElement('div')
   tile.className = 'instrument'
+  tile.dataset.reading = reading.id
+  tile.dataset.windBasis = reading.basis || ''
   tile.dataset.available = String(reading.available)
   tile.dataset.freshness = reading.freshness
   tile.dataset.stale = String(reading.freshness === 'stale')
@@ -419,15 +527,14 @@ function instrumentTile(reading) {
   value.textContent = formatReading(reading)
   const meta = document.createElement('span')
   meta.className = 'meta'
-  const bits = []
-  bits.push(reading.source === 'derived' ? 'derived' : 'measured')
-  if (reading.reference) bits.push(reading.reference)
-  if (reading.freshness === 'unknown') bits.push('timestamp unknown')
-  else if (reading.freshness === 'missing') bits.push('no data')
-  else if (reading.freshness === 'stale') bits.push('stale')
-  else if (reading.ageSeconds !== null) bits.push(`${reading.ageSeconds}s ago`)
-  meta.textContent = bits.join(' · ')
-  tile.append(label, value, meta)
+  meta.textContent = reading.freshness === 'stale' ? `Stale · ${reading.ageSeconds}s` : reading.freshness === 'unknown' ? 'Timestamp unknown' : ''
+  const values = document.createElement('span')
+  values.className = 'wind-value-row'
+  values.append(value)
+  const arrow = windIndicator(reading)
+  if (arrow) values.append(arrow)
+  tile.append(label, values)
+  if (meta.textContent) tile.append(meta)
   return tile
 }
 
@@ -487,11 +594,17 @@ async function refreshInstruments() {
   instrumentPolling = true
   const thisRequest = ++instrumentRequest
   try {
-    const [navigationResult, environmentResult] = await Promise.all([
+    const [navigationResult, environmentResult, guidanceResult, steeringResult] = await Promise.all([
       attempt(client.request('/signalk/v1/api/vessels/self/navigation', { operation: 'read-navigation', timeoutMs: 2500 })),
       attempt(client.request('/signalk/v1/api/vessels/self/environment', { operation: 'read-environment', timeoutMs: 2500 })),
+      attempt(client.request('/plugins/signalk-wakelogger/guidance', { operation: 'read-guidance', timeoutMs: 2500 })),
+      attempt(client.request('/signalk/v1/api/vessels/self/steering', { operation: 'read-steering', timeoutMs: 2500 })),
     ])
     if (thisRequest !== instrumentRequest) return
+    guidanceEndpoint = !guidanceResult.error && typeof guidanceResult.value?.enabled === 'boolean'
+    if (guidanceEndpoint) { serverGuidance = guidanceResult.value.guidance; guidanceEnabled = guidanceResult.value.enabled }
+    else { serverGuidance = null; guidanceEnabled = true }
+    steeringData = steeringResult.error ? {} : steeringResult.value || {}
     if (!navigationResult.error) {
       navigationData = navigationResult.value || {}
       signalKAvailable = true

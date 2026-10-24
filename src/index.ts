@@ -23,6 +23,8 @@ import type { OutboxStats, OutboxStore } from './outbox/interface'
 import { checkAssociationStatus } from './pairing/association-client'
 import { CredentialStore, fingerprintPairingCode, shouldExchangePairingCode, type DeviceCredentials } from './pairing/credentials'
 import { PairingError, pairDeviceWithRetry } from './pairing/pairing-client'
+import { GuidanceService } from './guidance/service'
+import type { GuidanceSnapshot } from './guidance/core'
 import { TelemetryNormaliser } from './signalk/normaliser'
 import { subscribeToTelemetry } from './signalk/subscriber'
 import { legacyProfile, parseTelemetryProfile, type TelemetryProfile } from './telemetry/profile'
@@ -49,6 +51,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let progression: RaceProgressionService | undefined
   let racePacks: RacePackStore | undefined
   let racePackReceiver: RacePackReceiver | undefined
+  let guidance: GuidanceService | undefined
+  let publishedGuidance: GuidanceSnapshot | null = null
   let observations: ObservationCollector | undefined
   let onboardSnapshots: OnboardSnapshotStore | undefined
   let onboard: OnboardRaceService | undefined
@@ -146,6 +150,12 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       // routes.
       const readRouter = pluginRouter.access?.('readonly') ?? pluginRouter
       const writeRouter = pluginRouter.access?.('readwrite') ?? pluginRouter
+      readRouter.get?.('/guidance', (_request, response) => {
+        const paths = currentSampler?.currentProfile().paths
+        const shared = paths?.heading.enabled && paths.apparentWind.enabled && paths.sog.enabled && paths.cog.enabled
+        const snapshot = publishedGuidance ?? (!shared ? guidance?.snapshot(Date.now(), tripState?.currentState().trackingSessionId ?? '') ?? null : null)
+        response.status(200).json({ enabled: guidance?.enabled ?? false, guidance: snapshot })
+      })
       readRouter.get?.('/tracking', async (_request, response, next) => {
         try { response.status(200).json(await trackingStatus()) }
         catch (error) { next(error) }
@@ -787,6 +797,8 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     trackArchive = undefined
     archivedRecordingId = null
     racePackReceiver = undefined
+    guidance = undefined
+    publishedGuidance = null
     observations = undefined
     onboardCourse = null
     await courses?.close()
@@ -897,6 +909,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     }
     await syncProgressionCourse()
     observations = new ObservationCollector()
+    guidance = new GuidanceService(config.guidance)
     const packs = new RacePackStore(path.join(dataDirectory, 'race-packs', credentials.deviceId))
     try { await packs.open() } catch (error) { app.error(`Wake Logger race pack store unavailable: ${safeError(error)}`) }
     racePacks = packs
@@ -1010,6 +1023,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     stopSubscription = subscribeToTelemetry(app, (delta) => {
       normaliser.ingest(delta)
       observations?.ingest(delta)
+      guidance?.ingest(delta)
       for (const update of delta.updates ?? []) for (const entry of ('values' in update ? update.values : []) ?? []) {
         if (entry.path === 'navigation.position') void courses?.observeLegPosition(entry.value, update.timestamp).catch(() => app.error('Wake Logger leg marker checkpoint failed'))
       }
@@ -1023,10 +1037,13 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       const draft = normaliser.takeSample(now, sampler.dueFields(now))
       if (!draft || !outbox) return
       await trip.prepare(draft, nextSequence)
+      draft.guidance = sampler.currentProfile().paths.heading.enabled && sampler.currentProfile().paths.apparentWind.enabled && sampler.currentProfile().paths.sog.enabled && sampler.currentProfile().paths.cog.enabled
+        ? guidance?.snapshot(now, draft.trackingSessionId ?? '') ?? null : null
       let queued
       try {
         queued = await outbox.append(credentials.deviceId, draft)
         nextSequence = queued.sequence + 1
+        publishedGuidance = queued.guidance ?? null
         await trip.committed(queued)
         // Small append off the outbox lock; a failure here must never break
         // telemetry recording or delivery.

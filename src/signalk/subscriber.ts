@@ -1,9 +1,10 @@
 import type { Delta, ServerAPI, Unsubscribes } from '@signalk/server-api'
 import { SIGNALK_PATHS } from './paths'
+import { GUIDANCE_PATHS } from '../guidance/service'
 import { OBSERVATION_PATHS } from '../race/observations'
 
 export function subscribeToTelemetry(app: ServerAPI, callback: (delta: Delta) => void): () => void {
-  const paths = [...new Set([...SIGNALK_PATHS, ...OBSERVATION_PATHS])]
+  const paths = [...new Set([...SIGNALK_PATHS, ...OBSERVATION_PATHS, ...GUIDANCE_PATHS])]
   const unsubscribes: Unsubscribes = []
   app.subscriptionmanager.subscribe(
     {

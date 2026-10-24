@@ -1,0 +1,8 @@
+{
+  "name": "wakelogger-real-trip-replay",
+  "version": "1.0.0",
+  "description": "Local recorded-sensor provider for the isolated Wake Logger replay server",
+  "main": "index.cjs",
+  "keywords": ["signalk-node-server-plugin"],
+  "license": "UNLICENSED"
+}

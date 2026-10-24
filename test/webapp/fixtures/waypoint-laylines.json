@@ -1,0 +1,284 @@
+[
+  {
+    "name": "starboard upwind",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": 1
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "ready"
+  },
+  {
+    "name": "port upwind",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": -1
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 270,
+      "currentTack": "port",
+      "kind": "tack",
+      "trueWindFromDeg": 315
+    },
+    "status": "ready"
+  },
+  {
+    "name": "port downwind",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": -1,
+        "longitude": -1
+      },
+      "headingDeg": 180,
+      "oppositeCourseDeg": 270,
+      "currentTack": "port",
+      "kind": "gybe",
+      "trueWindFromDeg": 45
+    },
+    "status": "ready"
+  },
+  {
+    "name": "starboard downwind",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": -1,
+        "longitude": 1
+      },
+      "headingDeg": 180,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "gybe",
+      "trueWindFromDeg": 315
+    },
+    "status": "ready"
+  },
+  {
+    "name": "north wrap",
+    "input": {
+      "position": {
+        "latitude": -27.41,
+        "longitude": 153.18
+      },
+      "target": {
+        "latitude": -27.39,
+        "longitude": 153.18
+      },
+      "headingDeg": 330,
+      "oppositeCourseDeg": 30,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 0
+    },
+    "status": "ready"
+  },
+  {
+    "name": "dateline crossing",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 179.99
+      },
+      "target": {
+        "latitude": 0.02,
+        "longitude": -179.99
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "ready"
+  },
+  {
+    "name": "beyond forward intersection",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 0.02,
+        "longitude": -0.03
+      },
+      "headingDeg": 330,
+      "oppositeCourseDeg": 30,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 0
+    },
+    "status": "no-forward-intersection"
+  },
+  {
+    "name": "parallel",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": 1
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 0,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "no-forward-intersection"
+  },
+  {
+    "name": "mark on current heading",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": 0
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "no-forward-intersection"
+  },
+  {
+    "name": "at mark",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  },
+  {
+    "name": "missing target",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": null,
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  },
+  {
+    "name": "missing heading",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": 1
+      },
+      "headingDeg": null,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  },
+  {
+    "name": "ineligible angle",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 1,
+        "longitude": 1
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": null,
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  },
+  {
+    "name": "wrong side of wind",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": -1,
+        "longitude": -1
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  },
+  {
+    "name": "invalid coordinates",
+    "input": {
+      "position": {
+        "latitude": 0,
+        "longitude": 0
+      },
+      "target": {
+        "latitude": 91,
+        "longitude": 0
+      },
+      "headingDeg": 0,
+      "oppositeCourseDeg": 90,
+      "currentTack": "starboard",
+      "kind": "tack",
+      "trueWindFromDeg": 45
+    },
+    "status": "unavailable"
+  }
+]

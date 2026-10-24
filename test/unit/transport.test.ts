@@ -62,6 +62,32 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('WakeLoggerTransport', () => {
+  it.each(['state', 'telemetry'] as const)('releases an abandoned %s callback and drains the replacement connection', async (kind) => {
+    const outbox: any = { latest: vi.fn().mockResolvedValue(sample),
+      pendingAfter: vi.fn().mockResolvedValue([sample]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 1, acknowledgedSequence: 0, droppedThrough: 0, messageCount: 1 }) }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 },
+      outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), random: () => 0 })
+    transport.start(); await tick()
+    const first = clients[0]!
+    if (kind === 'state') first.delayNextState = true
+    else first.delayNextTelemetry = true
+    first.emit('connect'); await tick(); await tick(); await tick()
+    expect(first.delayedCallbacks).toHaveLength(1)
+    first.connected = false; first.emit('close')
+    await new Promise(resolve => setTimeout(resolve, 850))
+    const replacement = clients[1]!
+    expect(replacement).toBeDefined()
+    replacement.emit('connect'); await tick(); await tick(); await tick()
+    expect(replacement.publications.some(p => p.topic.endsWith('/telemetry'))).toBe(true)
+    transport.updateCurrent({ ...sample, sequence: 2 }); await tick(); await tick()
+    expect(replacement.publications.filter(p => p.topic.endsWith('/state')).map(p => JSON.parse(p.payload).sequence)).toContain(2)
+    // A late callback from the retired connection cannot revive its drain.
+    first.releasePublish(); await tick()
+    expect(first.listenerCount('close')).toBe(1)
+    await transport.stop({ publishOffline: false, force: true })
+  })
+
   it('subscribes to desired courses and retains acknowledgements without publishing while stopped', async () => {
     const outbox: any = {
       latest: vi.fn().mockResolvedValue(undefined), pendingAfter: vi.fn().mockResolvedValue([]),

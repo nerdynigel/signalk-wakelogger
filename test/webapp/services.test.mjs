@@ -339,7 +339,7 @@ test('live navigation strip always shows wind, speed, heading and VMG', async ()
       courseOverGroundTrue: { value: Math.PI / 2, timestamp: ts() },
       headingTrue: { value: Math.PI, timestamp: ts() }
     },
-    environment: { wind: { speedTrue: { value: 7, timestamp: ts() }, directionTrue: { value: 0, timestamp: ts() } } }
+    environment: { wind: { speedOverGround: { value: 7, timestamp: ts() }, directionTrue: { value: 0, timestamp: ts() } } }
   })
   const strip = liveNavigationStrip(view)
   const byId = Object.fromEntries(strip.map((item) => [item.id, item]))
@@ -347,7 +347,7 @@ test('live navigation strip always shows wind, speed, heading and VMG', async ()
   assert.equal(byId.twd.available, true)
   assert.equal(byId.sog.available, true)
   assert.equal(byId.heading.available, true)
-  assert.equal(byId['vmg-wind-ground'].available, true)
+  assert.equal(byId['vmg-wind'].available, true)
   // Missing data is reported honestly, never fabricated.
   const bare = liveNavigationStrip(instrumentReadings({ now, environment: {} }))
   assert.equal(bare.find((item) => item.id === 'tws').available, false)
@@ -752,10 +752,10 @@ test('TWA derives signed bow-relative angles for each basis and keeps direct rea
   assert.equal(get(direct, 'twa-water').value, 0)
   assert.equal(get(direct, 'twa-ground').source, 'direct')
   const waterOnly = view({}, { angleTrueWater: e(-Math.PI / 6) })
-  assert.equal(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').available, true)
-  assert.match(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').label, /water/)
+  assert.equal(waterOnly.displayWind.angle.available, true)
+  assert.ok(!liveNavigationStrip(waterOnly).some(r => r.id === 'twa'))
   const staleGround = view({}, { angleTrueGround: e(1, 40000), angleTrueWater: e(0) })
-  assert.equal(liveNavigationStrip(staleGround).find(r => r.id === 'twa').value, 0)
+  assert.equal(staleGround.displayWind.angle.value, 0)
   const groundSpeed = get(view({}, { speedOverGround: e(7) }), 'tws')
   assert.equal(groundSpeed.available, true)
   assert.equal(groundSpeed.reference, 'ground')
@@ -811,7 +811,7 @@ test('VMG projects independent ground and water vectors, with direct angles and 
   const water = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(-Math.PI / 3) })
   assert.ok(Math.abs(value(water, 'vmg-wind-water').value - 1.9438444924406) < 1e-9)
   assert.equal(value(water, 'vmg-wind-ground').available, false)
-  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG to wind (water)')
+  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG to wind')
   const ground = resolve({ speedOverGround: entry(2), courseOverGroundTrue: entry(Math.PI / 2), headingTrue: entry(0) }, { angleTrueGround: entry(Math.PI / 3) })
   assert.ok(Math.abs(value(ground, 'vmg-wind-ground').value - 2 * 1.9438444924406 * Math.cos(Math.PI / 6)) < 1e-9)
   for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI, 2 * Math.PI]) {

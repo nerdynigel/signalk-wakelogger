@@ -1,0 +1,72 @@
+{
+  "v": 1,
+  "algorithm": "sailing-guidance-v1",
+  "at": 1792800000000,
+  "headingAt": 1792800000000,
+  "headingDeg": 0,
+  "headingValidUntil": 1792800030000,
+  "windAt": 1792800000000,
+  "windFromDeg": 290,
+  "windSpeedKn": 12,
+  "windValidUntil": 1792800030000,
+  "kind": "tack",
+  "currentTack": "port",
+  "turning": false,
+  "motionUnstable": false,
+  "waterWindFromDeg": 293.866673,
+  "waterSpeedKn": 5,
+  "targetTwaDeg": null,
+  "targetSpeedKn": null,
+  "currentEastKn": 2,
+  "currentNorthKn": 0,
+  "currentAt": 1792800000000,
+  "currentBasis": "provided",
+  "currentValidUntil": 1792800030000,
+  "leewayDeg": null,
+  "oppositeLeewayDeg": null,
+  "leewayAt": null,
+  "leewayBasis": "unavailable",
+  "correctionValidUntil": 1792800030000,
+  "inputs": {
+    "heading": {
+      "value": 0,
+      "at": 1792800000000,
+      "source": "test-sensor"
+    },
+    "stw": {
+      "value": 5,
+      "at": 1792800000000,
+      "source": "test-sensor"
+    },
+    "heel": {
+      "value": 10,
+      "at": 1792800000000,
+      "source": "test-sensor"
+    },
+    "rudder": {
+      "value": 2,
+      "at": 1792800000000,
+      "source": "test-sensor"
+    },
+    "currentEast": {
+      "value": 2,
+      "at": 1792800000000,
+      "source": "test-current"
+    },
+    "currentNorth": {
+      "value": 0,
+      "at": 1792800000000,
+      "source": "test-current"
+    },
+    "windEast": {
+      "value": -11.276311449430903,
+      "at": 1792800000000,
+      "source": "test-wind"
+    },
+    "windNorth": {
+      "value": 4.104241719908018,
+      "at": 1792800000000,
+      "source": "test-wind"
+    }
+  }
+}

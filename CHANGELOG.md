@@ -2,6 +2,15 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.13] - 2026-10-24
+
+- Show port/starboard approaches to the next mark and estimated tack/gybe points, with filtered heading/wind, stable map layers and no persistent guidance box.
+- Show one true-wind speed and compass TWD, alongside bow-relative apparent wind angle and small wind arrows. Instruments and guidance share the filtered sailing-wind selection.
+- Add a cyan dashed course-through-water bow line when measured or validated model leeway is available. Ground-track laylines apply current separately; measured heading stays distinct from course and steering estimates. Rudder is optional and no calibration is invented.
+- Release abandoned MQTT operations on reconnection so the saved-history queue can continue draining. Keep independent wind instruments available through GPS loss and preserve raw telemetry.
+
+Update the plugin, restart Signal K if prompted and reload the onboard app. Pairing, settings and recorded trips are retained. Matching website guidance requires the corresponding website/server update. Read the [full release notes](docs/releases/0.2.0-beta.13.md) for input requirements and upgrade details.
+
 ## [0.2.0-beta.12] - 2026-10-22
 
 - **Finish trip** now confirms that subsequent movement starts a new trip card, and points you to **Live tracking** if you only want to upload saved history. Retrying cloud confirmation does not end a trip again.
@@ -225,3 +234,7 @@ This remains a beta release.
 - Connected Signal K position and supported navigation readings to Wake Logger.
 - Added pairing, live updates and onboard storage for readings waiting to upload.
 - Added automatic retries and connection status information.
+
+## Developer tooling — real-trip replay (unreleased)
+
+- Added isolated replay tooling for testing recorded sailing instruments through Signal K, the Wake Logger plugin and the development website, including pause/resume and source comparisons. It creates a dedicated test vessel and preserves production recordings and normal device configurations.

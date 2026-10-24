@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { GuidanceEngine } from '../../webapp/sailing-guidance.mjs'
 
 const ownedRouteId = '8be48170-2453-4107-a1aa-c2c8bea39901'
 const ownedHref = `/resources/routes/${ownedRouteId}`
@@ -11,7 +12,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1', courseState = null, readiness = null } = {}) {
+async function mockBoat(page, { charts = {}, guidance = null, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1', courseState = null, readiness = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -152,6 +153,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     if (pathname === '/signalk/v1/api/vessels/self/environment') return json(typeof environment === 'function' ? environment() : environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
+    if (pathname === '/plugins/signalk-wakelogger/guidance') return guidance ? json({ enabled: true, guidance: guidance() }) : route.fulfill({ status: 404, json: {} })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
   })
@@ -394,7 +396,7 @@ test('standalone instruments are the default with no course and need no Race Pac
   await expect(page.locator('#instruments-tab')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('#instruments-panel')).toBeVisible()
   await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
-  await expect(page.locator('#instruments-grid')).toContainText('True wind speed')
+  await expect(page.locator('#instruments-grid')).toContainText('TW')
   await expect(page.locator('#instruments-grid')).toContainText('Depth')
   await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
   // Viewing instruments must not activate a course, advance a mark or change upload mode.
@@ -420,9 +422,9 @@ test('losing GPS does not blank independent wind and depth', async ({ page }) =>
   })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
-  await expect(grid).toContainText('True wind speed')
+  await expect(grid).toContainText('TW')
   await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
-  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'True wind speed' })).toHaveCount(1)
+  await expect(grid.locator('[data-reading="tws"]')).toHaveAttribute('data-available', 'true')
   await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
 })
 
@@ -731,6 +733,7 @@ test('a newer Race Pack announces today before course delivery and cannot activa
 
 
 test('mirrored tack and gybe guides refresh from apparent wind and ground motion without native writes', async ({ page }, testInfo) => {
+  test.setTimeout(120000)
   let heading = 0, awa = 30, trueWindFrom = null, awaAge = 0, positionAvailable = true, magneticOnly = false, awsAvailable = true
   const measurement = value => ({ value, timestamp: new Date().toISOString() })
   const sensorWind = () => {
@@ -759,7 +762,7 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
   await expect(page.locator('.opposite-tack-guide')).toHaveCount(1)
   await expect(page.locator('.opposite-tack-guide')).toHaveAttribute('stroke-dasharray', '8 6')
-  await expect(map).toHaveAttribute('aria-label', /mirrored current true-wind angle · no tide or leeway correction/)
+  await expect(map).toHaveAttribute('aria-label', /mirrored sailing angle/)
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-tack-guide.png'), fullPage: true })
   const bow = (await map.getAttribute('data-guide-origin')).split(',').map(Number)
   expect(bow[0]).toBeGreaterThan(-27.395)
@@ -769,14 +772,15 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
   await expect.poll(async () => ((Number(await map.getAttribute('data-opposite-tack-bearing')) + 180) % 360) - 180).toBeCloseTo(0, 6)
   trueWindFrom = 240; heading = 10
-  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
-  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(110, 6)
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe', { timeout: 30000 })
+  // The wind step must converge while retaining the deliberate five-second damping.
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing')), { timeout: 60000 }).toBeCloseTo(110, 0)
   await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
   await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-gybe-guide.png'), fullPage: true })
   heading = 110
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '110')
-  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 6)
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 0)
   heading = 60 // Dead run: true wind FROM 240°, no safe side to mirror.
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
   await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
@@ -978,36 +982,71 @@ test('stale tracking confirmation reads current state without retrying a write',
   expect(writes).toBe(1)
 })
 
-test('TWA tiles derive wind and Race falls back to fresh water TWA', async ({ page }) => {
+test('one true wind direction and apparent angle match the chartplotter with water wind', async ({ page }) => {
   let direct = false
   const entry = value => ({ value, timestamp: new Date().toISOString() })
-  await mockBoat(page, {
-    course: false,
-    navigationOverride: () => direct ? {} : {
-      headingTrue: entry(0), courseOverGroundTrue: entry(0),
-      speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406)
-    },
-    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6) } : {
-      speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6)
-    } })
+  await mockBoat(page, { course: false,
+    navigationOverride: () => direct ? { headingTrue: entry(Math.PI / 2) } : { headingTrue: entry(0), courseOverGroundTrue: entry(0), speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406) },
+    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6), speedTrue: entry(8 / 1.9438444924406) } : { speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6) } })
+  })
+  await page.goto('/signalk-wakelogger/')
+  const grid = page.locator('#instruments-grid'), twd = grid.locator('[data-reading="twd"]')
+  await expect(twd).toHaveCount(1)
+  await expect(twd).toContainText('054°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa"], [data-reading="twa-ground"], [data-reading="twa-water"]')).toHaveCount(0)
+  await expect(grid.locator('[data-reading="tws"]')).toHaveCount(1)
+  await expect(grid.locator('[data-reading="awa"]')).toContainText('30° S')
+  await page.locator('#race-tab').click()
+  const strip = page.locator('#race-live-nav [data-reading="twd"]')
+  await expect(strip).toContainText('054°')
+  await expect(page.locator('#race-live-nav [data-reading="awa"] .wind-angle-arrow')).toHaveCount(1)
+  direct = true
+  await expect(strip).toContainText('060°')
+  await expect(strip).toHaveAttribute('data-wind-basis', 'water')
+  await page.reload()
+  await expect(twd).toContainText('060°')
+})
+
+for (const width of [390, 1280]) test(`one sailing wind set prefers water and falls back to GPS at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 844 })
+  let waterFresh = true
+  const entry = (value, water = false) => ({ value, timestamp: new Date(Date.now() - (water && !waterFresh ? 40000 : 0)).toISOString() })
+  const guidance = () => {
+    const at = Date.now()
+    return new GuidanceEngine().update({ at, heading: { value: 90, at }, stw: { value: 4, at }, sog: { value: 6, at }, cog: { value: 90, at }, wind: { east: 12 * Math.sin(130 * Math.PI / 180), north: 12 * Math.cos(130 * Math.PI / 180), at }, waterWind: waterFresh ? { east: 8 * Math.sin(Math.PI / 3), north: 8 * Math.cos(Math.PI / 3), at } : null })
+  }
+  const { writes } = await mockBoat(page, { course: false, guidance,
+    navigationOverride: () => ({ position: entry({latitude:-27.41,longitude:153.18}), headingTrue: entry(100 * Math.PI / 180), speedThroughWater: entry(4 / 1.9438444924406), speedOverGround: entry(6 / 1.9438444924406), courseOverGroundTrue: entry(Math.PI / 2) }),
+    environment: () => ({ wind: { speedTrue: entry(9 / 1.9438444924406, true), angleTrueWater: entry(-Math.PI / 6, true), speedOverGround: entry(12 / 1.9438444924406), angleTrueGround: entry(40 * Math.PI / 180) } })
   })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
-  const ground = grid.locator('.instrument').filter({ hasText: 'True wind angle (ground)' })
-  const water = grid.locator('.instrument').filter({ hasText: 'True wind angle (water)' })
-  await expect(ground).toHaveAttribute('data-available', 'true')
-  await expect(ground).toContainText('54 ° true')
-  await expect(water).toContainText('54 ° true')
+  for (const id of ['tws', 'twd', 'vmg-wind']) await expect(grid.locator(`[data-reading="${id}"]`)).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
+  await expect(grid.locator('[data-reading="tws"]')).toContainText('8.0 kn')
+  await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
+  await expect(grid.locator('[data-reading="heading"]')).toContainText('90 ° true')
+  await expect(page.locator('#map')).toHaveAttribute('data-sailing-wind-from-deg', '60')
+  await expect(grid.locator('[data-reading="vmg-wind"]')).toContainText('3.5 kn')
+  await expect(grid).not.toContainText('(ground)')
+  await expect(grid).not.toContainText('(water)')
+  await page.screenshot({ path: testInfo.outputPath(`single-wind-${width}.png`), fullPage: true })
   await page.locator('#race-tab').click()
-  const strip = page.locator('#race-live-nav [data-reading=twa]')
-  await expect(strip).toHaveAttribute('data-available', 'true')
-  await expect(strip).toContainText('54 ° true')
-  direct = true
-  await expect(strip).toContainText('True wind angle (water)')
-  await expect(strip).toContainText('-30 ° true')
-  await expect(ground).toHaveAttribute('data-available', 'false')
+  const twd = page.locator('#race-live-nav [data-reading="twd"]')
+  await expect(twd).toContainText('060°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveAttribute('data-direction-deg', '240')
+  waterFresh = false
+  await expect(twd).toContainText('130°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveAttribute('data-direction-deg', '310')
+  await expect(twd).toHaveAttribute('data-wind-basis', 'ground')
+  await expect(page.locator('#race-live-nav [data-reading="tws"]')).toContainText('12.0 kn')
+  waterFresh = true
+  await expect(twd).toContainText('060°')
   await page.reload()
-  await expect(water).toContainText('-30 ° true')
+  await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
+  await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
+  expect(writes).toEqual([])
 })
 
 test('Finish explains no recording, automatic closure and unavailable recorder', async ({ page }, testInfo) => {
@@ -1100,12 +1139,14 @@ test('VMG tiles and Race strip survive water-only input, loss and recovery', asy
     environment: () => ({ wind: state === 'missing' ? {} : { angleTrueWater: entry(state === 'downwind' ? Math.PI : Math.PI / 3) } })
   })
   await page.goto('/signalk-wakelogger/')
-  const water = page.locator('#instruments-grid .instrument').filter({ hasText: 'VMG to wind (water)' })
+  const water = page.locator('#instruments-grid [data-reading="vmg-wind"]')
+  await expect(water).toHaveCount(1)
+  await expect(page.locator('#instruments-grid [data-reading="vmg-wind-ground"], #instruments-grid [data-reading="vmg-wind-water"]')).toHaveCount(0)
   await expect(water).toContainText('1.9 kn')
   await expect(water).toHaveAttribute('data-available', 'true')
   await page.locator('#race-tab').click()
-  const strip = page.locator('#race-live-nav [data-reading="vmg-wind-ground"]')
-  await expect(strip).toContainText('VMG to wind (water)')
+  const strip = page.locator('#race-live-nav [data-reading="vmg-wind"]')
+  await expect(strip).toContainText('VMG to wind')
   await expect(strip).toContainText('1.9 kn')
   state = 'missing'
   await expect(strip).toHaveAttribute('data-available', 'false')
@@ -1149,6 +1190,7 @@ test('course progress changes with positions without leg activation and recovers
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`direct ground wind overlays survive updates, controls and recovery ${viewport.width}`, async ({ page }, testInfo) => {
+    test.setTimeout(90000)
     await page.setViewportSize(viewport)
     let heading = 330, twd = 0, timestampAge = 0, unknown = false, envFailure = false
     const measurement = value => ({ value, timestamp: unknown ? undefined : new Date(Date.now() - timestampAge).toISOString() })
@@ -1166,7 +1208,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect.poll(() => page.locator('.vessel-icon').evaluate(icon => { const boat = icon.getBoundingClientRect(), map = document.querySelector('#map').getBoundingClientRect(); return boat.x >= map.x && boat.right <= map.right && boat.y >= map.y && boat.bottom <= map.bottom; })).toBe(true)
     await expect(opposite).toHaveCount(1)
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
-    await expect(page.locator('#guide-legend')).toContainText('Mirrored tack guide · port')
+    await expect(page.locator('#guide-legend')).toHaveCount(0)
     heading = 30
     await expect(map).toHaveAttribute('data-current-tack', 'port')
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '330')
@@ -1174,7 +1216,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
     await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '230')
     twd = 10
-    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '250')
+    await expect.poll(async () => Math.abs(Number(await map.getAttribute('data-opposite-gybe-bearing')) - 250), { timeout: 30000 }).toBeLessThan(0.5)
     await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
     await page.locator('.leaflet-control-zoom-in').click()
     await expect(ray).toHaveCount(1)
@@ -1245,4 +1287,141 @@ test('leg-average ETA page suppresses stale samples, recovers, persists on reloa
   mode='early';await expect(page.locator('#eta-reason')).toContainText('Provisional · leg plan speed');await expect(page.locator('#vmg')).toContainText('(plan)')
   expect(errors).toEqual([])
   expect(fixture.writes).toEqual([])
+})
+
+for (const width of [1280, 390]) test(`waypoint laylines follow native and cached marks without navigation writes ${width}`, async ({ page }, testInfo) => {
+  test.setTimeout(120000)
+  await page.setViewportSize({ width, height: 900 })
+  let latitude = -27.41, heading = 330, wind = 0, age = 0, magnetic = false, index = 1, cached = false, clear = false, reverse = false
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  const coursePoints = [
+    { name: 'Start', latitude: -27.42, longitude: 153.18 },
+    { name: 'Northern mark', latitude: -27.39, longitude: 153.18 },
+    { name: 'Finish', latitude: -27.37, longitude: 153.18 },
+  ]
+  const measurement = value => ({ value, timestamp: new Date(Date.now() - age).toISOString() })
+  const { writes, control } = await mockBoat(page, {
+    courseState: () => {
+      const course = { ...desired, action: clear ? 'clear' : 'activate', start: coursePoints[0], marks: [coursePoints[1]], finish: coursePoints[2], activeWaypointIndex: index }
+      return { desired: course, cachedCourse: course, native: { activeMatchesDesired: !cached, course: { activeRoute: { pointIndex: index, reverse } } } }
+    },
+    navigationOverride: () => ({ position: measurement({ latitude, longitude: 153.18 }), [magnetic ? 'headingMagnetic' : 'headingTrue']: measurement(heading*Math.PI/180) }),
+    environment: () => ({ wind: { speedOverGround: measurement(12/1.9438444924406), directionTrue: measurement(wind*Math.PI/180) } }),
+  })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  const port = page.locator('.waypoint-port-layline'), marker = page.locator('.waypoint-maneuver-point')
+  await expect(page.locator('#guide-legend')).toHaveCount(0)
+  await expect(page.locator('#waypoint-layline-summary')).toHaveCount(0)
+  await expect(map).toHaveAttribute('data-layline-status', 'ready')
+  await expect(port).toHaveAttribute('data-approach-bearing', '30')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.39')
+  await expect(marker).toHaveCount(1)
+  await page.screenshot({ path: testInfo.outputPath(`waypoint-laylines-${width}.png`), fullPage: true })
+  latitude = -27.405
+  await expect.poll(async () => Number(await map.getAttribute('data-layline-distance-m'))).toBeLessThan(1000)
+  heading = 30
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '30')
+  await expect(marker).toHaveCount(1)
+  index = 2
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
+  const distance = await map.getAttribute('data-layline-distance-m')
+  await page.locator('.leaflet-control-zoom-in').click()
+  await expect(map).toHaveAttribute('data-layline-distance-m', distance)
+  await page.locator('#fullscreen').click()
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
+  cached = true
+  await expect(map).toHaveAttribute('data-course-source', 'cached')
+  cached = false; reverse = true; index = 1; latitude = -27.37; wind = 180; heading = 150
+  await expect(port).toHaveAttribute('data-target-lat', '-27.39')
+  await expect(map).toHaveAttribute('data-course-source', 'native')
+  await expect(marker).toHaveCount(1)
+  reverse = false; index = 0
+  await expect(port).toHaveAttribute('data-target-lat', '-27.42')
+  magnetic = true
+  await expect(port).toHaveCount(0)
+  magnetic = false; age = 31000
+  await expect(port).toHaveCount(0)
+  age = 0
+  await expect(port).toHaveCount(1)
+  // Age retained readings independently of successful polling.
+  await page.route('**/signalk/v1/api/vessels/self/navigation', route => route.fulfill({ status: 503, json: {} }))
+  await expect(port).toHaveCount(0)
+  await page.unroute('**/signalk/v1/api/vessels/self/navigation')
+  await expect(port).toHaveCount(1)
+  clear = true
+  await expect(port).toHaveCount(0)
+  clear = false
+  await expect(port).toHaveCount(1)
+  control.finishedTrip = { uploadPending: true }
+  await expect(port).toHaveCount(0)
+  expect(errors).toEqual([])
+  expect(writes).toEqual([])
+})
+
+for (const width of [1280, 390]) test(`canonical current guidance keeps measured bow heading and drops optional rudder at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
+  let rudder = true, current = 2, heel = true, measuredLeeway = null
+  const engine = new GuidanceEngine({ calibration: { id: 'validated-fixture', validated: true, heelCoefficient: 5, rudderCoefficient: 0.2 } })
+  const guidance = () => {
+    const at = Date.now(), r = value => ({ value, at, source: 'fixture' })
+    return engine.update({ at, heading: r(0), stw: r(5), heel: heel ? r(10) : null, leeway: measuredLeeway === null ? null : r(measuredLeeway), rudder: rudder ? r(2) : null,
+      current: { east: current, north: 0, at }, wind: { east: 12 * Math.sin(330 * Math.PI / 180), north: 12 * Math.cos(330 * Math.PI / 180), at } })
+  }
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await mockBoat(page, { guidance })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-guidance-version', 'sailing-guidance-v1')
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
+  await expect(map).toHaveAttribute('data-current-corrected', 'true')
+  await expect(map).toHaveAttribute('data-leeway-basis', 'calibrated-rudder')
+  await expect.poll(async () => Number(await map.getAttribute('data-ground-course-deg'))).toBeGreaterThan(20)
+  const water = page.locator('.water-course-guide'), heading = page.locator('.vessel-heading-guide')
+  await expect(water).toHaveCount(1)
+  await expect.poll(async () => Number(await water.getAttribute('data-bearing-deg'))).toBeGreaterThan(2)
+  expect(await water.getAttribute('data-origin-lat')).toBe(await heading.getAttribute('data-origin-lat'))
+  expect(await water.getAttribute('data-origin-lon')).toBe(await heading.getAttribute('data-origin-lon'))
+  await expect(page.locator('.required-heading-guide')).toHaveCount(1)
+  await page.locator('.required-heading-guide').evaluate(node => { window.requiredHeadingNode = node })
+  rudder = false
+  await expect(map).toHaveAttribute('data-leeway-basis', 'calibrated-heel')
+  expect(await page.locator('.required-heading-guide').evaluate(node => node === window.requiredHeadingNode)).toBe(true)
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
+  await expect(page.locator('#guide-legend, #waypoint-layline-summary')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`current-guidance-${width}.png`), fullPage: true })
+  measuredLeeway = -3
+  await expect(water).toHaveAttribute('data-bearing-deg', '357')
+  await expect(heading).toHaveAttribute('data-bearing-deg', '0')
+  measuredLeeway = null; heel = false
+  await expect(water).toHaveCount(0)
+  measuredLeeway = 3
+  await expect(water).toHaveAttribute('data-bearing-deg', '3')
+  current = 12
+  // Reset the fixture source so this is an immediate physically impossible current.
+  engine.reset()
+  await expect(page.locator('.required-heading-guide')).toHaveCount(0)
+  await expect(map).toHaveAttribute('data-course-to-steer-deg', '')
+  expect(errors).toEqual([])
+})
+
+test('GPS loss preserves fresh standalone wind without reusing a published track solution', async ({ page }) => {
+  let lost = false
+  const entry = (value, position = false) => ({ value, timestamp: new Date(Date.now() - (lost && position ? 40000 : 0)).toISOString() })
+  const guidance = () => { const at = Date.now(); return new GuidanceEngine().update({ at, heading: { value: 102, at }, waterWind: { east: 15.6 * Math.sin(132 * Math.PI / 180), north: 15.6 * Math.cos(132 * Math.PI / 180), at } }) }
+  await mockBoat(page, { course: false, guidance,
+    navigationOverride: () => ({ position: entry({ latitude: -27.41, longitude: 153.18 }, true), headingTrue: entry(Math.PI / 2) }),
+    environment: () => ({ wind: { speedTrue: entry(8 / 1.9438444924406), angleTrueWater: entry(-Math.PI / 6) } }) })
+  await page.goto('/signalk-wakelogger/')
+  const twd = page.locator('#instruments-grid [data-reading="twd"]')
+  await expect(twd).toContainText('132°')
+  lost = true
+  await expect(twd).toContainText('060°')
+  await expect(page.locator('#map')).toHaveAttribute('data-heading-guide-bearing', '')
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
 })
