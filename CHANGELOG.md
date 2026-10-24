@@ -4,7 +4,8 @@ Updates for boat owners and crew: what's new, what's improved, and anything you 
 
 ## Unreleased — Waypoint laylines
 
-- See port and starboard approaches to your next course mark, plus an estimated tack/gybe point and distance. The display follows the selected course and also works offline from cached course data, clearly labelled.
+- Removed the persistent heading, tack and layline information box to keep the map clear. The guide lines and estimated maneuver point remain.
+- See port and starboard approaches to your next course mark, plus an estimated tack/gybe point. The display follows the selected course and also works offline from cached course data.
 - Fresh GPS, true heading and valid ground wind are required. Laylines mirror the current sailing angle, without current/leeway correction, polars or hazard checks. Missing or stale readings remove the estimate. Existing ETA and navigation controls are unchanged.
 - When released, update the plugin and reload the onboard app. No new settings, sensors or pairing steps are needed if the existing live guides already work.
 

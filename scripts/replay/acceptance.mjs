@@ -108,7 +108,9 @@ try {
       await plugin.locator('#point-index').selectOption('2');
       await plugin.locator('#set-point').click();
       await expect(plugin.locator('#next-mark')).toContainText('Green Island',{timeout:30000});
-      await expect(web.getByTestId('chartplotter-layline-summary')).toContainText('Green Island',{timeout:30000});
+      const selected=(await overview()).race_navigation;
+      const target=selected.route_waypoints[selected.active_waypoint_index];
+      await expect(web.getByTestId('chartplotter-port-layline')).toHaveAttribute('data-target-lat',String(target.latitude),{timeout:30000});
       await plugin.screenshot({path:path.join(output,'plugin-next-leg.png'),fullPage:true});
       await web.screenshot({path:path.join(output,'web-next-leg.png'),fullPage:true});
       advanced=true;check('Both supported course controls selected Green Island',{cloudAlreadyAdvanced:before===2,nativeExplicitControl:true});

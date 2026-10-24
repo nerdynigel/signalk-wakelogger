@@ -374,8 +374,8 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   element.dataset.oppositeGybeBearing = guides.kind === 'gybe' ? String(guides.maneuverBearing) : ''
   element.dataset.maneuverGuideKind = guides.kind || ''
   element.dataset.currentTack = guides.currentTack || ''
+  element.dataset.courseSource = progress?.readOnly ? 'cached' : progress?.matches ? 'native' : 'unavailable'
   const oppositeSide = guides.currentTack === 'port' ? 'starboard' : 'port'
-  $('guide-legend').textContent = guides.heading === null ? 'Heading guide unavailable · fresh GPS and true heading required' : `Heading · true${guides.currentTack ? ` · ${guides.currentTack}` : ''}${guides.kind ? ` · Mirrored ${guides.kind} guide · ${oppositeSide} · current true-wind angle; no tide or leeway correction` : ''}`
   const target = progress?.next
   const finished = trackingStatus?.finishedTrip && !trackingStatus?.trackingSessionId
   const laylines = waypointLaylines({
@@ -403,25 +403,7 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
       L.circleMarker([point.latitude, longitude], { radius: 5, color: '#b45309', fillColor: '#fff', fillOpacity: 1, weight: 2, className: 'waypoint-maneuver-point' })
         .bindTooltip(`Estimated ${laylines.kind} point`).addTo(laylineLayer)
     }
-    const summary = document.createElement('div')
-    summary.id = 'waypoint-layline-summary'
-    summary.style.marginTop = '5px'
-    const label = document.createElement('strong')
-    label.textContent = `Laylines · ${target.name || 'Next mark'}${progress.readOnly ? ' · cached course' : ''}`
-    const sides = document.createElement('div')
-    for (const [side, colour] of [['Port', '#dc2626'], ['Starboard', '#15803d']]) {
-      if (sides.childNodes.length) sides.append(' · ')
-      const name = document.createElement('span')
-      name.style.color = colour
-      name.textContent = side
-      sides.append(name)
-    }
-    const estimate = document.createElement('div')
-    estimate.textContent = laylines.status === 'ready' ? `Estimated ${laylines.kind} in ${(laylines.distanceM / 1852).toFixed(2)} NM` : laylines.reason
-    const basis = document.createElement('div')
-    basis.textContent = 'Mirrored-angle estimate · no current or leeway correction.'
-    summary.append(label, sides, estimate, basis)
-    $('guide-legend').append(summary)
+
   }
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''

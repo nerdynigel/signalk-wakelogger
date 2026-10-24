@@ -1166,7 +1166,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect.poll(() => page.locator('.vessel-icon').evaluate(icon => { const boat = icon.getBoundingClientRect(), map = document.querySelector('#map').getBoundingClientRect(); return boat.x >= map.x && boat.right <= map.right && boat.y >= map.y && boat.bottom <= map.bottom; })).toBe(true)
     await expect(opposite).toHaveCount(1)
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
-    await expect(page.locator('#guide-legend')).toContainText('Mirrored tack guide · port')
+    await expect(page.locator('#guide-legend')).toHaveCount(0)
     heading = 30
     await expect(map).toHaveAttribute('data-current-tack', 'port')
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '330')
@@ -1268,10 +1268,11 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
     environment: () => ({ wind: { speedOverGround: measurement(12/1.9438444924406), directionTrue: measurement(wind*Math.PI/180) } }),
   })
   await page.goto('/signalk-wakelogger/')
-  const summary = page.locator('#waypoint-layline-summary'), map = page.locator('#map')
+  const map = page.locator('#map')
   const port = page.locator('.waypoint-port-layline'), marker = page.locator('.waypoint-maneuver-point')
-  await expect(summary).toContainText('Northern mark')
-  await expect(summary).toContainText('Estimated tack in 0.69 NM')
+  await expect(page.locator('#guide-legend')).toHaveCount(0)
+  await expect(page.locator('#waypoint-layline-summary')).toHaveCount(0)
+  await expect(map).toHaveAttribute('data-layline-status', 'ready')
   await expect(port).toHaveAttribute('data-approach-bearing', '30')
   await expect(port).toHaveAttribute('data-target-lat', '-27.39')
   await expect(marker).toHaveCount(1)
@@ -1279,25 +1280,26 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
   latitude = -27.405
   await expect.poll(async () => Number(await map.getAttribute('data-layline-distance-m'))).toBeLessThan(1000)
   heading = 30
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '30')
   await expect(marker).toHaveCount(1)
   index = 2
-  await expect(summary).toContainText('Finish')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
   const distance = await map.getAttribute('data-layline-distance-m')
   await page.locator('.leaflet-control-zoom-in').click()
   await expect(map).toHaveAttribute('data-layline-distance-m', distance)
   await page.locator('#fullscreen').click()
-  await expect(summary).toContainText('Finish')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
   await page.keyboard.press('Escape')
   await page.reload()
-  await expect(summary).toContainText('Finish')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.37')
   cached = true
-  await expect(summary).toContainText('cached course')
+  await expect(map).toHaveAttribute('data-course-source', 'cached')
   cached = false; reverse = true; index = 1; latitude = -27.37; wind = 180; heading = 150
-  await expect(summary).toContainText('Northern mark')
-  await expect(summary).not.toContainText('cached course')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.39')
+  await expect(map).toHaveAttribute('data-course-source', 'native')
   await expect(marker).toHaveCount(1)
   reverse = false; index = 0
-  await expect(summary).toContainText('Start')
+  await expect(port).toHaveAttribute('data-target-lat', '-27.42')
   magnetic = true
   await expect(port).toHaveCount(0)
   magnetic = false; age = 31000

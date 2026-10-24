@@ -107,9 +107,9 @@ See the **Changelog** tab for what's new in each release.
 
 ### Waypoint laylines
 
-The onboard map shows red **Port** and green **Starboard** approaches to the next mark in the selected course, with an estimated tack/gybe point and distance in NM. It uses fresh GPS, true heading and ground true wind (direct or derived from apparent wind and ground motion). A missing or stale required reading removes the estimate. An unavailable forward intersection is labelled without a negative distance.
+The onboard map shows red **Port** and green **Starboard** approaches to the next mark in the selected course, with an estimated tack/gybe point. It uses fresh GPS, true heading and ground true wind (direct or derived from apparent wind and ground motion). A missing or stale required reading removes the estimate. An unavailable forward intersection removes the estimated maneuver point.
 
-Laylines also work from the selected cached course when native activation is unavailable, labelled **cached course**, and do not need cloud access. They follow native course reversal and mark advancement when available. No course is activated or advanced by displaying laylines.
+Laylines also work from the selected cached course when native activation is unavailable and do not need cloud access. They follow native course reversal and mark advancement when available. No course is activated or advanced by displaying laylines.
 
 These are mirrored-angle estimates without current/leeway correction, polars, hazard checks or tack alerts. They are separate from the existing leg-average ETA. When released, update the plugin through the Signal K App Store and reload the onboard app to obtain this display; no pairing or settings changes are needed.
 
