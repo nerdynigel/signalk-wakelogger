@@ -455,9 +455,28 @@ function sanitizeProfileError(error: unknown): string {
 }
 function sanitizeError(value: string): string { return value.replace(/(password|token|secret)=\S+/gi, '$1=[redacted]').slice(0, 500) }
 function publish(client: MqttClient, topic: string, payload: string, options: { qos: 1; retain?: boolean }): Promise<void> {
-  return new Promise((resolve, reject) => client.publish(topic, payload, options, (error) => error ? reject(error) : resolve()))
+  return mqttOperation(client, done => { client.publish(topic, payload, options, done) })
 }
 function subscribe(client: MqttClient, topics: string[]): Promise<void> {
   const subscriptions = Object.fromEntries(topics.map((topic) => [topic, { qos: 1 as const }]))
-  return new Promise((resolve, reject) => client.subscribe(subscriptions, (error) => error ? reject(error) : resolve()))
+  return mqttOperation(client, done => { client.subscribe(subscriptions, done) })
+}
+
+// MQTT.js can abandon QoS callbacks when a connection is force-closed. Release
+// every awaiting drain before reconnecting, otherwise pumpRunning/statePublish-
+// InFlight can stay set forever even though the replacement client is online.
+function mqttOperation(client: MqttClient, send: (done: (error?: Error | null) => void) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const done = (error?: Error | null): void => {
+      if (settled) return
+      settled = true
+      client.removeListener('close', closed)
+      if (error) reject(error)
+      else resolve()
+    }
+    const closed = (): void => done(new Error('MQTT connection closed before acknowledgement'))
+    client.once('close', closed)
+    try { send(done) } catch (error) { done(error instanceof Error ? error : new Error(String(error))) }
+  })
 }
