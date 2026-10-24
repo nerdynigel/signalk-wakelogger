@@ -16,6 +16,9 @@ if(!['localhost','127.0.0.1'].includes(new URL(base).hostname))throw new Error('
 const ownerId=environment.ownerUserId;
 const port=Number(process.env.WAKELOGGER_REPLAY_PORT || (fs.existsSync(stateFile)?JSON.parse(fs.readFileSync(stateFile,'utf8')).port:0) || 3003);
 const sk=`http://127.0.0.1:${port}`;
+const containerName=environment.containerName || 'wakelogger-real-trip-replay';
+if(!/^wakelogger-[a-z0-9-]+$/.test(containerName))throw new Error('Use a dedicated Wake Logger replay container name');
+const vesselName=environment.vesselName || 'Replay — SAGS 2026-06-28';
 const docker=(args)=>execFileSync('docker',args,{encoding:'utf8',maxBuffer:8*1024*1024});
 const save=(file,value)=>fs.writeFileSync(file,JSON.stringify(value,null,2)+'\n',{mode:0o600});
 const read=file=>JSON.parse(fs.readFileSync(file,'utf8'));
@@ -60,17 +63,17 @@ async function provision(reset=false) {
   if(!fs.existsSync(path.join(data,'clip.ndjson'))) throw new Error('Prepare the DAT clip first');
   let state=fs.existsSync(stateFile)?read(stateFile):{};
   if(state.runId && !reset) {
-    const existing=JSON.parse(docker(['inspect','wakelogger-real-trip-replay']))[0];
+    const existing=JSON.parse(docker(['inspect',containerName]))[0];
     if(existing.State.Running || state.phase==='ready') throw new Error('A replay run already exists; use reset after Finish trip');
     if(!existing.Mounts.some(m=>m.Source===path.join(state.runDir,'signalk'))) throw new Error('Replay container does not belong to this run');
-    docker(['rm','wakelogger-real-trip-replay']);
+    docker(['rm',containerName]);
   }
   if(reset) {
     const tracking=await api(`${sk}/plugins/signalk-wakelogger/tracking`);
     if(tracking.trackingSessionId) throw new Error('Finish the active test trip in the onboard app before reset');
     if(tracking.queue?.messageCount || tracking.finishedTrip?.uploadPending || tracking.finishedTrip?.confirmationPending)
       throw new Error('Wait for saved history upload and cloud Finish confirmation before reset');
-    const existing=JSON.parse(docker(['inspect','wakelogger-real-trip-replay']))[0];
+    const existing=JSON.parse(docker(['inspect',containerName]))[0];
     if(!existing.Mounts.some(m=>m.Source===path.join(state.runDir,'signalk')))
       throw new Error('Replay container does not belong to this run');
     save(path.join(state.runDir,'deployment.json'),state);
@@ -85,8 +88,8 @@ async function provision(reset=false) {
   if(!state.vesselId) {
     const vessels=await api(`${base}/v1/vessels`,'GET',null,auth);
     const list=Array.isArray(vessels)?vessels:vessels.items || [];
-    const existing=list.find(v=>v.name==='Replay — SAGS 2026-06-28');
-    const vessel=existing || await api(`${base}/v1/vessels`,'POST',{name:'Replay — SAGS 2026-06-28',propulsion_type:'sail',playback_icon_type:'sailing_monohull'},auth);
+    const existing=list.find(v=>v.name===vesselName);
+    const vessel=existing || await api(`${base}/v1/vessels`,'POST',{name:vesselName,propulsion_type:'sail',playback_icon_type:'sailing_monohull'},auth);
     state.vesselId=vessel.id;
     const course=read(path.join(data,'source-course.json'));
     const route=await api(`${base}/v1/race-routes`,'POST',{vessel_id:vessel.id,name:'Replay — '+course.name,
@@ -103,14 +106,14 @@ async function provision(reset=false) {
   // Normal forecast-provider retries can take longer than ordinary local API
   // reads. Leave the previous replay intact until this preparation succeeds.
   const plan=state.planId ? await api(`${base}/v1/race-plan/${state.planId}`,'PATCH',planBody,auth,120000) : await api(`${base}/v1/race-plan`,'POST',planBody,auth,120000);
-  state={...state,runId,runDir,planId:plan.id,container:'wakelogger-real-trip-replay',sourceVoyageId:48,
+  state={...state,runId,runDir,planId:plan.id,container:containerName,sourceVoyageId:48,
     sourceStart:'2026-06-28T03:06:00Z',sourceEnd:'2026-06-28T03:26:00Z',
     webUrl:`${environment.publicWebOrigin}/vessels/manage?vessel=${state.vesselId}&tab=live`,
     controlsUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/plugins/wakelogger-real-trip-replay/controls`,
     port,phase:'provisioning',initialForecastBasis:'Normal current-time test forecast provider; original sailing sensors remain the live observations',
     pluginUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/signalk-wakelogger/`,createdAt:new Date().toISOString()};
   save(stateFile,state);
-  save(path.join(config,'settings.json'),{vessel:{name:'Replay — SAGS 2026-06-28',uuid:runId},pipedProviders:[]});
+  save(path.join(config,'settings.json'),{vessel:{name:vesselName,uuid:runId},pipedProviders:[]});
   save(path.join(config,'plugin-config-data/signalk-wakelogger.json'),{enabled:true,configuration:{pairingApiUrl:environment.pairingUrl,pairingCode:pairing.code,samplePeriodMs:1000,raceProgressionMode:'off'}});
   save(path.join(config,'plugin-config-data/wakelogger-real-trip-replay.json'),{enabled:true,configuration:{file:'/replay/clip.ndjson',webUrl:state.webUrl}});
   const image=docker(['inspect','signalk-dev','--format','{{.Image}}']).trim();
@@ -119,7 +122,7 @@ async function provision(reset=false) {
   state.sourceSha256=read(path.join(data,'frames.ndjson.json')).sourceSha256;
   save(stateFile,state);
   save(path.join(runDir,'deployment.json'),state);
-  if(reset) docker(['rm','-f','wakelogger-real-trip-replay']);
+  if(reset) docker(['rm','-f',containerName]);
   docker(['run','-d','--init','--name',state.container,'--label','org.wakelogger.replay=real-trip-48','-p',`${port}:3000`,
     '--entrypoint','sh','-v',`${config}:/home/node/.signalk`,
     '-v',`${data}:/replay:ro`,'-v',`${root}/scripts/replay/provider:/replay-provider:ro`,

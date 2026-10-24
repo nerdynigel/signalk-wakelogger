@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { GuidanceEngine } from '../../webapp/sailing-guidance.mjs'
 
 const ownedRouteId = '8be48170-2453-4107-a1aa-c2c8bea39901'
 const ownedHref = `/resources/routes/${ownedRouteId}`
@@ -11,7 +12,7 @@ const points = [
 const desired = { v: 1, revision: 7, courseId: 'race-42', racePlanId: 42, name: 'Saturday bay race', updatedAt: '2026-09-13T01:00:00Z', action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
-async function mockBoat(page, { charts = {}, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1', courseState = null, readiness = null } = {}) {
+async function mockBoat(page, { charts = {}, guidance = null, conflict = false, missingDirection = false, progression = null, racePlan = null, course = true, courseError = 0, environment = {}, navigationOverride = null, track = [], trackId = 'rec-1', courseState = null, readiness = null } = {}) {
   const writes = []
   let uploadMode = 'local_only'
   let progressionState = progression
@@ -152,6 +153,7 @@ async function mockBoat(page, { charts = {}, conflict = false, missingDirection 
     }
     if (pathname === '/signalk/v1/api/vessels/self/environment') return json(typeof environment === 'function' ? environment() : environment)
     if (pathname === '/signalk/v1/api/vessels/self/navigation/position') return json({ value: { latitude: -27.395, longitude: 153.18 }, timestamp: new Date().toISOString() })
+    if (pathname === '/plugins/signalk-wakelogger/guidance') return guidance ? json({ enabled: true, guidance: guidance() }) : route.fulfill({ status: 404, json: {} })
     if (pathname === '/plugins/signalk-wakelogger/status') return json({ connectionState: 'recording_locally', uploadMode: 'local_only', queueMessageCount: 123, credentials: { password: secret } })
     return route.continue()
   })
@@ -1149,6 +1151,7 @@ test('course progress changes with positions without leg activation and recovers
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`direct ground wind overlays survive updates, controls and recovery ${viewport.width}`, async ({ page }, testInfo) => {
+    test.setTimeout(90000)
     await page.setViewportSize(viewport)
     let heading = 330, twd = 0, timestampAge = 0, unknown = false, envFailure = false
     const measurement = value => ({ value, timestamp: unknown ? undefined : new Date(Date.now() - timestampAge).toISOString() })
@@ -1174,7 +1177,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
     await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '230')
     twd = 10
-    await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '250')
+    await expect.poll(async () => Math.abs(Number(await map.getAttribute('data-opposite-gybe-bearing')) - 250), { timeout: 30000 }).toBeLessThan(0.5)
     await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
     await page.locator('.leaflet-control-zoom-in').click()
     await expect(ray).toHaveCount(1)
@@ -1319,4 +1322,39 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
   await expect(port).toHaveCount(0)
   expect(errors).toEqual([])
   expect(writes).toEqual([])
+})
+
+for (const width of [1280, 390]) test(`canonical current guidance keeps measured bow heading and drops optional rudder at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
+  let rudder = true, current = 2
+  const engine = new GuidanceEngine({ calibration: { id: 'validated-fixture', validated: true, heelCoefficient: 5, rudderCoefficient: 0.2 } })
+  const guidance = () => {
+    const at = Date.now(), r = value => ({ value, at, source: 'fixture' })
+    return engine.update({ at, heading: r(0), stw: r(5), heel: r(10), rudder: rudder ? r(2) : null,
+      current: { east: current, north: 0, at }, wind: { east: 12 * Math.sin(330 * Math.PI / 180), north: 12 * Math.cos(330 * Math.PI / 180), at } })
+  }
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await mockBoat(page, { guidance })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(map).toHaveAttribute('data-guidance-version', 'sailing-guidance-v1')
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
+  await expect(map).toHaveAttribute('data-current-corrected', 'true')
+  await expect(map).toHaveAttribute('data-leeway-basis', 'calibrated-rudder')
+  await expect.poll(async () => Number(await map.getAttribute('data-ground-course-deg'))).toBeGreaterThan(20)
+  await expect(page.locator('.required-heading-guide')).toHaveCount(1)
+  await page.locator('.required-heading-guide').evaluate(node => { window.requiredHeadingNode = node })
+  rudder = false
+  await expect(map).toHaveAttribute('data-leeway-basis', 'calibrated-heel')
+  expect(await page.locator('.required-heading-guide').evaluate(node => node === window.requiredHeadingNode)).toBe(true)
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
+  await expect(page.locator('#guide-legend, #waypoint-layline-summary')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`current-guidance-${width}.png`), fullPage: true })
+  current = 12
+  // Reset the fixture source so this is an immediate physically impossible current.
+  engine.reset()
+  await expect(page.locator('.required-heading-guide')).toHaveCount(0)
+  await expect(map).toHaveAttribute('data-course-to-steer-deg', '')
+  expect(errors).toEqual([])
 })

@@ -1,3 +1,4 @@
+import type { GuidanceSnapshot } from '../guidance/core'
 export type HeadingReference = 'true' | 'magnetic'
 export type NetworkMode = 'NORMAL' | 'CONSTRAINED' | 'OFFLINE'
 export type TelemetryField = 'position' | 'sog' | 'cog' | 'heading' | 'depth' | 'apparentWind'
@@ -52,6 +53,7 @@ export interface RecordingStatus {
 }
 
 export interface TelemetryDraft {
+  guidance?: GuidanceSnapshot | null
   recording?: RecordingManifest
   capturedAt: number
   receivedAt: number

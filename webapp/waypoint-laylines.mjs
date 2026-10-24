@@ -39,7 +39,7 @@ export function laylineCoordinates(target, bearingDeg, distanceM, centerLongitud
   });
 }
 
-export function waypointLaylines({ position, target, headingDeg, oppositeCourseDeg, currentTack, kind, trueWindFromDeg } = {}) {
+export function waypointLaylines({ position, target, headingDeg, oppositeCourseDeg, currentTack, kind, trueWindFromDeg, groundCorrected = false } = {}) {
   const empty = { status: 'unavailable', reason: 'Fresh sailing inputs and an active mark required', approaches: [], maneuverPoint: null, distanceM: null, kind: kind || null };
   if (!valid(position) || !valid(target) || !['tack', 'gybe'].includes(kind)
     || !['port', 'starboard'].includes(currentTack)
@@ -52,7 +52,7 @@ export function waypointLaylines({ position, target, headingDeg, oppositeCourseD
   const east = [-Math.sin(lon), Math.cos(lon), 0];
   const targetBearing = wrap(deg(Math.atan2(dot(destination, east), dot(destination, north))));
   const windAngle = Math.abs(((targetBearing - trueWindFromDeg + 540) % 360) - 180);
-  if (kind === 'tack' ? windAngle >= 90 : windAngle <= 90) return { ...empty, reason: 'Mark is outside this sailing mode' };
+  if (!groundCorrected && (kind === 'tack' ? windAngle >= 90 : windAngle <= 90)) return { ...empty, reason: 'Mark is outside this sailing mode' };
   const approaches = [
     { side: currentTack, bearingDeg: wrap(headingDeg), backBearingDeg: wrap(headingDeg + 180) },
     { side: currentTack === 'port' ? 'starboard' : 'port', bearingDeg: wrap(oppositeCourseDeg), backBearingDeg: wrap(oppositeCourseDeg + 180) },

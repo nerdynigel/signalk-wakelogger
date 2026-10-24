@@ -27,7 +27,7 @@ let derivedHeadings = 0;
     // Exclude other vessels' AIS and remote control/resource data.
     if (!delta || delta.context && delta.context !== 'vessels.self') continue;
     const updates = (delta.updates || []).map(update => ({...update,
-      values:(update.values || []).filter(v => /^(navigation\.|environment\.(wind|depth)\.|propulsion\.)/.test(v.path)
+      values:(update.values || []).filter(v => /^(navigation\.|environment\.(wind|depth|current)\.|steering\.rudderAngle$|propulsion\.)/.test(v.path)
         && !/^navigation\.course(GreatCircle|Rhumbline)\./.test(v.path))
     })).filter(update => update.values.length);
     if (!updates.length) continue;

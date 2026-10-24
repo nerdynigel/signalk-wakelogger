@@ -2,6 +2,26 @@ export const configSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    guidance: { type: 'object', title: 'Sailing guidance', additionalProperties: false, properties: {
+      enabled: { type: 'boolean', title: 'Enabled', default: true },
+      polar: { type: 'object', title: 'Validated vessel polars', additionalProperties: false, required: ['id', 'validated', 'points'], properties: {
+        id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,64}$' }, validated: { type: 'boolean', enum: [true] },
+        points: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['twsKn', 'upwindTwaDeg', 'upwindSpeedKn', 'downwindTwaDeg', 'downwindSpeedKn'], properties: {
+          twsKn: { type: 'number', minimum: 0, maximum: 150 }, upwindTwaDeg: { type: 'number', minimum: 20, maximum: 75 }, upwindSpeedKn: { type: 'number', minimum: 0.5, maximum: 80 },
+          downwindTwaDeg: { type: 'number', minimum: 100, maximum: 175 }, downwindSpeedKn: { type: 'number', minimum: 0.5, maximum: 80 }
+        } } }
+      } },
+      calibration: { type: 'object', title: 'Validated vessel calibration', additionalProperties: false,
+        required: ['id', 'validated', 'heelCoefficient'], properties: {
+          id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,64}$' }, validated: { type: 'boolean', enum: [true] },
+          heelCoefficient: { type: 'number', minimum: -100, maximum: 100 },
+          portHeelCoefficient: { type: 'number', minimum: -100, maximum: 100 },
+          starboardHeelCoefficient: { type: 'number', minimum: -100, maximum: 100 },
+          rudderCoefficient: { type: 'number', minimum: -2, maximum: 2 },
+          minSpeedKn: { type: 'number', minimum: 0.5, maximum: 10 },
+          maxLeewayDeg: { type: 'number', minimum: 1, maximum: 25 }
+        } }
+    } },
     uploadMode: {
       type: 'string',
       title: 'Upload mode',

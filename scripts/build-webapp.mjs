@@ -1,3 +1,4 @@
+import './generate-guidance.mjs'
 import { mkdir, cp } from 'node:fs/promises'
 const root = new URL('../', import.meta.url)
 await mkdir(new URL('public/vendor/images/', root), { recursive: true })

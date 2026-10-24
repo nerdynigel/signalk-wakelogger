@@ -1,5 +1,12 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased
+
+- Stabilize sailing heading/wind and retain map layers across sensor updates.
+- Share versioned guidance with the website; optionally account for current, measured leeway, validated heel/rudder calibration and vessel polars.
+- Keep measured heading separate from required steering; preserve raw telemetry and work without rudder.
+- Allow isolated replay containers and add a deterministic real-source jitter benchmark.
+
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
 ## Unreleased — Waypoint laylines
