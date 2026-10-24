@@ -292,17 +292,16 @@ export function instrumentDisplayReadings(view, snapshot = null, now = Date.now(
     heading: r => published && wind.basis === 'ground' && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
     aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
     tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
-    twd: () => ({ ...wind.direction, id: 'twd', label: 'TW Direction', direction: true, unit: '°' }),
-    'twa-ground': () => ({ ...wind.angle, basis: wind.basis, id: 'twa', label: 'TW Angle', angle: true, unit: '°' }),
+    twd: () => ({ ...wind.direction, id: 'twd', label: 'TWD', direction: true, unit: '°' }),
     'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), id: 'vmg-wind', label: 'VMG to wind' })
   }
-  return view.readings.filter(r => r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
+  return view.readings.filter(r => r.id !== 'twa-ground' && r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
 }
 export function liveNavigationStrip(view, snapshot = null, now = Date.now()) {
   if (!view || !Array.isArray(view.readings)) return []
   const display = instrumentDisplayReadings(view, snapshot, now)
   const byId = Object.fromEntries(display.map(r => [r.id, r]))
-  return ['aws', 'awa', 'tws', 'twa', 'twd', 'sog', 'heading', 'vmg-wind'].map(id => {
+  return ['aws', 'awa', 'tws', 'twd', 'sog', 'heading', 'vmg-wind'].map(id => {
     const reading = byId[id]
     return { id, label: reading?.label ?? id, value: reading?.available ? reading.value : null,
       formatted: formatReading(reading?.available ? reading : { ...reading, value: null }),

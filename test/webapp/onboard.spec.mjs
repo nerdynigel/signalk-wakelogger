@@ -982,30 +982,30 @@ test('stale tracking confirmation reads current state without retrying a write',
   expect(writes).toBe(1)
 })
 
-test('one true wind pair and angle arrows match the chartplotter with water wind', async ({ page }) => {
+test('one true wind direction and apparent angle match the chartplotter with water wind', async ({ page }) => {
   let direct = false
   const entry = value => ({ value, timestamp: new Date().toISOString() })
   await mockBoat(page, { course: false,
-    navigationOverride: () => direct ? {} : { headingTrue: entry(0), courseOverGroundTrue: entry(0), speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406) },
+    navigationOverride: () => direct ? { headingTrue: entry(Math.PI / 2) } : { headingTrue: entry(0), courseOverGroundTrue: entry(0), speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406) },
     environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6), speedTrue: entry(8 / 1.9438444924406) } : { speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6) } })
   })
   await page.goto('/signalk-wakelogger/')
-  const grid = page.locator('#instruments-grid'), twa = grid.locator('[data-reading="twa"]')
-  await expect(twa).toHaveCount(1)
-  await expect(twa).toContainText('54° S')
-  await expect(twa.locator('.wind-angle-arrow')).toHaveCount(1)
-  await expect(grid.locator('[data-reading="twa-ground"], [data-reading="twa-water"]')).toHaveCount(0)
+  const grid = page.locator('#instruments-grid'), twd = grid.locator('[data-reading="twd"]')
+  await expect(twd).toHaveCount(1)
+  await expect(twd).toContainText('054°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa"], [data-reading="twa-ground"], [data-reading="twa-water"]')).toHaveCount(0)
   await expect(grid.locator('[data-reading="tws"]')).toHaveCount(1)
   await expect(grid.locator('[data-reading="awa"]')).toContainText('30° S')
   await page.locator('#race-tab').click()
-  const strip = page.locator('#race-live-nav [data-reading="twa"]')
-  await expect(strip).toContainText('54° S')
+  const strip = page.locator('#race-live-nav [data-reading="twd"]')
+  await expect(strip).toContainText('054°')
   await expect(page.locator('#race-live-nav [data-reading="awa"] .wind-angle-arrow')).toHaveCount(1)
   direct = true
-  await expect(strip).toContainText('30° P')
+  await expect(strip).toContainText('060°')
   await expect(strip).toHaveAttribute('data-wind-basis', 'water')
   await page.reload()
-  await expect(twa).toContainText('30° P')
+  await expect(twd).toContainText('060°')
 })
 
 for (const width of [390, 1280]) test(`one sailing wind set prefers water and falls back to GPS at ${width}px`, async ({ page }, testInfo) => {
@@ -1022,8 +1022,8 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
-  for (const id of ['twa', 'tws', 'twd', 'vmg-wind']) await expect(grid.locator(`[data-reading="${id}"]`)).toHaveCount(1)
-  await expect(grid.locator('[data-reading="twa"]')).toContainText('30° P')
+  for (const id of ['tws', 'twd', 'vmg-wind']) await expect(grid.locator(`[data-reading="${id}"]`)).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
   await expect(grid.locator('[data-reading="tws"]')).toContainText('8.0 kn')
   await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
   await expect(grid.locator('[data-reading="vmg-wind"]')).toContainText('3.5 kn')
@@ -1031,16 +1031,19 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   await expect(grid).not.toContainText('(water)')
   await page.screenshot({ path: testInfo.outputPath(`single-wind-${width}.png`), fullPage: true })
   await page.locator('#race-tab').click()
-  const twa = page.locator('#race-live-nav [data-reading="twa"]')
-  await expect(twa).toContainText('30° P')
+  const twd = page.locator('#race-live-nav [data-reading="twd"]')
+  await expect(twd).toContainText('060°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveAttribute('data-direction-deg', '240')
   waterFresh = false
-  await expect(twa).toContainText('40° S')
-  await expect(twa).toHaveAttribute('data-wind-basis', 'ground')
+  await expect(twd).toContainText('130°')
+  await expect(twd.locator('.wind-angle-arrow')).toHaveAttribute('data-direction-deg', '310')
+  await expect(twd).toHaveAttribute('data-wind-basis', 'ground')
   await expect(page.locator('#race-live-nav [data-reading="tws"]')).toContainText('12.0 kn')
   waterFresh = true
-  await expect(twa).toContainText('30° P')
+  await expect(twd).toContainText('060°')
   await page.reload()
-  await expect(grid.locator('[data-reading="twa"]')).toContainText('30° P')
+  await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
+  await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
   expect(writes).toEqual([])
 })
 
