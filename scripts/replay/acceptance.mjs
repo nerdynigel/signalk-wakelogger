@@ -83,7 +83,7 @@ try {
         cloud:current.live_state,native:{position:navigation.position,headingTrue:navigation.headingTrue,headingMagnetic:navigation.headingMagnetic,variation:navigation.magneticVariation,sog:navigation.speedOverGround,cog:navigation.courseOverGroundTrue},
         nativeGuidance:(await request(`${sk}/plugins/signalk-wakelogger/guidance`)).guidance,
         pluginGuidance:await plugin.locator('#map').evaluate(el=>({at:el.dataset.guidanceAt,algorithm:el.dataset.guidanceVersion,heading:el.dataset.headingGuideBearing})),
-        webGuidance:await web.getByTestId('chartplotter-map-wrapper').evaluate(el=>({at:el.dataset.guidanceAt,algorithm:el.dataset.guidanceVersion})),
+        webGuidance:await web.getByTestId('chartplotter-map-wrapper').evaluate(el=>({at:el.dataset.guidanceAt,algorithm:el.dataset.guidanceVersion,heading:el.querySelector('[data-testid=chartplotter-heading-guide]')?.getAttribute('data-bearing-deg') ?? null})),
         pluginGuide:await plugin.locator('#map').getAttribute('data-heading-guide-bearing'),
         pluginLaylineStatus:await plugin.locator('#map').getAttribute('data-layline-status'),
         webGuide:await web.getByTestId('chartplotter-heading-guide').getAttribute('data-bearing-deg').catch(()=>null)});
