@@ -3,7 +3,11 @@
 const fs = require('node:fs');
 const readline = require('node:readline');
 const {createRequire} = require('node:module');
-const native = createRequire('/home/node/signalk/node_modules/signalk-server/package.json');
+const path = require('node:path');
+const {homedir} = require('node:os');
+const native = createRequire(require.resolve('signalk-server/package.json', {
+  paths: [process.cwd(), path.join(homedir(), 'signalk')]
+}));
 const {FromPgn} = native('@canboat/canboatjs');
 const {N2kMapper} = native('@signalk/n2k-signalk');
 const parser = new FromPgn(), mapper = new N2kMapper();
