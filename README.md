@@ -136,7 +136,10 @@ aligned heading, STW, SOG and COG; heading minus COG alone is insufficient.
 
 Advanced plugin configuration accepts `guidance.enabled`, a validated
 `guidance.calibration`, and a validated `guidance.polar`. Calibration coefficients
-and polars must come from vessel measurements. There are no default coefficients.
+and polars must come from vessel measurements. Polar speeds represent through-water
+velocity magnitude; convert ground-speed observations to that frame before
+validation. Port/starboard heel coefficients refer to the sign of measured heel.
+There are no default coefficients.
 Extreme heel/pitch and genuine maneuvers suppress steady-sailing predictions;
 this does not perform full mast-motion compensation. `/guidance` is read-only and
 reports the same durable sample used by the cloud (or a local sample when the
