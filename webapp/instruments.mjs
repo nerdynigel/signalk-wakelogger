@@ -282,14 +282,14 @@ export function instrumentDisplayReadings(view, snapshot = null, now = Date.now(
   const wind = { ...selected }
   if (published && (selected.basis === 'ground' || published.twsKn !== null && published.twaDeg !== null)) {
     wind.basis = 'ground'
-    const make = (reading, value) => ({ ...reading, basis: 'ground', value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
+    const make = (reading, value, at = snapshot.windAt) => ({ ...reading, basis: 'ground', source: 'guidance', timestamp: at, ageSeconds: Math.max(0, Math.round((now - at) / 1000)), value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
     wind.speed = make(selected.speed, published.twsKn)
-    wind.angle = make(selected.angle, published.twaDeg)
+    wind.angle = make(selected.angle, published.twaDeg, Math.min(snapshot.windAt, snapshot.headingAt))
     wind.direction = make(selected.direction, published.twdDeg)
   }
   const heading = guidanceWind(snapshot, now)?.headingDeg
   const aliases = {
-    heading: r => published && wind.basis === 'ground' && heading !== null ? { ...r, value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
+    heading: r => published && wind.basis === 'ground' && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
     aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
     tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
     twd: () => ({ ...wind.direction, id: 'twd', label: 'TW Direction', direction: true, unit: '°' }),
