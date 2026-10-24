@@ -167,3 +167,63 @@ it('withholds steady-sailing predictions during extreme measured motion without 
   const guide = guidanceBearings(snapshot, epoch); expect(guide.headingDeg).toBe(330); expect(guide.oppositeCourseDeg).toBeNull()
   const recovered = engine.update(frame(1000))!; expect(recovered.motionUnstable).toBe(false); expect(guidanceBearings(recovered, epoch + 1000).kind).toBe('tack')
 })
+
+
+describe('one published sailing wind and leeway course', () => {
+  it('uses water wind for instruments and mirrored guidance while retaining ground wind', () => {
+    const input = { ...frame(0, 102, 138), waterWind: { east: 15.6 * Math.sin(132 * Math.PI / 180), north: 15.6 * Math.cos(132 * Math.PI / 180), at: epoch, source: 'water' } }
+    const snapshot = new GuidanceEngine().update(input)!, guide = guidanceBearings(snapshot, epoch)
+    expect(snapshot.windFromDeg).toBe(138); expect(snapshot.sailingWindFromDeg).toBe(132)
+    expect(guide.trueWindFromDeg).toBe(132); expect(guide.oppositeHeadingDeg).toBe(162)
+    expect(snapshot.sailingWindBasis).toBe('water'); expect(guide.waterCourseDeg).toBeNull()
+  })
+  it('derives water wind without GPS and removes measured water motion including leeway', () => {
+    const input: GuidanceInput = { at: epoch, heading: reading(0), stw: reading(5), leeway: reading(3),
+      apparentWind: { east: 8, north: 10, at: epoch, source: 'mast' } }
+    const s = new GuidanceEngine().update(input)!
+    const east = 8 - 5 * Math.tan(3 * Math.PI / 180), north = 5
+    expect(s.sailingWindBasis).toBe('water'); expect(s.windFromDeg).toBeNull()
+    expect(s.sailingWindFromDeg).toBeCloseTo(Math.atan2(east, north) * 180 / Math.PI, 5)
+    expect(s.sailingWindSpeedKn).toBeCloseTo(Math.hypot(east, north), 5)
+  })
+  it('does not refresh water wind from new GPS or reuse a missing speed input', () => {
+    const engine = new GuidanceEngine(), first = { ...frame(), stw: reading(5), apparentWind: { east: 8, north: 10, at: epoch, source: 'mast' } }
+    const s = engine.update(first)!
+    expect(engine.update({ ...first, at: epoch + 1000, sog: reading(20, epoch + 1000) })?.sailingWindAt).toBe(s.sailingWindAt)
+    const fallback = engine.update({ ...frame(31000), stw: reading(5), apparentWind: first.apparentWind })!
+    expect(fallback.sailingWindBasis).toBe('ground')
+    const restored = engine.update({ ...frame(32000), stw: reading(5, epoch + 32000), apparentWind: { ...first.apparentWind, at: epoch + 32000 } })!
+    expect(restored.sailingWindBasis).toBe('water')
+  })
+  it('filters selected water vectors and never adds current to them a second time', () => {
+    const engine = new GuidanceEngine(), input = { ...frame(), stw: reading(5), current: { east: 2, north: 0, at: epoch }, waterWind: { east: 0, north: 12, at: epoch, source: 'water' } }
+    const first = engine.update(input)!, a = guidanceBearings(first, epoch)
+    expect(a.trueWindFromDeg).toBe(0); expect(a.trueWindSpeedKn).toBe(12)
+    const s = engine.update({ ...input, at: epoch + 1000, heading: reading(330, epoch + 1000), waterWind: { east: 6, north: 12, at: epoch + 1000, source: 'water' } })!
+    expect(s.sailingWindFromDeg).toBeGreaterThan(0); expect(s.sailingWindFromDeg).toBeLessThan(Math.atan2(6, 12) * 180 / Math.PI)
+    const repeated = engine.update({ ...input, at: epoch + 2000, waterWind: { east: 6, north: 12, at: epoch + 1000, source: 'water' } })!
+    expect(repeated.sailingWindFromDeg).toBe(s.sailingWindFromDeg)
+  })
+  for (const leeway of [-3, 3]) it(`separates heading, water course and current-corrected ground course for leeway ${leeway}`, () => {
+    const s = new GuidanceEngine().update({ ...frame(0, 0, 290), stw: reading(5), leeway: reading(leeway), current: { east: 2, north: 0, at: epoch } })!
+    const g = guidanceBearings(s, epoch)
+    expect(g.headingDeg).toBe(0); expect(g.waterCourseDeg).toBe((leeway + 360) % 360)
+    expect(g.currentCourseDeg).toBeCloseTo(Math.atan2(2 + 5 * Math.tan(leeway * Math.PI / 180), 5) * 180 / Math.PI)
+    expect(g.currentCourseDeg).not.toBe(g.waterCourseDeg)
+    expect(guidanceBearings({ ...s, leewayAt: epoch - 31000 }, epoch).waterCourseDeg).toBeNull()
+    expect(guidanceBearings({ ...s, turning: true }, epoch).waterCourseDeg).toBeNull()
+    expect(guidanceBearings({ ...s, motionUnstable: true }, epoch).waterCourseDeg).toBeNull()
+  })
+  it('uses a fresh measured leeway direction without requiring GPS or water speed', () => {
+    const s = new GuidanceEngine().update({ ...frame(), leeway: reading(-3) })!
+    const g = guidanceBearings(s, epoch)
+    expect(g.waterCourseDeg).toBe(327); expect(g.currentCourseDeg).toBe(327); expect(g.corrected).toBe(true)
+  })
+})
+
+
+it('drops expired leeway from a polar steering solution while retaining fresh current', () => {
+  const s = new GuidanceEngine().update({ ...frame(0, 0, 290), stw: reading(5), leeway: reading(6), current: { east: 2, north: 0, at: epoch } })!
+  s.targetTwaDeg = 40; s.targetSpeedKn = 5; s.leewayAt = epoch - 31000
+  expect(guidanceBearings(s, epoch, { targetBearingDeg: 0 }).courseToSteerDeg).toBeCloseTo(360 - Math.asin(2 / 5) * 180 / Math.PI)
+})

@@ -22,13 +22,13 @@ test('plugin shows one coherent TW pair even when both ground and water instrume
  const strip=liveNavigationStrip(view);assert.equal(strip.filter(r=>r.id==='twd').length,1);assert.equal(strip.find(r=>r.id==='twd').formatted,'045°');assert.ok(!strip.some(r=>r.id==='twa'));
 });
 
-test('water true wind wins over published ground wind and shares its basis with VMG',()=>{
+test('published sailing wind and heading override independent UI calculations and share the VMG basis',()=>{
  const view=instrumentReadings({now:at,navigation:{headingTrue:e(0),speedThroughWater:e(4/1.9438444924406),speedOverGround:e(6/1.9438444924406),courseOverGroundTrue:e(0)},environment:{wind:{speedTrue:e(8/1.9438444924406),angleTrueWater:e(Math.PI/3),speedOverGround:e(12/1.9438444924406),angleTrueGround:e(-Math.PI/6)}}});
- const snapshot={v:1,algorithm:'sailing-guidance-v1',headingDeg:10,headingAt:at,headingValidUntil:at+30000,windFromDeg:340,windSpeedKn:12,windAt:at,windValidUntil:at+30000};
+ const snapshot={v:1,algorithm:'sailing-guidance-v1',headingDeg:10,headingAt:at,headingValidUntil:at+30000,windFromDeg:340,windSpeedKn:12,windAt:at,windValidUntil:at+30000,sailingWindBasis:'water',sailingWindFromDeg:60,sailingWindSpeedKn:8,sailingWindAt:at,sailingWindValidUntil:at+30000,inputs:{stw:{value:4,at:at-5000}}};
  const visible=instrumentDisplayReadings(view,snapshot,at),get=id=>visible.find(r=>r.id===id);
- assert.equal(get('twa'),undefined);assert.equal(get('twd').value,60);assert.equal(get('heading').value,0);
- assert.ok(Math.abs(get('tws').value-8)<1e-9);assert.ok(Math.abs(get('vmg-wind').value-2)<1e-9);
- assert.equal(get('vmg-wind').basis,'water');assert.equal(get('vmg-wind').label,'VMG to wind');
+ assert.equal(get('twa'),undefined);assert.equal(get('twd').value,60);assert.equal(get('heading').value,10);
+ assert.ok(Math.abs(get('tws').value-8)<1e-9);assert.ok(Math.abs(get('vmg-wind').value-4*Math.cos(50*Math.PI/180))<1e-9);
+ assert.equal(get('vmg-wind').timestamp,at-5000);assert.equal(get('vmg-wind').ageSeconds,5);assert.equal(get('vmg-wind').basis,'water');assert.equal(get('vmg-wind').label,'VMG to wind');
  assert.equal(visible.filter(r=>r.id.startsWith('vmg-wind')).length,1);
  assert.ok(!visible.some(r=>/\((ground|water)\)/.test(r.label)));
  assert.equal(liveNavigationStrip(view,snapshot,at).at(-1).basis,'water');
@@ -53,4 +53,12 @@ test('water TWA does not acquire an unrelated ground compass direction without h
 test('water-only measured wind stays available without GPS or heading',()=>{
  const view=instrumentReadings({now:at,environment:{wind:{speedTrue:e(8/1.9438444924406),angleTrueWater:e(-Math.PI/6)}}});const visible=instrumentDisplayReadings(view);
  assert.equal(view.displayWind.angle.basis ?? view.displayWind.basis,'water');assert.equal(view.displayWind.angle.available,true);assert.ok(!visible.some(r=>r.id.startsWith('twa')));assert.equal(visible.find(r=>r.id==='tws').available,true);
+});
+
+test('an independent measured speed survives an unavailable canonical direction',()=>{
+ const view=instrumentReadings({now:at,navigation:{headingTrue:e(0)},environment:{wind:{speedTrue:e(8/1.9438444924406),directionTrue:e(Math.PI)}}});
+ const snapshot={v:1,algorithm:'sailing-guidance-v1',headingDeg:0,headingAt:at,headingValidUntil:at+30000,sailingWindBasis:'unavailable',sailingWindAt:null,sailingWindValidUntil:null,sailingWindFromDeg:null,sailingWindSpeedKn:null};
+ const values=instrumentDisplayReadings(view,snapshot,at);
+ assert.equal(values.find(r=>r.id==='tws').available,true);assert.equal(values.find(r=>r.id==='twd').available,false);
+ assert.equal(values.find(r=>r.id==='vmg-wind').available,false);
 });

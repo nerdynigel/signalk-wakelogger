@@ -5,6 +5,7 @@ export interface Reading { value: number; at: number; source?: string }
 export interface WindReading { east: number; north: number; at: number; source?: string; validUntil?: number }
 export interface GuidanceInput {
   at: number; session?: string; heading?: Reading | null; wind?: WindReading | null
+  waterWind?: WindReading | null; apparentWind?: WindReading | null
   sog?: Reading | null; cog?: Reading | null; stw?: Reading | null
   pitch?: Reading | null; yaw?: Reading | null; heel?: Reading | null; rudder?: Reading | null; leeway?: Reading | null
   rateOfTurn?: Reading | null; current?: WindReading | null
@@ -21,6 +22,10 @@ export interface GuidanceSnapshot {
   v: 1; algorithm: string; at: number; headingAt: number; windAt: number | null
   headingDeg: number; windFromDeg: number | null; windSpeedKn: number | null
   headingValidUntil: number; windValidUntil: number | null
+  // Additive selection; existing wind fields remain ground referenced.
+  sailingWindFromDeg?: number | null; sailingWindSpeedKn?: number | null
+  sailingWindAt?: number | null; sailingWindValidUntil?: number | null
+  sailingWindBasis?: 'water' | 'ground' | 'unavailable'
   kind: 'tack' | 'gybe' | null; currentTack: 'port' | 'starboard' | null; turning: boolean; motionUnstable: boolean
   waterWindFromDeg: number | null; waterSpeedKn: number | null
   targetTwaDeg: number | null; targetSpeedKn: number | null
@@ -32,7 +37,7 @@ export interface GuidanceSnapshot {
   inputs: Record<string, Reading>
 }
 export interface GuideBearings {
-  headingDeg: number | null; currentCourseDeg: number | null; oppositeCourseDeg: number | null
+  headingDeg: number | null; waterCourseDeg: number | null; currentCourseDeg: number | null; oppositeCourseDeg: number | null
   oppositeHeadingDeg: number | null; trueWindFromDeg: number | null; trueWindSpeedKn: number | null
   currentTack: 'port' | 'starboard' | null; kind: 'tack' | 'gybe' | null
   courseToSteerDeg: number | null; corrected: boolean; turning: boolean
@@ -69,6 +74,7 @@ class VectorFilter {
 export class GuidanceEngine {
   private headingFilter = new VectorFilter()
   private windFilter = new VectorFilter()
+  private waterWindFilter = new VectorFilter()
   private currentFilter = new VectorFilter()
   private leewayFilter = new VectorFilter()
   private oppositeLeewayFilter = new VectorFilter()
@@ -83,7 +89,7 @@ export class GuidanceEngine {
   private result: GuidanceSnapshot | null = null
   constructor(private readonly config: GuidanceConfig = {}) {}
   reset(): void {
-    this.headingFilter.reset(); this.windFilter.reset(); this.currentFilter.reset(); this.leewayFilter.reset(); this.oppositeLeewayFilter.reset()
+    this.headingFilter.reset(); this.windFilter.reset(); this.waterWindFilter.reset(); this.currentFilter.reset(); this.leewayFilter.reset(); this.oppositeLeewayFilter.reset()
     this.lastHeading = null; this.lastAt = -Infinity; this.turnStart = null; this.turnUntil = -Infinity
     this.mode = null; this.side = null; this.result = null
   }
@@ -126,6 +132,7 @@ export class GuidanceEngine {
     const s: GuidanceSnapshot = {
       v: 1, algorithm: GUIDANCE_ALGORITHM, at, headingAt: h.at, headingDeg: round(heading), headingValidUntil: h.at + age,
       windAt: null, windFromDeg: null, windSpeedKn: null, windValidUntil: null,
+      sailingWindFromDeg: null, sailingWindSpeedKn: null, sailingWindAt: null, sailingWindValidUntil: null, sailingWindBasis: 'unavailable',
       kind: null, currentTack: null, turning, motionUnstable: scalar(input.heel, at, age, -90, 90) && Math.abs(input.heel.value) > 45 || scalar(input.pitch, at, age, -90, 90) && Math.abs(input.pitch.value) > 30, waterWindFromDeg: null, waterSpeedKn: null, targetTwaDeg: null, targetSpeedKn: null,
       currentEastKn: null, currentNorthKn: null, currentAt: null, currentBasis: 'unavailable', currentValidUntil: null,
       leewayDeg: null, oppositeLeewayDeg: null, leewayAt: null, leewayBasis: 'unavailable', correctionValidUntil: null, inputs
@@ -190,26 +197,59 @@ export class GuidanceEngine {
         // Meteorological FROM vectors: water wind = ground wind + current TO.
         const waterEast = east + (current ? s.currentEastKn! : 0), waterNorth = north + (current ? s.currentNorthKn! : 0)
         if (Math.hypot(waterEast, waterNorth) > 0.1) s.waterWindFromDeg = round(direction(waterEast, waterNorth))
-        const twa = signedDegrees((current && (speedValid || this.config.polar?.validated) ? s.waterWindFromDeg ?? s.windFromDeg : s.windFromDeg) - heading), angle = Math.abs(twa)
-        if (angle >= 20 && angle < 87 || this.mode === 'tack' && angle >= 17 && angle < 93) this.mode = 'tack'
-        else if (angle > 103 && angle < 175 || this.mode === 'gybe' && angle > 97 && angle < 178) this.mode = 'gybe'
-        else this.mode = null
-        if (Math.abs(twa) >= 3 && Math.abs(twa) <= 177) this.side = twa > 0 ? 'starboard' : 'port'
-        if (!turning && !s.motionUnstable) { s.kind = this.mode; s.currentTack = this.mode ? this.side : null }
-        const polar = this.config.polar
-        if (s.kind && polar?.validated === true && polar.points.length) {
-          const waterWindSpeed = Math.hypot(waterEast, waterNorth)
-          const upper = polar.points.findIndex(p => p.twsKn >= waterWindSpeed)
-          const a = polar.points[Math.max(0, upper < 0 ? polar.points.length - 1 : upper - 1)]!
-          const b = polar.points[upper < 0 ? polar.points.length - 1 : upper]!
-          const ratio = b.twsKn === a.twsKn ? 0 : Math.max(0, Math.min(1, (waterWindSpeed - a.twsKn) / (b.twsKn - a.twsKn)))
-          const angleKey = s.kind === 'tack' ? 'upwindTwaDeg' : 'downwindTwaDeg'
-          const speedKey = s.kind === 'tack' ? 'upwindSpeedKn' : 'downwindSpeedKn'
-          const angle = a[angleKey] + ratio * (b[angleKey] - a[angleKey]), targetSpeed = a[speedKey] + ratio * (b[speedKey] - a[speedKey])
-          if (finite(angle) && angle >= 20 && angle <= 175 && finite(targetSpeed) && targetSpeed >= 0.5 && targetSpeed <= 80) { s.targetTwaDeg = angle; s.targetSpeedKn = targetSpeed }
-        }
       }
     } else this.windFilter.reset()
+    let waterWind = windFresh(input.waterWind, at, age) ? input.waterWind : null
+    const apparent = input.apparentWind
+    if (!waterWind && speedValid && windFresh(apparent, at, age)) {
+      const clocks = [apparent.at, h.at, stw.at, ...(s.leewayAt === null ? [] : [s.leewayAt])]
+      if (Math.max(...clocks) - Math.min(...clocks) <= 2000) {
+        const waterVelocity = vector(s.waterSpeedKn!, h.value + (s.leewayDeg ?? 0))
+        waterWind = { east: apparent.east - waterVelocity[0], north: apparent.north - waterVelocity[1],
+          at: Math.min(...clocks), validUntil: Math.min(apparent.validUntil ?? apparent.at + age, ...clocks.map(clock => clock + age)),
+          source: 'apparent-water:' + apparent.source + ':' + stw.source + ':' + s.leewayBasis }
+      }
+    }
+    if (waterWind && !windFresh(waterWind, at, age)) waterWind = null
+    if (waterWind) {
+      const [east, north] = this.waterWindFilter.update(waterWind.east, waterWind.north, waterWind.at, waterWind.source ?? '', this.config.windTauSeconds ?? 5)
+      if (Math.hypot(east, north) > 0.1) {
+        s.sailingWindFromDeg = round(direction(east, north)); s.sailingWindSpeedKn = round(Math.hypot(east, north))
+        s.sailingWindAt = waterWind.at; s.sailingWindValidUntil = waterWind.validUntil ?? waterWind.at + age; s.sailingWindBasis = 'water'
+        s.waterWindFromDeg = s.sailingWindFromDeg
+        s.inputs.waterWindEast = { value: waterWind.east, at: waterWind.at, source: waterWind.source }
+        s.inputs.waterWindNorth = { value: waterWind.north, at: waterWind.at, source: waterWind.source }
+      }
+    } else this.waterWindFilter.reset()
+    if (!waterWind && s.sailingWindBasis === 'unavailable' && s.windFromDeg !== null && s.windSpeedKn !== null) {
+      const east = s.windSpeedKn * Math.sin(rad(s.windFromDeg)) + (current ? s.currentEastKn! : 0)
+      const north = s.windSpeedKn * Math.cos(rad(s.windFromDeg)) + (current ? s.currentNorthKn! : 0)
+      if (Math.hypot(east, north) > 0.1) {
+        s.sailingWindFromDeg = round(direction(east, north)); s.sailingWindSpeedKn = round(Math.hypot(east, north))
+        s.sailingWindAt = current ? Math.min(s.windAt!, s.currentAt!) : s.windAt
+        s.sailingWindValidUntil = current ? Math.min(s.windValidUntil!, s.currentValidUntil!) : s.windValidUntil
+        s.sailingWindBasis = current ? 'water' : 'ground'
+      }
+    }
+    if (s.sailingWindFromDeg !== null && s.sailingWindFromDeg !== undefined && s.sailingWindSpeedKn !== null && s.sailingWindSpeedKn !== undefined) {
+      const twa = signedDegrees(s.sailingWindFromDeg - heading), angle = Math.abs(twa)
+      if (angle >= 20 && angle < 87 || this.mode === 'tack' && angle >= 17 && angle < 93) this.mode = 'tack'
+      else if (angle > 103 && angle < 175 || this.mode === 'gybe' && angle > 97 && angle < 178) this.mode = 'gybe'
+      else this.mode = null
+      if (Math.abs(twa) >= 3 && Math.abs(twa) <= 177) this.side = twa > 0 ? 'starboard' : 'port'
+      if (!turning && !s.motionUnstable) { s.kind = this.mode; s.currentTack = this.mode ? this.side : null }
+      const polar = this.config.polar
+      if (s.kind && polar?.validated === true && polar.points.length) {
+        const upper = polar.points.findIndex(p => p.twsKn >= s.sailingWindSpeedKn!)
+        const a = polar.points[Math.max(0, upper < 0 ? polar.points.length - 1 : upper - 1)]!
+        const b = polar.points[upper < 0 ? polar.points.length - 1 : upper]!
+        const ratio = b.twsKn === a.twsKn ? 0 : Math.max(0, Math.min(1, (s.sailingWindSpeedKn - a.twsKn) / (b.twsKn - a.twsKn)))
+        const angleKey = s.kind === 'tack' ? 'upwindTwaDeg' : 'downwindTwaDeg'
+        const speedKey = s.kind === 'tack' ? 'upwindSpeedKn' : 'downwindSpeedKn'
+        const targetAngle = a[angleKey] + ratio * (b[angleKey] - a[angleKey]), speed = a[speedKey] + ratio * (b[speedKey] - a[speedKey])
+        if (finite(targetAngle) && targetAngle >= 20 && targetAngle <= 175 && finite(speed) && speed >= 0.5 && speed <= 80) { s.targetTwaDeg = targetAngle; s.targetSpeedKn = speed }
+      }
+    }
     this.result = s
     return structuredClone(s)
   }
@@ -217,30 +257,36 @@ export class GuidanceEngine {
 
 /** Check freshness again at the consumer: polling must not refresh source age. */
 export function guidanceBearings(s: GuidanceSnapshot | null | undefined, now: number, options: { legBearingDeg?: number | null; targetBearingDeg?: number | null } = {}): GuideBearings {
-  const out: GuideBearings = { headingDeg: null, currentCourseDeg: null, oppositeCourseDeg: null, oppositeHeadingDeg: null, trueWindFromDeg: null, trueWindSpeedKn: null, kind: null, currentTack: null, courseToSteerDeg: null, corrected: false, turning: false }
+  const out: GuideBearings = { headingDeg: null, waterCourseDeg: null, currentCourseDeg: null, oppositeCourseDeg: null, oppositeHeadingDeg: null, trueWindFromDeg: null, trueWindSpeedKn: null, kind: null, currentTack: null, courseToSteerDeg: null, corrected: false, turning: false }
   if (!s || s.v !== 1 || s.algorithm !== GUIDANCE_ALGORITHM || !finite(s.headingDeg) || !finite(s.headingAt) || !finite(s.headingValidUntil)
     || now < s.headingAt - 1000 || now > s.headingValidUntil) return out
   out.headingDeg = s.headingDeg; out.turning = s.turning
-  if (!finite(s.windFromDeg) || !finite(s.windSpeedKn) || s.windSpeedKn <= 0.1 || s.windAt === null || s.windValidUntil === null || now < s.windAt - 1000 || now > s.windValidUntil || !s.kind || !s.currentTack || s.turning) return out
+  const leewayValid = finite(s.leewayDeg) && finite(s.leewayAt) && now >= s.leewayAt - 1000 && now <= s.leewayAt + (s.headingValidUntil - s.headingAt) && s.leewayBasis !== 'unavailable'
+  if (leewayValid && !s.turning && !s.motionUnstable) out.waterCourseDeg = normalizeDegrees(s.headingDeg + s.leewayDeg!)
   const currentValid = s.currentValidUntil !== null && now <= s.currentValidUntil && finite(s.currentEastKn) && finite(s.currentNorthKn)
   const correctionValid = s.correctionValidUntil !== null && now <= s.correctionValidUntil && finite(s.waterSpeedKn) && s.waterSpeedKn >= 0.5
   const usePolar = finite(s.targetTwaDeg) && finite(s.targetSpeedKn) && s.targetSpeedKn >= 0.5
-  const windFrom = currentValid && (correctionValid || usePolar) && finite(s.waterWindFromDeg) ? s.waterWindFromDeg : s.windFromDeg
+  const selected = s.sailingWindBasis !== undefined
+  const windFrom = selected ? s.sailingWindFromDeg : currentValid && (correctionValid || usePolar) && finite(s.waterWindFromDeg) ? s.waterWindFromDeg : s.windFromDeg
+  const windSpeed = selected ? s.sailingWindSpeedKn : currentValid && (correctionValid || usePolar) && finite(s.windFromDeg) && finite(s.windSpeedKn) ? Math.hypot(s.windSpeedKn * Math.sin(rad(s.windFromDeg)) + s.currentEastKn!, s.windSpeedKn * Math.cos(rad(s.windFromDeg)) + s.currentNorthKn!) : s.windSpeedKn
+  const windAt = selected ? s.sailingWindAt : s.windAt, windUntil = selected ? s.sailingWindValidUntil : s.windValidUntil
+  if (!finite(windFrom) || !finite(windSpeed) || windSpeed <= 0.1 || !finite(windAt) || !finite(windUntil) || now < windAt - 1000 || now > windUntil || !s.kind || !s.currentTack || s.turning) return out
   const leg = options.legBearingDeg
   if (finite(leg)) { const angle = Math.abs(signedDegrees(leg - windFrom)); if (s.kind === 'tack' ? angle >= 90 : angle <= 90) return out }
   const side = s.currentTack === 'starboard' ? 1 : -1
   const activeHeading = usePolar ? normalizeDegrees(windFrom - side * s.targetTwaDeg!) : s.headingDeg
   const opposite = usePolar ? normalizeDegrees(windFrom + side * s.targetTwaDeg!) : normalizeDegrees(2 * windFrom - s.headingDeg)
   const groundCourse = (heading: number, leeway: number | null): number | null => {
-    if (!correctionValid && !usePolar) return heading
-    const waterSpeed = usePolar ? s.targetSpeedKn! : s.waterSpeedKn! * Math.cos(rad(s.leewayDeg ?? 0)) / Math.cos(rad(leeway ?? 0))
-    const water = vector(waterSpeed, heading + (leeway ?? 0))
+    const angle = leewayValid ? leeway ?? 0 : 0
+    if (!correctionValid && !usePolar) return normalizeDegrees(heading + angle)
+    const waterSpeed = usePolar ? s.targetSpeedKn! : s.waterSpeedKn! * Math.cos(rad(leewayValid ? s.leewayDeg! : 0)) / Math.cos(rad(angle))
+    const water = vector(waterSpeed, heading + angle)
     const east = water[0] + (currentValid ? s.currentEastKn! : 0), north = water[1] + (currentValid ? s.currentNorthKn! : 0)
     return Math.hypot(east, north) >= 0.2 ? direction(east, north) : null
   }
   out.currentCourseDeg = groundCourse(activeHeading, s.leewayDeg); out.oppositeCourseDeg = groundCourse(opposite, s.oppositeLeewayDeg)
-  out.oppositeHeadingDeg = opposite; out.trueWindFromDeg = windFrom; out.trueWindSpeedKn = currentValid && (correctionValid || usePolar) ? Math.hypot(s.windSpeedKn * Math.sin(rad(s.windFromDeg)) + s.currentEastKn!, s.windSpeedKn * Math.cos(rad(s.windFromDeg)) + s.currentNorthKn!) : s.windSpeedKn
-  out.currentTack = s.currentTack; out.kind = s.kind; out.corrected = (correctionValid || usePolar) && (currentValid || s.leewayDeg !== null)
+  out.oppositeHeadingDeg = opposite; out.trueWindFromDeg = windFrom; out.trueWindSpeedKn = windSpeed
+  out.currentTack = s.currentTack; out.kind = s.kind; out.corrected = leewayValid || (correctionValid || usePolar) && currentValid
   const target = options.targetBearingDeg
   if (finite(target) && (correctionValid || usePolar) && currentValid) {
     const steeringSpeed = usePolar ? s.targetSpeedKn! : s.waterSpeedKn!
@@ -249,7 +295,7 @@ export function guidanceBearings(s: GuidanceSnapshot | null | undefined, now: nu
     if (Math.abs(cross) < steeringSpeed) {
       const waterBearing = target - deg(Math.asin(cross / steeringSpeed))
       const forward = steeringSpeed * Math.cos(rad(waterBearing - target)) + s.currentEastKn! * unit[0] + s.currentNorthKn! * unit[1]
-      const candidate = normalizeDegrees(waterBearing - (s.leewayDeg ?? 0)), targetTwa = Math.abs(signedDegrees(windFrom - candidate))
+      const candidate = normalizeDegrees(waterBearing - (leewayValid ? s.leewayDeg! : 0)), targetTwa = Math.abs(signedDegrees(windFrom - candidate))
       const onSameTack = Math.sign(signedDegrees(windFrom - candidate)) === (s.currentTack === 'starboard' ? 1 : -1)
       if (forward > 0.2 && targetTwa >= 30 && targetTwa <= 175 && onSameTack) out.courseToSteerDeg = round(candidate)
     }

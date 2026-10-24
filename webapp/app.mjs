@@ -330,7 +330,7 @@ function renderInstruments() {
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
-  const visible = instrumentDisplayReadings(view, windSnapshot(), Date.now())
+  const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
   grid.replaceChildren(...visible.map(instrumentTile))
   const state = $('signal-k-state')
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
@@ -353,7 +353,7 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(), Date.now()).map((item) => {
+  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map((item) => {
     const row = document.createElement('div')
     row.className = 'race-live-nav-item'
     row.dataset.reading = item.id
@@ -407,6 +407,8 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   element.dataset.currentCorrected = String(model.corrected)
   element.dataset.courseToSteerDeg = model.courseToSteerDeg === null ? '' : String(model.courseToSteerDeg)
   element.dataset.groundCourseDeg = model.currentCourseDeg === null ? '' : String(model.currentCourseDeg)
+  element.dataset.waterCourseDeg = model.waterCourseDeg == null ? '' : String(model.waterCourseDeg)
+  element.dataset.sailingWindFromDeg = guides.trueWindFrom == null ? '' : String(guides.trueWindFrom)
   element.dataset.guidanceVersion = snapshot?.algorithm || 'legacy'
   element.dataset.leewayBasis = snapshot?.leewayBasis || 'unavailable'
   element.dataset.guidanceAt = snapshot?.at === undefined ? '' : String(snapshot.at)
@@ -462,8 +464,12 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
     let ray = guideRays.get(key)
     if (ray) ray.setLatLngs([start, [end.latitude, longitude]]).bindTooltip(label)
     else { ray = L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
+    const path = ray.getElement()
+    path?.setAttribute('data-bearing-deg', String(bearing))
+    path?.setAttribute('data-origin-lat', String(start[0])); path?.setAttribute('data-origin-lon', String(start[1]))
   }
   draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
+  if (guidanceEnabled && Number.isFinite(model.waterCourseDeg)) draw(model.waterCourseDeg, { color: '#0891b2', weight: 2, opacity: 0.95, dashArray: '5 5', className: 'water-course-guide' }, `Course through water (leeway) · ${Math.round(model.waterCourseDeg)}° true`)
   if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`)
   if (model.courseToSteerDeg !== null && guidanceEnabled) draw(model.courseToSteerDeg, { color: '#7c3aed', weight: 1.5, dashArray: '2 5', className: 'required-heading-guide' }, `Steer ${Math.round(model.courseToSteerDeg)}° true`)
   for (const [key, ray] of guideRays) if (!activeRays.has(key)) { ray.remove(); guideRays.delete(key) }
@@ -477,9 +483,16 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
 
 }
 
-function windSnapshot() {
+function windSnapshot(view) {
   if (!guidanceEnabled) return null
-  return guidanceEndpoint ? serverGuidance : fallbackGuidance.snapshot(Date.now(), trackingStatus?.trackingSessionId ?? '')
+  // Recording samples need a GPS fix. Standalone instruments can continue from
+  // their own sensor clocks while position-dependent guidance is withheld.
+  if (!guidanceEndpoint || view?.readings.find(reading => reading.id === 'position')?.freshness !== 'fresh') {
+    const now = Date.now()
+    fallbackGuidance.seedRest(navigationData, environmentUnavailable ? {} : environmentData, steeringData, now)
+    return fallbackGuidance.snapshot(now, trackingStatus?.trackingSessionId ?? '')
+  }
+  return serverGuidance
 }
 function windIndicator(reading) {
   if ((!reading.angle && !reading.direction) || !reading.available || !Number.isFinite(reading.value)) return null

@@ -5,6 +5,7 @@ export const GUIDANCE_PATHS = [
   'navigation.speedOverGround', 'navigation.courseOverGroundTrue', 'navigation.speedThroughWater',
   'navigation.rateOfTurn', 'navigation.attitude', 'navigation.leewayAngle', 'steering.rudderAngle',
   'environment.wind.speedApparent', 'environment.wind.angleApparent',
+  'environment.wind.speedTrue', 'environment.wind.angleTrueWater',
   'environment.wind.speedOverGround', 'environment.wind.directionTrue',
   'environment.current.setTrue', 'environment.current.drift'
 ] as const
@@ -73,11 +74,21 @@ export class GuidanceService {
     const sog = get('navigation.speedOverGround', knots), cog = get('navigation.courseOverGroundTrue', degrees)
     const coherent = (items: Array<Reading | null>): items is Reading[] => items.every((r): r is Reading => !!r) && Math.max(...items.map(r => r.at)) - Math.min(...items.map(r => r.at)) <= 2000
     let wind: WindReading | null = null, current: WindReading | null = null
+    let waterWind: WindReading | null = null, apparentWind: WindReading | null = null
+    const aws = get('environment.wind.speedApparent', knots), awa = get('environment.wind.angleApparent', degrees)
+    const waterSpeed = get('environment.wind.speedTrue', knots), waterAngle = get('environment.wind.angleTrueWater', degrees)
+    if (waterSpeed && waterAngle && heading && coherent([waterSpeed, waterAngle, heading]) && waterSpeed.value >= 0 && waterSpeed.value <= 200 && Math.abs(waterAngle.value) <= 360) {
+      const from = (heading.value + waterAngle.value) / degrees
+      waterWind = { east: waterSpeed.value * Math.sin(from), north: waterSpeed.value * Math.cos(from), at: Math.min(waterSpeed.at, waterAngle.at, heading.at), source: 'water:' + waterSpeed.source + ':' + waterAngle.source + ':' + heading.source }
+    }
+    if (aws && awa && heading && coherent([aws, awa, heading]) && aws.value > 0 && aws.value <= 120 && Math.abs(awa.value) <= 360) {
+      const from = (heading.value + awa.value) / degrees
+      apparentWind = { east: aws.value * Math.sin(from), north: aws.value * Math.cos(from), at: Math.min(aws.at, awa.at, heading.at), source: aws.source + ':' + heading.source }
+    }
     const groundSpeed = get('environment.wind.speedOverGround', knots), groundDirection = get('environment.wind.directionTrue')
     if (groundSpeed && groundDirection && coherent([groundSpeed, groundDirection]) && groundSpeed.value >= 0 && groundSpeed.value <= 200)
       wind = { east: groundSpeed.value * Math.sin(groundDirection.value), north: groundSpeed.value * Math.cos(groundDirection.value), at: Math.min(groundSpeed.at, groundDirection.at), source: 'ground:' + groundSpeed.source + ':' + groundDirection.source }
     else {
-      const aws = get('environment.wind.speedApparent', knots), awa = get('environment.wind.angleApparent', degrees)
       if (aws && awa && heading && sog && cog && coherent([aws, awa, heading, sog, cog]) && aws.value > 0 && aws.value <= 120 && sog.value >= 0 && sog.value <= 80) {
         const from = (heading.value + awa.value) / degrees, motion = cog.value / degrees
         wind = { east: aws.value * Math.sin(from) - sog.value * Math.sin(motion), north: aws.value * Math.cos(from) - sog.value * Math.cos(motion),
@@ -87,7 +98,7 @@ export class GuidanceService {
     const set = get('environment.current.setTrue'), drift = get('environment.current.drift', knots)
     if (set && drift && coherent([set, drift]) && drift.value >= 0 && drift.value <= 15)
       current = { east: drift.value * Math.sin(set.value), north: drift.value * Math.cos(set.value), at: Math.min(set.at, drift.at), source: set.source + ':' + drift.source }
-    const input: GuidanceInput = { at: now, session: this.session, heading, wind, current, sog, cog, stw: get('navigation.speedThroughWater', knots),
+    const input: GuidanceInput = { at: now, session: this.session, heading, wind, waterWind, apparentWind, current, sog, cog, stw: get('navigation.speedThroughWater', knots),
       heel: get('heel'), pitch: get('pitch'), yaw: get('yaw'), rudder: get('steering.rudderAngle', degrees), leeway: get('navigation.leewayAngle', degrees), rateOfTurn: get('navigation.rateOfTurn', degrees) }
     return this.engine.update(input)
   }

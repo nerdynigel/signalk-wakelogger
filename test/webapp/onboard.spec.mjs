@@ -1014,11 +1014,11 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   const entry = (value, water = false) => ({ value, timestamp: new Date(Date.now() - (water && !waterFresh ? 40000 : 0)).toISOString() })
   const guidance = () => {
     const at = Date.now()
-    return new GuidanceEngine().update({ at, heading: { value: 90, at }, wind: { east: 12 * Math.sin(130 * Math.PI / 180), north: 12 * Math.cos(130 * Math.PI / 180), at } })
+    return new GuidanceEngine().update({ at, heading: { value: 90, at }, stw: { value: 4, at }, sog: { value: 6, at }, cog: { value: 90, at }, wind: { east: 12 * Math.sin(130 * Math.PI / 180), north: 12 * Math.cos(130 * Math.PI / 180), at }, waterWind: waterFresh ? { east: 8 * Math.sin(Math.PI / 3), north: 8 * Math.cos(Math.PI / 3), at } : null })
   }
   const { writes } = await mockBoat(page, { course: false, guidance,
-    navigationOverride: () => ({ headingTrue: entry(Math.PI / 2), speedThroughWater: entry(4 / 1.9438444924406), speedOverGround: entry(6 / 1.9438444924406), courseOverGroundTrue: entry(Math.PI / 2) }),
-    environment: () => ({ wind: { speedTrue: entry(8 / 1.9438444924406, true), angleTrueWater: entry(-Math.PI / 6, true), speedOverGround: entry(12 / 1.9438444924406), angleTrueGround: entry(40 * Math.PI / 180) } })
+    navigationOverride: () => ({ position: entry({latitude:-27.41,longitude:153.18}), headingTrue: entry(100 * Math.PI / 180), speedThroughWater: entry(4 / 1.9438444924406), speedOverGround: entry(6 / 1.9438444924406), courseOverGroundTrue: entry(Math.PI / 2) }),
+    environment: () => ({ wind: { speedTrue: entry(9 / 1.9438444924406, true), angleTrueWater: entry(-Math.PI / 6, true), speedOverGround: entry(12 / 1.9438444924406), angleTrueGround: entry(40 * Math.PI / 180) } })
   })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
@@ -1026,6 +1026,8 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
   await expect(grid.locator('[data-reading="tws"]')).toContainText('8.0 kn')
   await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
+  await expect(grid.locator('[data-reading="heading"]')).toContainText('90 ° true')
+  await expect(page.locator('#map')).toHaveAttribute('data-sailing-wind-from-deg', '60')
   await expect(grid.locator('[data-reading="vmg-wind"]')).toContainText('3.5 kn')
   await expect(grid).not.toContainText('(ground)')
   await expect(grid).not.toContainText('(water)')
@@ -1363,11 +1365,11 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
 
 for (const width of [1280, 390]) test(`canonical current guidance keeps measured bow heading and drops optional rudder at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 })
-  let rudder = true, current = 2
+  let rudder = true, current = 2, heel = true, measuredLeeway = null
   const engine = new GuidanceEngine({ calibration: { id: 'validated-fixture', validated: true, heelCoefficient: 5, rudderCoefficient: 0.2 } })
   const guidance = () => {
     const at = Date.now(), r = value => ({ value, at, source: 'fixture' })
-    return engine.update({ at, heading: r(0), stw: r(5), heel: r(10), rudder: rudder ? r(2) : null,
+    return engine.update({ at, heading: r(0), stw: r(5), heel: heel ? r(10) : null, leeway: measuredLeeway === null ? null : r(measuredLeeway), rudder: rudder ? r(2) : null,
       current: { east: current, north: 0, at }, wind: { east: 12 * Math.sin(330 * Math.PI / 180), north: 12 * Math.cos(330 * Math.PI / 180), at } })
   }
   const errors = []
@@ -1380,6 +1382,11 @@ for (const width of [1280, 390]) test(`canonical current guidance keeps measured
   await expect(map).toHaveAttribute('data-current-corrected', 'true')
   await expect(map).toHaveAttribute('data-leeway-basis', 'calibrated-rudder')
   await expect.poll(async () => Number(await map.getAttribute('data-ground-course-deg'))).toBeGreaterThan(20)
+  const water = page.locator('.water-course-guide'), heading = page.locator('.vessel-heading-guide')
+  await expect(water).toHaveCount(1)
+  await expect.poll(async () => Number(await water.getAttribute('data-bearing-deg'))).toBeGreaterThan(2)
+  expect(await water.getAttribute('data-origin-lat')).toBe(await heading.getAttribute('data-origin-lat'))
+  expect(await water.getAttribute('data-origin-lon')).toBe(await heading.getAttribute('data-origin-lon'))
   await expect(page.locator('.required-heading-guide')).toHaveCount(1)
   await page.locator('.required-heading-guide').evaluate(node => { window.requiredHeadingNode = node })
   rudder = false
@@ -1388,10 +1395,33 @@ for (const width of [1280, 390]) test(`canonical current guidance keeps measured
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
   await expect(page.locator('#guide-legend, #waypoint-layline-summary')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath(`current-guidance-${width}.png`), fullPage: true })
+  measuredLeeway = -3
+  await expect(water).toHaveAttribute('data-bearing-deg', '357')
+  await expect(heading).toHaveAttribute('data-bearing-deg', '0')
+  measuredLeeway = null; heel = false
+  await expect(water).toHaveCount(0)
+  measuredLeeway = 3
+  await expect(water).toHaveAttribute('data-bearing-deg', '3')
   current = 12
   // Reset the fixture source so this is an immediate physically impossible current.
   engine.reset()
   await expect(page.locator('.required-heading-guide')).toHaveCount(0)
   await expect(map).toHaveAttribute('data-course-to-steer-deg', '')
   expect(errors).toEqual([])
+})
+
+test('GPS loss preserves fresh standalone wind without reusing a published track solution', async ({ page }) => {
+  let lost = false
+  const entry = (value, position = false) => ({ value, timestamp: new Date(Date.now() - (lost && position ? 40000 : 0)).toISOString() })
+  const guidance = () => { const at = Date.now(); return new GuidanceEngine().update({ at, heading: { value: 102, at }, waterWind: { east: 15.6 * Math.sin(132 * Math.PI / 180), north: 15.6 * Math.cos(132 * Math.PI / 180), at } }) }
+  await mockBoat(page, { course: false, guidance,
+    navigationOverride: () => ({ position: entry({ latitude: -27.41, longitude: 153.18 }, true), headingTrue: entry(Math.PI / 2) }),
+    environment: () => ({ wind: { speedTrue: entry(8 / 1.9438444924406), angleTrueWater: entry(-Math.PI / 6) } }) })
+  await page.goto('/signalk-wakelogger/')
+  const twd = page.locator('#instruments-grid [data-reading="twd"]')
+  await expect(twd).toContainText('132°')
+  lost = true
+  await expect(twd).toContainText('060°')
+  await expect(page.locator('#map')).toHaveAttribute('data-heading-guide-bearing', '')
+  await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
 })

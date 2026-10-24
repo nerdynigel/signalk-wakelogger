@@ -278,22 +278,24 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
 // and never substitutes forecast data for a live reading.
 export function instrumentDisplayReadings(view, snapshot = null, now = Date.now()) {
   const selected = view.displayWind
-  const published = snapshot?.windAt == null ? null : guidanceWind(snapshot, now)
+  const published = guidanceWind(snapshot, now)
   const wind = { ...selected }
-  if (published && selected.basis === 'ground') {
-    wind.basis = 'ground'
-    const make = (reading, value, at = snapshot.windAt) => ({ ...reading, basis: 'ground', source: 'guidance', timestamp: at, ageSeconds: Math.max(0, Math.round((now - at) / 1000)), value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
-    wind.speed = make(selected.speed, published.twsKn)
-    wind.angle = make(selected.angle, published.twaDeg, Math.min(snapshot.windAt, snapshot.headingAt))
+  if (published) {
+    wind.basis = published.basis
+    const make = (reading, value, at = published.at) => ({ ...reading, basis: published.basis, source: 'guidance', timestamp: at, ageSeconds: Number.isFinite(at) ? Math.max(0, Math.round((now - at) / 1000)) : null, value, available: value !== null, freshness: value === null ? 'missing' : 'fresh' })
+    // A lone measured speed remains useful when no coherent wind solution can
+    // be formed. It must not supply an unrelated direction or a layline.
+    wind.speed = published.basis === 'unavailable' && selected.speed.source === 'direct' && selected.speed.available ? selected.speed : make(selected.speed, published.twsKn)
+    wind.angle = make(selected.angle, published.twaDeg, Number.isFinite(published.at) ? Math.min(published.at, snapshot.headingAt) : null)
     wind.direction = make(selected.direction, published.twdDeg)
   }
   const heading = guidanceWind(snapshot, now)?.headingDeg
   const aliases = {
-    heading: r => published && wind.basis === 'ground' && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
+    heading: r => published && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
     aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
     tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
     twd: () => ({ ...wind.direction, id: 'twd', label: 'TWD', direction: true, unit: '°' }),
-    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), id: 'vmg-wind', label: 'VMG to wind' })
+    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), ...(published ? { basis: wind.basis, value: published.vmgKn, available: published.vmgKn !== null, freshness: published.vmgKn === null ? 'missing' : 'fresh', source: 'guidance', timestamp: published.vmgAt, ageSeconds: Number.isFinite(published.vmgAt) ? Math.max(0, Math.round((now - published.vmgAt) / 1000)) : null } : {}), id: 'vmg-wind', label: 'VMG to wind', unit: 'kn' })
   }
   return view.readings.filter(r => r.id !== 'twa-ground' && r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
 }
