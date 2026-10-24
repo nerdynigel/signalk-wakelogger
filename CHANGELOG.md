@@ -1,22 +1,15 @@
 # What's new in Wake Logger for Signal K
 
-## Unreleased
-
-- Release abandoned MQTT operations on connection close so a reconnect cannot lock the durable upload drain.
-
-- Stabilize sailing heading/wind and retain map layers across sensor updates.
-- Share versioned guidance with the website; optionally account for current, measured leeway, validated heel/rudder calibration and vessel polars.
-- Keep measured heading separate from required steering; preserve raw telemetry and work without rudder.
-- Allow isolated replay containers and add a deterministic real-source jitter benchmark.
-
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
-## Unreleased — Waypoint laylines
+## [0.2.0-beta.13] - 2026-10-24
 
-- Removed the persistent heading, tack and layline information box to keep the map clear. The guide lines and estimated maneuver point remain.
-- See port and starboard approaches to your next course mark, plus an estimated tack/gybe point. The display follows the selected course and also works offline from cached course data.
-- Fresh GPS, true heading and valid ground wind are required. Laylines mirror the current sailing angle, without current/leeway correction, polars or hazard checks. Missing or stale readings remove the estimate. Existing ETA and navigation controls are unchanged.
-- When released, update the plugin and reload the onboard app. No new settings, sensors or pairing steps are needed if the existing live guides already work.
+- Show port/starboard approaches to the next mark and estimated tack/gybe points, with filtered heading/wind, stable map layers and no persistent guidance box.
+- Show one true-wind speed and compass TWD, alongside bow-relative apparent wind angle and small wind arrows. Instruments and guidance share the filtered sailing-wind selection.
+- Add a cyan dashed course-through-water bow line when measured or validated model leeway is available. Ground-track laylines apply current separately; measured heading stays distinct from course and steering estimates. Rudder is optional and no calibration is invented.
+- Release abandoned MQTT operations on reconnection so the saved-history queue can continue draining. Keep independent wind instruments available through GPS loss and preserve raw telemetry.
+
+Update the plugin, restart Signal K if prompted and reload the onboard app. Pairing, settings and recorded trips are retained. Matching website guidance requires the corresponding website/server update. Read the [full release notes](docs/releases/0.2.0-beta.13.md) for input requirements and upgrade details.
 
 ## [0.2.0-beta.12] - 2026-10-22
 
