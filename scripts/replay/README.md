@@ -41,7 +41,8 @@ Create a private `environment.json` in that directory before provisioning:
 {
   "apiOrigin": "http://127.0.0.1:8010",
   "expectedServiceOrigin": "https://your-development-service.example",
-  "publicWebOrigin": "http://TEST_HOST:3000",
+  "publicWebOrigin": "https://your-development-service.example",
+  "signalKOrigin": "http://TEST_HOST:3003",
   "pairingUrl": "https://your-development-service.example/backend/v1/signalk/pair",
   "ownerUserId": 1,
   "ownerDisplayName": "Your test admin"
@@ -65,13 +66,21 @@ Keep this configuration and token files private; do not commit them.
    the image ID currently installed on `signalk-dev` and installs the local
    plugin tarball and receive-only replay provider. Playback starts paused.
 
-Provisioning prints the vessel and onboard URLs. Open the onboard app and
-confirm **Live tracking on**, then open the replay controls at
-`http://TEST_HOST:3003/plugins/wakelogger-real-trip-replay/controls`.
+Provisioning prints the vessel, onboard and controls URLs. Open
+`http://TEST_HOST:3003/plugins/wakelogger-real-trip-replay/controls`, select
+**Start test**, then **Start and enable Live tracking**. This confirms the normal
+tracking choice and starts the feed on the same page. Cancelling or a failed
+tracking save leaves the feed stopped. The on-page confirmation also works in
+embedded views without browser-native modal or form permissions.
+
+`publicWebOrigin` selects the website; `signalKOrigin` selects the separate
+Signal K server. Configure both when the website uses HTTPS. The Open test
+website link retains the test vessel and Live tab.
 
 ## Playback and recorded data
 
-Start, pause, resume and stop are available on that controls page, or through:
+The page shows Start/Resume and Pause with the current playback and tracking
+state. Command-line controls also support Stop:
 
 ```
 node scripts/replay/replay.mjs start
@@ -111,7 +120,8 @@ At EOF, the feed ends and readings naturally become stale. Select **Finish
 trip** in the onboard app to close the recording. `reset` refuses an unfinished
 trip or pending upload/cloud confirmation, then creates clean per-run Signal K storage and a fresh device pairing.
 Prior run data/evidence are retained; no normal vessel or production data are
-deleted. Set Live tracking on again before starting the new run.
+deleted. Start test on the controls page confirms Live tracking again.
+Command-line Start requires a previously confirmed Live tracking choice.
 
 ## Validation and artifacts
 

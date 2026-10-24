@@ -28,6 +28,8 @@ function readEnvironment() {
   for(const target of [config.expectedServiceOrigin,config.pairingUrl,config.publicWebOrigin]) {
     if(['wakelogger.com','www.wakelogger.com'].includes(new URL(target).hostname))throw new Error('Production destinations are forbidden for replay');
   }
+  if(new URL(config.publicWebOrigin).protocol==='https:' && !config.signalKOrigin)throw new Error('Set signalKOrigin separately when the test website uses HTTPS');
+  if(config.signalKOrigin){const url=new URL(config.signalKOrigin);if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('signalKOrigin must be an HTTP(S) origin');}
   if(new URL(config.pairingUrl).origin!==new URL(config.expectedServiceOrigin).origin)throw new Error('Pairing must use the selected development service');
   return config;
 }
@@ -97,6 +99,7 @@ async function provision(reset=false) {
       points:course.points.map(p=>({name:p.name,latitude:p.latitude,longitude:p.longitude,source_type:'manual'}))},auth);
     state.routeId=route.id; save(stateFile,state);
   }
+  const signalKOrigin=new URL(environment.signalKOrigin || `${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}`).origin;
   const runId=crypto.randomUUID();
   const runDir=path.join(data,'runs',runId), config=path.join(runDir,'signalk');
   fs.mkdirSync(path.join(config,'plugin-config-data'),{recursive:true,mode:0o700});
@@ -109,9 +112,9 @@ async function provision(reset=false) {
   state={...state,runId,runDir,planId:plan.id,container:containerName,sourceVoyageId:48,
     sourceStart:'2026-06-28T03:06:00Z',sourceEnd:'2026-06-28T03:26:00Z',
     webUrl:`${environment.publicWebOrigin}/vessels/manage?vessel=${state.vesselId}&tab=live`,
-    controlsUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/plugins/wakelogger-real-trip-replay/controls`,
+    controlsUrl:`${signalKOrigin}/plugins/wakelogger-real-trip-replay/controls`,
     port,phase:'provisioning',initialForecastBasis:'Normal current-time test forecast provider; original sailing sensors remain the live observations',
-    pluginUrl:`${new URL(environment.publicWebOrigin).protocol}//${new URL(environment.publicWebOrigin).hostname}:${port}/signalk-wakelogger/`,createdAt:new Date().toISOString()};
+    pluginUrl:`${signalKOrigin}/signalk-wakelogger/`,createdAt:new Date().toISOString()};
   save(stateFile,state);
   save(path.join(config,'settings.json'),{vessel:{name:vesselName,uuid:runId},pipedProviders:[]});
   save(path.join(config,'plugin-config-data/signalk-wakelogger.json'),{enabled:true,configuration:{pairingApiUrl:environment.pairingUrl,pairingCode:pairing.code,samplePeriodMs:1000,raceProgressionMode:'off'}});
