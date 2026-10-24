@@ -1,5 +1,6 @@
 {
   "sourceSha256": "d79ac148a54769f84242a25b7dd8760fd2652b12f03678d80428b57b4f3457a4",
   "moduleSha256": "7788f93a6567a67abd470743535e995d24bd3ba38bf66d443ead432ec3418c17",
-  "algorithm": "sailing-guidance-v1"
+  "algorithm": "sailing-guidance-v1",
+  "windReadoutSha256": "22a8b61751577a62ecdd09b0250e37863feb6945c6d28165ac9c9b038248cee3"
 }

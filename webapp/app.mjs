@@ -1,3 +1,4 @@
+import { WIND_ARROW_PATH } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
 import { guidanceBearings } from './sailing-guidance.mjs'
@@ -10,7 +11,7 @@ import { trackingPresentation, finishedTripPresentation, finishTripPresentation,
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
 import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
-import { instrumentReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
+import { instrumentReadings, instrumentDisplayReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
 import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
 const $ = id => document.getElementById(id)
@@ -329,11 +330,12 @@ function renderInstruments() {
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
-  grid.replaceChildren(...view.readings.map(instrumentTile))
+  const visible = instrumentDisplayReadings(view, windSnapshot(), Date.now())
+  grid.replaceChildren(...visible.map(instrumentTile))
   const state = $('signal-k-state')
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
   else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
-  else state.textContent = `Signal K connected · ${view.available}/${view.total} readings live`
+  else state.textContent = `Signal K connected · ${visible.filter(r => r.available).length}/${visible.length} readings live`
   renderRaceLiveNav(view)
 }
 
@@ -351,7 +353,7 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view).map((item) => {
+  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(), Date.now()).map((item) => {
     const row = document.createElement('div')
     row.className = 'race-live-nav-item'
     row.dataset.reading = item.id
@@ -362,7 +364,13 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
     const value = document.createElement('span')
     value.className = 'value'
     value.textContent = item.formatted
-    row.append(label, value)
+    const values = document.createElement('span')
+    values.className = 'wind-value-row'
+    values.append(value)
+    const arrow = windIndicator(item)
+    if (arrow) values.append(arrow)
+    row.dataset.windBasis = item.basis || ''
+    row.append(label, values)
     return row
   }))
 }
@@ -469,9 +477,31 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
 
 }
 
+function windSnapshot() {
+  if (!guidanceEnabled) return null
+  return guidanceEndpoint ? serverGuidance : fallbackGuidance.snapshot(Date.now(), trackingStatus?.trackingSessionId ?? '')
+}
+function windIndicator(reading) {
+  if ((!reading.angle && !reading.direction) || !reading.available || !Number.isFinite(reading.value)) return null
+  const arrow = document.createElement('span')
+  arrow.className = 'wind-angle-arrow'
+  arrow.dataset.angleDeg = String(reading.value)
+  arrow.dataset.directionDeg = String(((reading.value + 180) % 360 + 360) % 360)
+  arrow.style.transform = `rotate(${reading.value + 180}deg)`
+  arrow.setAttribute('aria-hidden', 'true')
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', WIND_ARROW_PATH)
+  path.setAttribute('fill', 'currentColor')
+  svg.append(path); arrow.append(svg)
+  return arrow
+}
 function instrumentTile(reading) {
   const tile = document.createElement('div')
   tile.className = 'instrument'
+  tile.dataset.reading = reading.id
+  tile.dataset.windBasis = reading.basis || ''
   tile.dataset.available = String(reading.available)
   tile.dataset.freshness = reading.freshness
   tile.dataset.stale = String(reading.freshness === 'stale')
@@ -484,15 +514,14 @@ function instrumentTile(reading) {
   value.textContent = formatReading(reading)
   const meta = document.createElement('span')
   meta.className = 'meta'
-  const bits = []
-  bits.push(reading.source === 'derived' ? 'derived' : 'measured')
-  if (reading.reference) bits.push(reading.reference)
-  if (reading.freshness === 'unknown') bits.push('timestamp unknown')
-  else if (reading.freshness === 'missing') bits.push('no data')
-  else if (reading.freshness === 'stale') bits.push('stale')
-  else if (reading.ageSeconds !== null) bits.push(`${reading.ageSeconds}s ago`)
-  meta.textContent = bits.join(' · ')
-  tile.append(label, value, meta)
+  meta.textContent = reading.freshness === 'stale' ? `Stale · ${reading.ageSeconds}s` : reading.freshness === 'unknown' ? 'Timestamp unknown' : ''
+  const values = document.createElement('span')
+  values.className = 'wind-value-row'
+  values.append(value)
+  const arrow = windIndicator(reading)
+  if (arrow) values.append(arrow)
+  tile.append(label, values)
+  if (meta.textContent) tile.append(meta)
   return tile
 }
 

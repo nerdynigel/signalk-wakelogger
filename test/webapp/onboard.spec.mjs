@@ -396,7 +396,7 @@ test('standalone instruments are the default with no course and need no Race Pac
   await expect(page.locator('#instruments-tab')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('#instruments-panel')).toBeVisible()
   await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
-  await expect(page.locator('#instruments-grid')).toContainText('True wind speed')
+  await expect(page.locator('#instruments-grid')).toContainText('TW')
   await expect(page.locator('#instruments-grid')).toContainText('Depth')
   await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
   // Viewing instruments must not activate a course, advance a mark or change upload mode.
@@ -422,9 +422,9 @@ test('losing GPS does not blank independent wind and depth', async ({ page }) =>
   })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
-  await expect(grid).toContainText('True wind speed')
+  await expect(grid).toContainText('TW')
   await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
-  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'True wind speed' })).toHaveCount(1)
+  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: /^TW(?:\s|$)/ })).toHaveCount(1)
   await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
 })
 
@@ -982,36 +982,30 @@ test('stale tracking confirmation reads current state without retrying a write',
   expect(writes).toBe(1)
 })
 
-test('TWA tiles derive wind and Race falls back to fresh water TWA', async ({ page }) => {
+test('one true wind pair and angle arrows match the chartplotter and fall back to water wind', async ({ page }) => {
   let direct = false
   const entry = value => ({ value, timestamp: new Date().toISOString() })
-  await mockBoat(page, {
-    course: false,
-    navigationOverride: () => direct ? {} : {
-      headingTrue: entry(0), courseOverGroundTrue: entry(0),
-      speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406)
-    },
-    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6) } : {
-      speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6)
-    } })
+  await mockBoat(page, { course: false,
+    navigationOverride: () => direct ? {} : { headingTrue: entry(0), courseOverGroundTrue: entry(0), speedOverGround: entry(5 / 1.9438444924406), speedThroughWater: entry(5 / 1.9438444924406) },
+    environment: () => ({ wind: direct ? { angleTrueWater: entry(-Math.PI / 6), speedTrue: entry(8 / 1.9438444924406) } : { speedApparent: entry(10 / 1.9438444924406), angleApparent: entry(Math.PI / 6) } })
   })
   await page.goto('/signalk-wakelogger/')
-  const grid = page.locator('#instruments-grid')
-  const ground = grid.locator('.instrument').filter({ hasText: 'True wind angle (ground)' })
-  const water = grid.locator('.instrument').filter({ hasText: 'True wind angle (water)' })
-  await expect(ground).toHaveAttribute('data-available', 'true')
-  await expect(ground).toContainText('54 ° true')
-  await expect(water).toContainText('54 ° true')
+  const grid = page.locator('#instruments-grid'), twa = grid.locator('[data-reading="twa"]')
+  await expect(twa).toHaveCount(1)
+  await expect(twa).toContainText('54° S')
+  await expect(twa.locator('.wind-angle-arrow')).toHaveCount(1)
+  await expect(grid.locator('[data-reading="twa-ground"], [data-reading="twa-water"]')).toHaveCount(0)
+  await expect(grid.locator('[data-reading="tws"]')).toHaveCount(1)
+  await expect(grid.locator('[data-reading="awa"]')).toContainText('30° S')
   await page.locator('#race-tab').click()
-  const strip = page.locator('#race-live-nav [data-reading=twa]')
-  await expect(strip).toHaveAttribute('data-available', 'true')
-  await expect(strip).toContainText('54 ° true')
+  const strip = page.locator('#race-live-nav [data-reading="twa"]')
+  await expect(strip).toContainText('54° S')
+  await expect(page.locator('#race-live-nav [data-reading="awa"] .wind-angle-arrow')).toHaveCount(1)
   direct = true
-  await expect(strip).toContainText('True wind angle (water)')
-  await expect(strip).toContainText('-30 ° true')
-  await expect(ground).toHaveAttribute('data-available', 'false')
+  await expect(strip).toContainText('30° P')
+  await expect(strip).toHaveAttribute('data-wind-basis', 'water')
   await page.reload()
-  await expect(water).toContainText('-30 ° true')
+  await expect(twa).toContainText('30° P')
 })
 
 test('Finish explains no recording, automatic closure and unavailable recorder', async ({ page }, testInfo) => {

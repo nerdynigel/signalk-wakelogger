@@ -151,3 +151,16 @@ module and manifest. When updating the website, also run
 `node scripts/generate-guidance.mjs --frontend-root=/path/to/frontend` and commit
 both generated artifacts together. `test/guidance.test.ts` covers physical vector
 oracles and sensor fallback; browser tests cover both desktop and mobile.
+
+Live wind readouts use one matched true-wind speed/angle pair. The primary live
+basis matches the website's ground wind; a complete water-based pair remains
+available when ground motion is missing. Both calculation bases remain internal
+for navigation and diagnostics. TWA and AWA use port/starboard bow angles; TWD
+is the separate true-north bearing. TWA never substitutes GPS COG for compass
+heading. Fresh canonical guidance supplies the same filtered true wind and
+heading used by the website. Wind source/age checks remain in force.
+
+The shared display formatter and arrow path are `webapp/wind-readout.mjs`.
+The guidance generator copies it to the website and records its SHA-256 in the
+manifest. Keep generated website artifacts with their source change. Wind
+readout updates do not change recorded sensor values or tack/layline geometry.

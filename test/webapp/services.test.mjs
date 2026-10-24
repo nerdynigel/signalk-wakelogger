@@ -753,7 +753,7 @@ test('TWA derives signed bow-relative angles for each basis and keeps direct rea
   assert.equal(get(direct, 'twa-ground').source, 'direct')
   const waterOnly = view({}, { angleTrueWater: e(-Math.PI / 6) })
   assert.equal(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').available, true)
-  assert.match(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').label, /water/)
+  assert.equal(liveNavigationStrip(waterOnly).find(r => r.id === 'twa').basis, 'water')
   const staleGround = view({}, { angleTrueGround: e(1, 40000), angleTrueWater: e(0) })
   assert.equal(liveNavigationStrip(staleGround).find(r => r.id === 'twa').value, 0)
   const groundSpeed = get(view({}, { speedOverGround: e(7) }), 'tws')
