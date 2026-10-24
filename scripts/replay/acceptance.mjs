@@ -63,6 +63,9 @@ try {
       if(current.race_navigation?.race_plan_id!==config.planId) await request(`${api}/v1/vessels/${config.vesselId}/telemetry/course`,'PUT',{race_plan_id:config.planId,active_waypoint_index:1},true);
       await expect(web.getByTestId('chartplotter-heading-guide')).toHaveCount(1,{timeout:30000});
       await expect(plugin.locator('#map')).toHaveAttribute('data-heading-guide-bearing',/.+/,{timeout:15000});
+      await expect(plugin.locator('#map')).toHaveAttribute('data-guidance-version','sailing-guidance-v1');
+      await expect(web.getByTestId('chartplotter-map-wrapper')).toHaveAttribute('data-guidance-version','sailing-guidance-v1');
+      if(current.live_state?.guidance?.algorithm!=='sailing-guidance-v1') throw Error('Canonical guidance missing from real cloud telemetry');
       qualified=true;report.voyageId=current.tracking_session.voyage_id;
       await plugin.screenshot({path:path.join(output,'plugin-live.png'),fullPage:true});
       await web.screenshot({path:path.join(output,'web-live.png'),fullPage:true});
@@ -72,6 +75,9 @@ try {
       const navigation=await request(`${sk}/signalk/v1/api/vessels/self/navigation`);
       report.snapshots.push({wall:new Date().toISOString(),source:state.sourceTime,
         cloud:current.live_state,native:{position:navigation.position,headingTrue:navigation.headingTrue,headingMagnetic:navigation.headingMagnetic,variation:navigation.magneticVariation,sog:navigation.speedOverGround,cog:navigation.courseOverGroundTrue},
+        nativeGuidance:(await request(`${sk}/plugins/signalk-wakelogger/guidance`)).guidance,
+        pluginGuidance:await plugin.locator('#map').evaluate(el=>({at:el.dataset.guidanceAt,algorithm:el.dataset.guidanceVersion,heading:el.dataset.headingGuideBearing})),
+        webGuidance:await web.getByTestId('chartplotter-map-wrapper').evaluate(el=>({at:el.dataset.guidanceAt,algorithm:el.dataset.guidanceVersion})),
         pluginGuide:await plugin.locator('#map').getAttribute('data-heading-guide-bearing'),
         pluginLaylineStatus:await plugin.locator('#map').getAttribute('data-layline-status'),
         webGuide:await web.getByTestId('chartplotter-heading-guide').getAttribute('data-bearing-deg').catch(()=>null)});
