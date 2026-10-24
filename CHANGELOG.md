@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release abandoned MQTT operations on connection close so a reconnect cannot lock the durable upload drain.
+
 - Stabilize sailing heading/wind and retain map layers across sensor updates.
 - Share versioned guidance with the website; optionally account for current, measured leeway, validated heel/rudder calibration and vessel polars.
 - Keep measured heading separate from required steering; preserve raw telemetry and work without rudder.

@@ -51,3 +51,23 @@ record well after this clip; preparation reports it and rejects truncation
 inside the clip. True heading is explicitly derived from measured magnetic
 heading and variation. The planner uses current test forecasts, while live
 wind and motion come from the original recording.
+
+## Stable guidance follow-up
+
+The complete original 89,639-event source was replayed at 1× with source-clock
+smoothing. Qualification, actual stale-data pause/recovery, reload, both mark
+controls and quiet maps passed. The resulting recording contains 1,111 samples;
+all were acknowledged and the cloud trip became ready with zero loss/rejection.
+Ninety-nine canonical publications agree with both displayed headings. Measured
+raw fields match checksummed recording frames and original emissions. Eighty-five
+wind observations absent during pauses are explicitly distinguished from later
+trip enrichment. No rudder/current/leeway correction is invented for this source.
+
+A real reconnect exposed an abandoned MQTT callback that blocked backlog draining
+while live samples continued. The connection-close cleanup and two regression
+cases fix that failure. The same durable recording recovered without replaying
+source messages. The initial failed Finish deadline is retained as evidence
+alongside successful finalization. The final plugin unit suite passes 316 tests;
+seven existing optional SQLite cases remain skipped without the native binding.
+The complete onboard browser regression covers 50 cases. This is test validation,
+not an npm/App Store release or a vessel calibration claim.

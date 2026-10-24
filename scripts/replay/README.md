@@ -168,3 +168,10 @@ timestamp, since local/cloud/browser polling runs at different rates. A bounded
 retry handles transient GET transport failures; control writes are never retried
 automatically. Interrupted runs retain their failure evidence before continuing
 with `WAKELOGGER_REPLAY_CONTINUE=1`. No source events are skipped on resume.
+
+The source comparison also reads the harness's checksummed file-outbox frames
+without opening or repairing the store. Keep the full recording available and
+use a non-decimated cloud trail. It validates every measured field against the
+recorded raw sample and original emissions, honors magnetic/true heading
+reference, and counts absent fields filled by the existing trip pipeline
+separately. Filled fields are not treated as measured sensor evidence.
