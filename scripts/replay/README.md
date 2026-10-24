@@ -79,18 +79,28 @@ website link retains the test vessel and Live tab.
 
 ## Playback and recorded data
 
-The page shows Start/Resume and Pause with the current playback and tracking
-state. Command-line controls also support Stop:
+The controls keep each recording separate:
+
+- **Pause / Resume** continues the same trip at the same source position.
+- **Stop and save** finishes the current onboard recording and stops the feed.
+- **Restart test** saves any open recording, archives that pass’s source log,
+  rewinds the source and starts a new recording with fresh timestamps.
+
+Stop and Restart require an on-page confirmation. If saving fails, the feed
+remains paused and its position is retained. Concurrent lifecycle requests are
+rejected. Restart keeps the existing test device and selected course. Saved
+recordings and pending uploads are retained. The command-line equivalents are:
 
 ```
 node scripts/replay/replay.mjs start
 node scripts/replay/replay.mjs pause
 node scripts/replay/replay.mjs resume
 node scripts/replay/replay.mjs stop
+node scripts/replay/replay.mjs restart
 node scripts/replay/replay.mjs status
 ```
 
-Playback is **1× and one pass**. Sensor values, sources, references and original
+Each recording plays the source **at 1×, once**. Restart begins a separate pass. Sensor values, sources, references and original
 intervals are retained. UTC envelope timestamps and embedded navigation clocks
 are shifted to the current run; original timestamps and source ZIP checksums
 remain in the artifacts. Pausing emits nothing. Resume rebases future events
@@ -116,8 +126,9 @@ native point control as well; no automatic cross-device synchronization is
 claimed. The track passes about 180 metres from the stored Lockyer mark;
 tolerances are not enlarged.
 
-At EOF, the feed ends and readings naturally become stale. Select **Finish
-trip** in the onboard app to close the recording. `reset` refuses an unfinished
+At EOF, the feed ends and readings naturally become stale. Use **Stop and save**
+on the harness, **Finish trip** in the onboard app, or **Restart test** to save
+the current recording and begin another pass. `reset` refuses an unfinished
 trip or pending upload/cloud confirmation, then creates clean per-run Signal K storage and a fresh device pairing.
 Prior run data/evidence are retained; no normal vessel or production data are
 deleted. Start test on the controls page confirms Live tracking again.
@@ -126,7 +137,7 @@ Command-line Start requires a previously confirmed Live tracking choice.
 ## Validation and artifacts
 
 ```
-node --test scripts/replay/engine.test.mjs
+node --test scripts/replay/engine.test.mjs scripts/replay/lifecycle.test.mjs
 ```
 
 DAT framing/clock tests run in the local API image:
@@ -185,3 +196,12 @@ use a non-decimated cloud trail. It validates every measured field against the
 recorded raw sample and original emissions, honors magnetic/true heading
 reference, and counts absent fields filled by the existing trip pipeline
 separately. Filled fields are not treated as measured sensor evidence.
+
+A clean server reload checkpoints the paused source position without creating a
+new recording. An unclean interrupted running pass requires Restart, preventing
+old source messages from being repeated inside the existing recording. Source
+files are hashed before restoring a checkpoint. Archived per-pass emissions are
+named `replay-emissions-<replayId>.ndjson`; the current pass retains the original
+`replay-emissions.ndjson` path. Lifecycle API calls use the local Signal K server
+and forward the signed-in user's credentials; they require normal write access.
+The harness remains excluded from the published plugin package.

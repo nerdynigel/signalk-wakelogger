@@ -49,3 +49,15 @@ test('invalid source order and missing clock data fail closed',()=>{
   const invalid=event(0);invalid.delta.updates[0].values[0].value='not-a-clock';
   assert.throws(()=>rebaseDelta(invalid,100000,original),/Invalid embedded clock/);
 });
+
+test('rewind starts a distinct pass with fresh timestamps and source identity',()=>{
+ let now=100000;const output=[];const replay=new ReplayEngine([event(0)],d=>output.push(d),()=>now);
+ replay.start();replay.tick();assert.equal(replay.state,'ended');now+=10000;replay.rewind('replay-second');replay.start();replay.tick();
+ assert.equal(output.length,2);assert.equal(Date.parse(output[1].updates[0].timestamp),now);assert.equal(output[1].updates[0].source.label,'replay-second');assert.equal(output[1].updates[0].values[1].value,output[0].updates[0].values[1].value);
+});
+test('checkpoint restores a paused position without replaying emitted events',()=>{
+ let now=100000;const output=[];const first=new ReplayEngine([event(0),event(1000)],()=>{},()=>now);first.start();first.tick();now+=400;first.pause();
+ const next=new ReplayEngine([event(0),event(1000)],d=>output.push(d),()=>now);next.restore(first.status());assert.equal(next.cursor,1);assert.equal(next.state,'paused');
+ now+=10000;next.start();next.tick();assert.equal(output.length,0);now+=600;next.tick();assert.equal(output.length,1);
+ assert.throws(()=>next.restore({cursor:100,sourceTimeMs:original,state:'paused'}),/Invalid/);
+});

@@ -163,10 +163,10 @@ else if(action==='status') {
   if(stillActive.activeRoute?.href!==route.href)throw new Error('Active native course changed; refusing navigation write');
   await api(`${sk}/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex`,'PUT',{value:next});
   console.log(JSON.stringify({activeWaypointIndex:next,cloudAlreadyAdvanced:cloud===next,nativeExplicitControl:true}));
-} else if(['start','pause','resume','stop'].includes(action)) {
-  if(action==='start') {
+} else if(['start','pause','resume','stop','restart'].includes(action)) {
+  if(action==='start' || action==='restart') {
     const tracking=await api(`${sk}/plugins/signalk-wakelogger/tracking`);
     if(tracking.uploadMode!=='automatic') throw new Error('Confirm Live tracking ON in the replay onboard app first');
   }
-  console.log(JSON.stringify(await api(`${sk}/plugins/wakelogger-real-trip-replay/control`,'POST',{action}),null,2));
-} else throw new Error('Use provision, start, pause, resume, stop, status, advance or reset');
+  console.log(JSON.stringify(await api(`${sk}/plugins/wakelogger-real-trip-replay/control`,'POST',{action,...(['stop','restart'].includes(action)?{confirmed:true}:{})}),null,2));
+} else throw new Error('Use provision, start, pause, resume, stop, restart, status, advance or reset');

@@ -1,9 +1,9 @@
-function rebaseDelta(event, anchorWall, anchorSource) {
+function rebaseDelta(event, anchorWall, anchorSource, sourceLabel = 'real-trip-48-replay') {
   const delta = structuredClone(event.delta);
   const at = anchorWall + event.sourceTimeMs - anchorSource;
   for (const update of delta.updates) {
     update.timestamp = new Date(at).toISOString();
-    update.source = {...update.source, label:'real-trip-48-replay'};
+    update.source = {...update.source, label:sourceLabel};
     for (const value of update.values) {
       if (/(^|\.)datetime$/i.test(value.path) && typeof value.value === 'string') {
         const recorded = Date.parse(value.value);
@@ -16,12 +16,28 @@ function rebaseDelta(event, anchorWall, anchorSource) {
 }
 
 class ReplayEngine {
-  constructor(events, emit, clock = Date.now) {
+  constructor(events, emit, clock = Date.now, sourceLabel = 'real-trip-48-replay') {
     if (!events.length || events.some((e,i)=>!Number.isFinite(e.sourceTimeMs) || i && e.sourceTimeMs<events[i-1].sourceTimeMs)) throw new Error('Ordered source events required');
-    this.events = events; this.emit = emit; this.clock = clock;
+    this.events = events; this.emit = emit; this.clock = clock; this.sourceLabel = sourceLabel;
     this.cursor = 0; this.state = 'paused'; this.sourceCursor = events[0].sourceTimeMs;
     this.anchorWall = clock(); this.anchorSource = this.sourceCursor;
     this.maxLagMs = 0; this.pauseReason = 'Ready; start playback';
+  }
+  restore(snapshot) {
+    if (!Number.isInteger(snapshot.cursor) || snapshot.cursor < 0 || snapshot.cursor > this.events.length || !Number.isFinite(snapshot.sourceTimeMs)
+      || snapshot.sourceTimeMs < this.events[0].sourceTimeMs || snapshot.sourceTimeMs > this.events.at(-1).sourceTimeMs + 1000
+      || !['paused','running','stopped','ended'].includes(snapshot.state)) throw new Error('Invalid replay checkpoint');
+    if (snapshot.cursor && snapshot.sourceTimeMs < this.events[snapshot.cursor-1].sourceTimeMs) throw new Error('Invalid replay checkpoint clock');
+    this.cursor = snapshot.cursor; this.sourceCursor = snapshot.sourceTimeMs;
+    this.state = this.cursor === this.events.length ? 'ended' : snapshot.state === 'stopped' ? 'stopped' : 'paused';
+    this.maxLagMs = snapshot.maxLagMs || 0;
+    this.pauseReason = snapshot.state === 'running' ? 'Paused after server restart' : snapshot.reason;
+  }
+  rewind(sourceLabel = this.sourceLabel) {
+    if (this.state === 'running') throw new Error('Stop the current replay before rewinding');
+    this.cursor = 0; this.sourceCursor = this.events[0].sourceTimeMs;
+    this.anchorWall = this.clock(); this.anchorSource = this.sourceCursor;
+    this.maxLagMs = 0; this.state = 'paused'; this.pauseReason = 'Ready; start playback'; this.sourceLabel = sourceLabel;
   }
   start() {
     if (this.state === 'ended') throw new Error('Replay ended; finish the trip and create a fresh run');
@@ -47,7 +63,7 @@ class ReplayEngine {
     }
     while (this.cursor < this.events.length && this.events[this.cursor].sourceTimeMs <= sourceNow) {
       const event = this.events[this.cursor++];
-      const delta = rebaseDelta(event, this.anchorWall, this.anchorSource);
+      const delta = rebaseDelta(event, this.anchorWall, this.anchorSource, this.sourceLabel);
       this.emit(delta, event);
     }
     this.sourceCursor = sourceNow;

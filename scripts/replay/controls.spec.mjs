@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const {renderControls}=require('./provider/controls.cjs');
-let server,origin,mode,state,writes,failSave,cursor;
+let server,origin,mode,state,writes,failSave,cursor,recording;
 test.beforeAll(async()=>{
  server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
@@ -19,15 +19,15 @@ test.beforeAll(async()=>{
     if(failSave){res.statusCode=503;return res.end(JSON.stringify({error:'tracking_persistence_failed'}));}
     const change=JSON.parse(body);if(!change.confirmed||change.expectedUploadMode!==mode){res.statusCode=409;return res.end('{}');}mode=change.uploadMode;
    }
-   return res.end(JSON.stringify({uploadMode:mode,paired:true,available:true}));
+   return res.end(JSON.stringify({uploadMode:mode,paired:true,available:true,trackingSessionId:recording}));
   }
-  if(url.pathname.endsWith('/control')){state=JSON.parse(body).action==='pause'?'paused':'running';if(state==='running')cursor=12;}
-  return res.end(JSON.stringify({state,cursor,total:100,sourceTime:'2026-06-28T03:06:00Z'}));
+  if(url.pathname.endsWith('/control')){const action=JSON.parse(body).action;if(action==='stop'){state='stopped';recording=null;}else{state=action==='pause'?'paused':'running';if(state==='running'){cursor=12;recording=action==='restart'?'new-recording':'recording';}}}
+  return res.end(JSON.stringify({state,cursor,capabilities:{tripLifecycle:true},total:100,sourceTime:'2026-06-28T03:06:00Z'}));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin=`http://127.0.0.1:${server.address().port}`;
 });
 test.afterAll(()=>new Promise(resolve=>server.close(resolve)));
-test.beforeEach(()=>{mode='local_only';state='stopped';writes=[];failSave=false;cursor=0;});
+test.beforeEach(()=>{mode='local_only';state='paused';writes=[];failSave=false;cursor=0;recording=null;});
 const open=page=>page.goto(origin+'/plugins/wakelogger-real-trip-replay/controls');
 test('one confirmed Start enables tracking then starts; website uses the configured HTTPS origin',async({page})=>{
  await open(page);
@@ -44,7 +44,7 @@ test('cancel does not change tracking or feed',async({page})=>{
 });
 test('failed tracking confirmation never starts the feed',async({page})=>{
  failSave=true;await open(page);await page.getByRole('button',{name:'Start test'}).click();await page.getByRole('button',{name:'Start and enable Live tracking'}).click();
- await expect(page.getByRole('alert')).toHaveText('tracking_persistence_failed');expect(writes).toHaveLength(1);expect(state).toBe('stopped');
+ await expect(page.getByRole('alert')).toHaveText('tracking_persistence_failed');expect(writes).toHaveLength(1);expect(state).toBe('paused');
 });
 test('already enabled tracking starts without another tracking write',async({page})=>{
  mode='automatic';await open(page);await page.getByRole('button',{name:'Start test'}).click();await expect(page.locator('#status')).toHaveText('Playing');
@@ -56,4 +56,19 @@ test('mobile embedded controls start without browser-native modal permission',as
  const frame=page.frameLocator('iframe');await frame.getByRole('button',{name:'Start test'}).click();
  await frame.getByRole('button',{name:'Start and enable Live tracking'}).click();
  await expect(frame.locator('#status')).toHaveText('Playing');expect(writes.map(w=>w.body)).toEqual([{uploadMode:'automatic',confirmed:true,expectedUploadMode:'local_only'},{action:'start'}]);
+});
+
+test('Stop and save closes the trip; Restart is a separate confirmed action',async({page})=>{
+ mode='automatic';state='paused';cursor=45;recording='existing-recording';await open(page);
+ await page.getByRole('button',{name:'Stop and save',exact:true}).click();
+ await page.getByRole('button',{name:'Stop and save trip',exact:true}).click();
+ await expect(page.locator('#status')).toHaveText('Stopped');expect(recording).toBeNull();
+ await page.getByRole('button',{name:'Restart test',exact:true}).click();await page.getByRole('button',{name:'Save trip and restart',exact:true}).click();
+ await expect(page.locator('#status')).toHaveText('Playing');expect(recording).toBe('new-recording');
+ expect(writes.map(w=>w.body)).toEqual([{action:'stop',confirmed:true},{action:'restart',confirmed:true}]);
+});
+test('cancelling Restart keeps the paused trip and source position',async({page})=>{
+ mode='automatic';state='paused';cursor=45;recording='existing-recording';await open(page);
+ await page.getByRole('button',{name:'Restart test',exact:true}).click();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Resume test'})).toBeEnabled();expect(writes).toEqual([]);expect(cursor).toBe(45);expect(recording).toBe('existing-recording');
 });
