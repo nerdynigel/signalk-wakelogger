@@ -146,3 +146,25 @@ actual emitted sensor values. The packet capture time is the position clock,
 so independent wind/heading readings match exact original observations within
 1.5 seconds of that clock, with only serialization/unit-conversion tolerances.
 The result records the observed skew and error for each field.
+
+## Isolated guidance validation
+
+A separate private `environment.json` may set `containerName` (a dedicated
+`wakelogger-…` name) and `vesselName`. Set `WAKELOGGER_REPLAY_PORT` before
+provisioning a new data directory. These options create a separate test vessel,
+route, run and Signal K container; do not point a new validation at an existing
+recording's data directory. Immutable prepared source files may be copied into
+the new private directory. They must resolve inside the container mount.
+
+For an offline damping comparison, set `WAKELOGGER_REPLAY_DATA` and run
+`node scripts/replay/benchmark-guidance.mjs /private/output/benchmark.json` after
+building. It reports selected steady-window jitter, estimate visibility and
+source-timestamp turn lag. It does not calibrate a vessel or invent unavailable
+rudder, leeway or current observations.
+
+Real acceptance records source, canonical native/cloud snapshots and each
+browser's guidance publication timestamp. Compare angles at the same publication
+timestamp, since local/cloud/browser polling runs at different rates. A bounded
+retry handles transient GET transport failures; control writes are never retried
+automatically. Interrupted runs retain their failure evidence before continuing
+with `WAKELOGGER_REPLAY_CONTINUE=1`. No source events are skipped on resume.

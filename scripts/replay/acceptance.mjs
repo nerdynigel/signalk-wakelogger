@@ -20,8 +20,14 @@ if(continuing) {
 }
 const save=()=>fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function request(url,method='GET',body,auth=false) {
-  const r=await fetch(url,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(auth?{authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
+async function request(url,method='GET',body,auth=false,attempt=0) {
+  let r;
+  try { r=await fetch(url,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(auth?{authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)}); }
+  catch(error) {
+    if(method!=='GET' || attempt>=2)throw error;
+    report.readRetries=[...(report.readRetries || []),{at:new Date().toISOString(),path:new URL(url).pathname,reason:error.message}];save();
+    await delay(1000);return request(url,method,body,auth,attempt+1);
+  }
   const value=await r.json();if(!r.ok)throw Error(`${method} ${new URL(url).pathname} HTTP ${r.status}: ${JSON.stringify(value)}`);return value;
 }
 const control=action=>request(`${sk}/plugins/wakelogger-real-trip-replay/control`,'POST',{action});
@@ -48,7 +54,7 @@ try {
   await web.addInitScript(value=>localStorage.setItem('wakelogger_auth_token',value),token);
   await web.goto(`http://127.0.0.1:3000/vessels/manage?vessel=${config.vesselId}&tab=live`);
   await control(continuing?'resume':'start');
-  check(continuing?'Continued the same recorded stream after correcting the test-control assumption':'Confirmed upload mode and started the real 1x sensor feed');
+  check(continuing?'Continued the same recorded stream after investigating the interruption':'Confirmed upload mode and started the real 1x sensor feed');
   const deadline=Date.now()+40*60000;
   while(Date.now()<deadline) {
     const state=await request(`${sk}/plugins/wakelogger-real-trip-replay/status`);

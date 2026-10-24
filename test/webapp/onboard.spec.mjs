@@ -733,6 +733,7 @@ test('a newer Race Pack announces today before course delivery and cannot activa
 
 
 test('mirrored tack and gybe guides refresh from apparent wind and ground motion without native writes', async ({ page }, testInfo) => {
+  test.setTimeout(120000)
   let heading = 0, awa = 30, trueWindFrom = null, awaAge = 0, positionAvailable = true, magneticOnly = false, awsAvailable = true
   const measurement = value => ({ value, timestamp: new Date().toISOString() })
   const sensorWind = () => {
@@ -761,7 +762,7 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
   await expect(page.locator('.opposite-tack-guide')).toHaveCount(1)
   await expect(page.locator('.opposite-tack-guide')).toHaveAttribute('stroke-dasharray', '8 6')
-  await expect(map).toHaveAttribute('aria-label', /mirrored current true-wind angle · no tide or leeway correction/)
+  await expect(map).toHaveAttribute('aria-label', /mirrored sailing angle/)
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-tack-guide.png'), fullPage: true })
   const bow = (await map.getAttribute('data-guide-origin')).split(',').map(Number)
   expect(bow[0]).toBeGreaterThan(-27.395)
@@ -771,14 +772,15 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
   await expect.poll(async () => ((Number(await map.getAttribute('data-opposite-tack-bearing')) + 180) % 360) - 180).toBeCloseTo(0, 6)
   trueWindFrom = 240; heading = 10
-  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
-  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(110, 6)
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe', { timeout: 30000 })
+  // The wind step must converge while retaining the deliberate five-second damping.
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing')), { timeout: 60000 }).toBeCloseTo(110, 0)
   await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
   await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-gybe-guide.png'), fullPage: true })
   heading = 110
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '110')
-  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 6)
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 0)
   heading = 60 // Dead run: true wind FROM 240°, no safe side to mirror.
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
   await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
