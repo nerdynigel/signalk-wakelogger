@@ -142,7 +142,9 @@ try {
   }, 30_000)
   assert.equal(liveWind.twa.reference, 'ground')
   assert.ok(liveWind.twa.value >= -180 && liveWind.twa.value <= 180)
-  assert.equal(liveNavigationStrip(liveWind.view).find(reading => reading.id === 'twa').available, true)
+  const windStrip = liveNavigationStrip(liveWind.view)
+  assert.equal(windStrip.find(reading => reading.id === 'twd').available, true)
+  assert.equal(windStrip.some(reading => reading.id === 'twa'), false)
   const noHeading = { ...liveWind.navigation, headingTrue: undefined }
   const apparentOnly = { wind: { speedApparent: liveWind.environment.wind.speedApparent, angleApparent: liveWind.environment.wind.angleApparent } }
   assert.equal(instrumentReadings({ navigation: noHeading, environment: apparentOnly, now: liveWind.sourceClock }).readings.find(reading => reading.id === 'twa-ground').available, false)
