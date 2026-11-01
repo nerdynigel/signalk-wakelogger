@@ -197,12 +197,13 @@ it('serializes Finish trip behind an in-flight durable append and includes its a
 it('refuses a prepared but failed tail append rather than silently completing a shorter range', async () => {
   const f = await fixture()
   try {
+    const committed = vi.spyOn(RecordingStore.prototype, 'committed')
     f.ingest()
-    let checkpoint: any
-    await vi.waitFor(async () => {
-      checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
-      expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
-    }, { timeout: 15000 })
+    // Wait for the write before opening its atomic rename target on Windows.
+    await vi.waitFor(() => expect(committed).toHaveBeenCalled(), { timeout: 15000 })
+    await committed.mock.results[0]!.value
+    const checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+    expect(checkpoint.committed.sequence).toBeGreaterThan(0)
     vi.spyOn(FileOutbox.prototype, 'append').mockRejectedValueOnce(new Error('append unavailable'))
     f.ingest()
     await vi.waitFor(() => expect(f.app.error).toHaveBeenCalledWith(expect.stringContaining('append unavailable')))
