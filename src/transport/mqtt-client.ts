@@ -312,6 +312,14 @@ export class WakeLoggerTransport {
         const eligible: TelemetrySample[] = []
         for (const sample of samples) { if (!this.canUpload(sample)) break; eligible.push(sample) }
         samples = eligible
+        // Qualification can become durable while the sampler is still
+        // committing its newest frame. Publish the latest eligible state before
+        // releasing departure history, without waiting for another sensor poll.
+        if (!this.current) {
+          const latest = await this.outbox.latest()
+          if (latest && this.canUpload(latest)) { this.current = latest; this.statePublishPending = true }
+        }
+        await this.drainCurrentState()
       }
       const batch: TelemetryBatch = { v: 1, deviceId: this.credentials.deviceId,
         droppedThrough: stats.droppedThrough > stats.acknowledgedSequence ? stats.droppedThrough : undefined, samples }

@@ -62,6 +62,20 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('WakeLoggerTransport', () => {
+  it('publishes the newest eligible state before departure history when qualification finishes between sampler callbacks', async () => {
+    let confirmed = false
+    const outbox: any = { latest: vi.fn().mockResolvedValue(sample), pendingAfter: vi.fn().mockResolvedValue([sample]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 1, acknowledgedSequence: 0, messageCount: 1, droppedThrough: 0 }) }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 }, outbox,
+      { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), uploadDisposition: () => confirmed ? 'upload' : 'wait' })
+    try {
+      transport.start(); await tick(); const client = clients[0]!; client.emit('connect'); await tick(); await tick()
+      confirmed = true
+      await (transport as any).pump(); await tick()
+      expect(client.publications.filter(p => p.topic.endsWith('/state') || p.topic.endsWith('/telemetry')).map(p => p.topic.split('/').at(-1))).toEqual(['state', 'telemetry'])
+    } finally { await transport.stop({ publishOffline: false, force: true }) }
+  })
+
   it('sends only an idle range marker after capability negotiation, then releases confirmed history after application ACK', async () => {
     let ack = 0
     const idle = { ...sample, sequence: 1, values: { ...sample.values, sog_kn: 0.05 } }

@@ -64,7 +64,8 @@ function delay(milliseconds) {
 }
 
 function dataEvents(value) {
-  return value.events.filter((event) => event.topic === 'wakelogger/v1/devices/dev_docker_e2e/state' || event.topic === 'wakelogger/v1/devices/dev_docker_e2e/telemetry')
+  return value.events.filter((event) => event.topic === 'wakelogger/v1/devices/dev_docker_e2e/state' ||
+    (event.topic === 'wakelogger/v1/devices/dev_docker_e2e/telemetry' && event.payload?.samples?.length > 0))
 }
 
 function telemetrySamples(value) {
