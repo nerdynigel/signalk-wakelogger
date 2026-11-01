@@ -1,7 +1,12 @@
 // Disposable upgrade fixture: an older plugin queued these dockside readings.
 // This file is never included in the published plugin package.
-const { FileOutbox } = await import('/home/node/.signalk/node_modules/signalk-wakelogger/dist/outbox/file-outbox.js')
-const outbox = new FileOutbox('/home/node/.signalk/plugin-config-data/signalk-wakelogger/outbox/dev_docker_e2e', {
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+const configurationRoot = process.argv[2]
+if (!configurationRoot) throw new Error('Signal K configuration directory is required')
+const { FileOutbox } = await import(pathToFileURL(path.join(configurationRoot, 'node_modules/signalk-wakelogger/dist/outbox/file-outbox.js')).href)
+const outbox = new FileOutbox(path.join(configurationRoot, 'plugin-config-data/signalk-wakelogger/outbox/dev_docker_e2e'), {
   maxBytes: 10 * 1024 * 1024, maxAgeMs: 86400000, segmentBytes: 65536
 })
 await outbox.open()

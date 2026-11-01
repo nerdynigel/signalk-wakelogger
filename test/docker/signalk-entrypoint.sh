@@ -15,7 +15,7 @@ if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$archive_digest" ]; then
 fi
 
 if [ ! -f "$config_file" ]; then
-  node /opt/seed-idle-history.mjs
+  node /opt/seed-idle-history.mjs "$config_root"
   umask 077
   cat > "$config_file" <<'JSON'
 {
