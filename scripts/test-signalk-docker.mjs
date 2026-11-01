@@ -193,9 +193,16 @@ try {
   assert.ok(rejected.stderr.includes('tracking_confirmation_required'))
   query(trackingUrl, 'POST', { uploadMode: 'automatic', confirmed: true, expectedUploadMode: 'local_only' })
 
+  const retiredIdle = await waitFor('legacy dockside prefix retired without position uploads', () => {
+    const value = snapshot()
+    return value.excludedSampleCount === 10 && maximumAck(value) >= 10 ? value : undefined
+  })
+  assert.equal(telemetrySamples(retiredIdle).some(sample => sample.sequence <= 10), false)
+  assert.ok(retiredIdle.events.some(event => event.payload?.nonTripThrough === 10 && event.payload.samples?.length === 0))
+
   const initial = await waitFor('three durably acknowledged telemetry samples', () => {
     const value = snapshot()
-    return maximumAck(value) >= 3 ? value : undefined
+    return maximumAck(value) >= 3 && telemetrySamples(value).length >= 3 ? value : undefined
   }, 300_000)
   assert.equal(initial.pairingCount, 1, 'the real plugin must complete exactly one pairing exchange')
   const initialSamples = telemetrySamples(initial)
@@ -478,6 +485,8 @@ try {
   process.stdout.write(`${JSON.stringify({ nativeCourseProgress: { clock: 'bundled N2K replay', from: firstMotion.progress.pointPercent, to: nextMotion.progress.pointPercent, fixedIndex: 1, staleWallClock: null, manualNextIndex: 2 } })}\n`)
 
   const signalkInfo = query('http://signalk:3000/signalk')
+  const idlePositionsUploaded = telemetrySamples(drained).filter(sample => sample.sequence <= 10).length
+  assert.equal(idlePositionsUploaded, 0, 'retired dockside positions must stay off the wire after outages and restarts')
 
   const result = {
     ok: true,
@@ -497,6 +506,8 @@ try {
     },
     tlsPairing: true,
     tlsMqtt: true,
+    idlePrefixRetiredWithoutPositions: 10,
+    idlePositionsUploaded,
     initialAcknowledgedSequence: maximumAck(initial),
     outageBaselineSequence: baselineAck,
     recoveredAcknowledgedSequence: maximumAck(recovered),

@@ -49,11 +49,12 @@ describe('FileOutbox', () => {
     await first.open()
     expect((await first.append('dev_1', draft())).sequence).toBe(1)
     expect((await first.append('dev_1', draft())).sequence).toBe(2)
-    await first.acknowledge(1)
+    await first.acknowledge(1, 1)
     await first.close()
 
     const recovered = new FileOutbox(dir, options())
     await recovered.open()
+    expect((await recovered.stats()).excludedCount).toBe(1)
     expect((await recovered.pending(10, 10_000)).map((sample) => sample.sequence)).toEqual([2])
     expect((await recovered.append('dev_1', draft())).sequence).toBe(3)
   })

@@ -19,6 +19,7 @@ const response = await new Promise((resolve, reject) => {
     incoming.on('end', () => resolve({ status: incoming.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }))
   })
   request.on('error', reject)
+  request.setTimeout(15000, () => request.destroy(new Error('query_timeout')))
   if (body) request.write(body)
   request.end()
 })

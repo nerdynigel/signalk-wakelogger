@@ -100,7 +100,22 @@ async function durableAppend(value) {
 }
 
 function publish(topic, payload) {
-  return new Promise((resolve, reject) => client.publish(topic, payload, { qos: 1 }, (error) => error ? reject(error) : resolve()))
+  // A broker outage must not strand processing (and therefore /snapshot)
+  // behind a QoS callback. Durable receipts remain available for the retry.
+  if (!client.connected) return Promise.resolve(false)
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (error, delivered) => {
+      if (settled) return
+      settled = true
+      client.removeListener('close', closed)
+      if (error) reject(error)
+      else resolve(delivered)
+    }
+    const closed = () => finish(null, false)
+    client.once('close', closed)
+    client.publish(topic, payload, { qos: 1 }, error => finish(error, !error))
+  })
 }
 
 const server = https.createServer({
@@ -119,6 +134,7 @@ const server = https.createServer({
         mqttSubscribed,
         pairingCount,
         persistedCount,
+        excludedSampleCount,
         maximumAcknowledged: Object.fromEntries(maximumAcknowledged),
         events
       })
