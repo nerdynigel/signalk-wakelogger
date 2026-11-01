@@ -184,8 +184,9 @@ uploading saved history.
 On upgrade, the plugin reads retained history before opening its upload
 transport. Positively identified stationary ranges and cancelled departures can
 be retired with a compact, authenticated sequence declaration after the server
-advertises support. Positions in those ranges are not sent. Local data is only
-reclaimed after the application's durable acknowledgement. The cloud keeps any
+advertises support. Positions in those ranges are not sent. An exclusion declaration does not advance the local receipt cursor; that
+requires the application's durable acknowledgement. Ordinary expiry of legacy
+diagnostic readings is still reported separately as retention loss. The cloud keeps any
 existing receipts, rejects exclusions overlapping retained trip evidence, and
 audits exclusions separately from uploaded samples and actual data loss.
 Ambiguous older recordings are held locally; elapsed time never proves them idle.

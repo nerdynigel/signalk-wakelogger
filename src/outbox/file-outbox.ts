@@ -68,7 +68,9 @@ export class FileOutbox implements OutboxStore {
       // Normal recovery derives nextSequence from the last checksummed record. Persist it
       // only at segment boundaries to avoid a second fsync for every one-second sample.
       if (rotated) await this.persistMetadata()
-      await this.enforceLimitsUnlocked()
+      // Protected appends already reserved capacity and applied retention
+      // before committing. Avoid decoding the entire queue a second time.
+      if (!this.options.protectRecordingHistory) await this.enforceLimitsUnlocked()
       return sample
     })
   }

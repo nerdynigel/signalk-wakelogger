@@ -12,7 +12,7 @@ interface StateRow {
 
 interface PayloadRow { payload: string }
 interface AggregateRow { message_count: number; storage_bytes: number; oldest_captured_at: number | null }
-interface SizeRow { sequence: number; payload_bytes: number; payload?: string }
+interface SizeRow { sequence: number; payload_bytes: number }
 
 const MIGRATIONS = [{
   version: 1,
@@ -109,7 +109,7 @@ export class DatabaseOutbox implements OutboxStore {
         await database.run('UPDATE outbox_state SET next_sequence = ? WHERE device_id = ?', [value.sequence + 1, deviceId])
         return value
       })
-      await this.enforceLimitsUnlocked()
+      if (!this.options.protectRecordingHistory) await this.enforceLimitsUnlocked()
       return sample
     })
   }
@@ -198,7 +198,7 @@ export class DatabaseOutbox implements OutboxStore {
   private async enforceLimitsUnlocked(reserveBytes = 0): Promise<void> {
     const now = this.options.now?.() ?? Date.now()
     const rows = await this.database.query<SizeRow>(
-      'SELECT sequence, payload_bytes, payload FROM outbox_records WHERE device_id = ? ORDER BY sequence ASC', [this.deviceId]
+      'SELECT sequence, payload_bytes FROM outbox_records WHERE device_id = ? ORDER BY sequence ASC', [this.deviceId]
     )
     let total = rows.reduce((sum, row) => sum + Number(row.payload_bytes), 0)
     const cutoff = now - this.options.maxAgeMs
@@ -213,8 +213,11 @@ export class DatabaseOutbox implements OutboxStore {
       if (!row || !captured) continue
       const tooOld = Number(captured.captured_at) < cutoff
       if (!tooOld && total + reserveBytes <= this.options.maxBytes) break
-      const document = row.payload ? JSON.parse(row.payload) as TelemetrySample : undefined
-      if (this.options.protectRecordingHistory && (!document || document.trackingSessionId || document.recording)) break
+      if (this.options.protectRecordingHistory) {
+        const retained = await this.database.query<PayloadRow>('SELECT payload FROM outbox_records WHERE device_id = ? AND sequence = ?', [this.deviceId, row.sequence])
+        const document = retained[0] ? JSON.parse(retained[0].payload) as TelemetrySample : undefined
+        if (!document || document.trackingSessionId || document.recording) break
+      }
       total -= Number(row.payload_bytes)
       dropThrough = Number(row.sequence)
       dropCount += 1
