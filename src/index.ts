@@ -16,7 +16,7 @@ import { offlineReadiness, type OfflineReadiness, type ReadinessPackState } from
 import { UploadHistory, durableJson } from './tracking/history'
 import { TrackArchive } from './tracking/archive'
 import { DEFAULT_TRACK_POINTS, MAX_TRACK_POINTS } from './tracking/track'
-import { configSchema } from './config/schema'
+import { configSchema, configUiSchema } from './config/schema'
 import { DEFAULTS, parseConfig, type PluginConfig } from './config/defaults'
 import { createOutbox } from './outbox/factory'
 import type { OutboxStats, OutboxStore } from './outbox/interface'
@@ -67,6 +67,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   let activeUploadMode: PluginConfig['uploadMode'] = 'local_only'
   let persistedUploadMode: PluginConfig['uploadMode'] = 'local_only'
   let persistenceError: string | undefined
+  let recordingError: string | undefined
   let rawConfiguration: Record<string, unknown> = {}
   let trackingOperation: Promise<void> = Promise.resolve()
   let trackingRevision = 0
@@ -89,6 +90,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     name: 'Wake Logger',
     description: 'Live vessel tracking and resilient Signal K telemetry for Wake Logger',
     schema: configSchema,
+    uiSchema: configUiSchema,
     start(configuration: object): void {
       ready = false
       activeUploadMode = 'local_only'
@@ -739,7 +741,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function flushProgressionEvidence(): Promise<void> {
-    if (!progression || !transport) return
+    if (!progression || !transport || !tripState?.isConfirmed(tripState.currentState().trackingSessionId)) return
     const pending = progression.pendingEvents()
     if (!pending.length) return
     const published: number[] = []
@@ -756,7 +758,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   // application-ACKs it; published-but-unacknowledged snapshots are retried.
   async function flushOnboardSnapshots(): Promise<void> {
     if (!onboardSnapshots || !transport || activeUploadMode !== 'automatic') return
-    const queue = [...onboardSnapshots.pending(), ...onboardSnapshots.unacknowledged()].slice(0, 5)
+    const queue = [...onboardSnapshots.pending(), ...onboardSnapshots.unacknowledged()].filter(event => tripState?.isConfirmed(event.snapshot.tracking.trackingSessionId)).slice(0, 5)
     if (!queue.length) return
     const published: number[] = []
     for (const event of queue) {
@@ -949,6 +951,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const sampler = new PathSampler(profile, activeUploadMode === 'local_only' ? 'NORMAL' : 'OFFLINE')
     currentSampler = sampler
     const selected = await createOutbox(app, dataDirectory, credentials.deviceId, {
+      protectRecordingHistory: true,
       maxBytes: config.maxOutboxMb * 1024 * 1024,
       maxAgeMs: config.maxOutboxDays * 24 * 60 * 60 * 1000,
       segmentBytes: DEFAULTS.segmentBytes
@@ -956,6 +959,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     outbox = selected.store
     await selected.store.latest().then(async (sample) => { if (sample) await trip.committed(sample) })
     storageBackend = selected.backend
+    await trip.recoverUploadDecisions(selected.store)
     history = new UploadHistory(path.join(dataDirectory, 'uploads', credentials.deviceId, 'state.json'))
     try { await history.open() } catch (error) {
       app.error(`Wake Logger upload progress unavailable: ${safeError(error)}`)
@@ -988,6 +992,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
         courseFailureAcknowledgement = { v: 1, revision, status: 'rejected', errorCode: 'course_storage_unavailable' }
         return courseFailureAcknowledgement
       },
+      uploadDisposition: (sample) => trip.uploadDisposition(sample),
       getCourseAcknowledgement: () => courses?.acknowledgement() ?? courseFailureAcknowledgement,
       onRacePackManifest: async (payload) => racePackReceiver?.acceptManifest(payload) ?? null,
       onRacePackChunk: async (payload, topicIndex) => racePackReceiver?.acceptChunk(payload, topicIndex) ?? null,
@@ -1036,15 +1041,21 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       const now = Date.now()
       const draft = normaliser.takeSample(now, sampler.dueFields(now))
       if (!draft || !outbox) return
-      await trip.prepare(draft, nextSequence)
+      // Movement qualification uses fresh instrument speed even when that field
+      // is not due in the upload profile on this sample.
+      await trip.prepare(draft, nextSequence, normaliser.latestFix(now)?.sogKn ?? undefined)
       draft.guidance = sampler.currentProfile().paths.heading.enabled && sampler.currentProfile().paths.apparentWind.enabled && sampler.currentProfile().paths.sog.enabled && sampler.currentProfile().paths.cog.enabled
         ? guidance?.snapshot(now, draft.trackingSessionId ?? '') ?? null : null
+      // Idle instruments remain local. Candidates are durable but held by the
+      // transport until the movement detector confirms the trip.
+      if (!draft.trackingSessionId) { publishedGuidance = draft.guidance ?? null; return }
       let queued
       try {
         queued = await outbox.append(credentials.deviceId, draft)
         nextSequence = queued.sequence + 1
         publishedGuidance = queued.guidance ?? null
         await trip.committed(queued)
+        recordingError = undefined
         // Small append off the outbox lock; a failure here must never break
         // telemetry recording or delivery.
         if (draft.trackingSessionId && trackArchive) {
@@ -1070,7 +1081,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const scheduleSample = () => {
       if (generation !== thisGeneration) return
       sampleTimer = setTimeout(() => {
-        sampleOperation = sampleOperation.then(sample).catch((error) => app.error(`Unable to queue Wake Logger telemetry: ${safeError(error)}`)).then(scheduleSample)
+        sampleOperation = sampleOperation.then(sample).catch((error) => { recordingError = safeError(error); app.setPluginError(`Recording paused: ${recordingError}`); app.error(`Unable to queue Wake Logger telemetry: ${recordingError}`) }).then(scheduleSample)
       }, sampler.samplePeriodMs())
     }
     scheduleSample()
@@ -1143,6 +1154,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     const stats = cachedQueueStats
     const cohort = history?.current() ?? null
     return {
+      uploadPolicy: 'confirmed_trips', recordingError: recordingError ?? null,
       uploadMode: activeUploadMode, liveTrackingEnabled: activeUploadMode === 'automatic',
       persistedUploadMode, persistenceError: persistenceError ?? null,
       paired: !!outbox, recording: !!stopSubscription && !!sampleTimer,

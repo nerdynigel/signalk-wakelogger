@@ -7,6 +7,7 @@ export interface OutboxStats {
   oldestCapturedAt?: number
   acknowledgedSequence: number
   currentSequence: number
+  excludedCount?: number
   droppedCount: number
   droppedThrough: number
 }
@@ -14,6 +15,7 @@ export interface OutboxStats {
 export interface OutboxSeed {
   currentSequence: number
   acknowledgedSequence: number
+  excludedCount?: number
   droppedCount: number
   droppedThrough: number
 }
@@ -23,6 +25,7 @@ export interface OutboxOptions {
   maxAgeMs: number
   segmentBytes: number
   now?: () => number
+  protectRecordingHistory?: boolean
 }
 
 export interface OutboxStore {
@@ -31,7 +34,7 @@ export interface OutboxStore {
   pending(limit: number, maxBytes: number): Promise<TelemetrySample[]>
   pendingAfter(sequence: number, limit: number, maxBytes: number): Promise<TelemetrySample[]>
   latest(): Promise<TelemetrySample | undefined>
-  acknowledge(sequence: number): Promise<void>
+  acknowledge(sequence: number, excludedCount?: number): Promise<void>
   stats(): Promise<OutboxStats>
   close(): Promise<void>
 }

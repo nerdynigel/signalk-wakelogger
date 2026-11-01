@@ -7,6 +7,7 @@ export interface TripSnapshot {
   state: TripState
   candidateAt?: number
   candidatePosition?: { lat: number; lon: number }
+  candidateFirstPosition?: { lat: number; lon: number }
   stationaryPosition?: { lat: number; lon: number }
   trackingSessionId?: string
 }
@@ -37,6 +38,7 @@ export class TripStateMachine {
       state: validState(snapshot?.state) ? snapshot.state : 'STOPPED',
       candidateAt: finite(snapshot?.candidateAt) ? snapshot.candidateAt : undefined,
       candidatePosition: validPosition(snapshot?.candidatePosition) ? snapshot.candidatePosition : undefined,
+      candidateFirstPosition: validPosition(snapshot?.candidateFirstPosition) ? snapshot.candidateFirstPosition : undefined,
       stationaryPosition: validPosition(snapshot?.stationaryPosition) ? snapshot.stationaryPosition : undefined,
       trackingSessionId: typeof snapshot?.trackingSessionId === 'string' ? snapshot.trackingSessionId : undefined
     }
@@ -52,7 +54,7 @@ export class TripStateMachine {
         this.snapshot.stationaryPosition = origin
         const distance = distanceMetres(origin, position)
         if (sog > this.thresholds.startSogKn || distance > this.thresholds.startDistanceM) {
-          this.snapshot = { state: 'START_CANDIDATE', candidateAt: at, candidatePosition: origin, trackingSessionId: randomUUID() }
+          this.snapshot = { state: 'START_CANDIDATE', candidateAt: at, candidatePosition: origin, candidateFirstPosition: position, trackingSessionId: randomUUID() }
           return { ...evidence('trip_start_candidate', at, sog, distance, 0), trackingSessionId: this.snapshot.trackingSessionId }
         }
         if (distance <= this.thresholds.stopRadiusM) {
@@ -71,7 +73,8 @@ export class TripStateMachine {
           this.snapshot = { state: 'STOPPED', stationaryPosition: position }
           return undefined
         }
-        if (duration >= this.thresholds.startDwellMs) {
+        if (duration >= this.thresholds.startDwellMs && distance >= this.thresholds.startDistanceM
+          && distanceMetres(this.snapshot.candidateFirstPosition ?? origin, position) >= 50) {
           const trackingSessionId = this.snapshot.trackingSessionId ?? randomUUID()
           const effectiveAt = this.snapshot.candidateAt ?? at
           this.snapshot = { state: 'MOVING', trackingSessionId }

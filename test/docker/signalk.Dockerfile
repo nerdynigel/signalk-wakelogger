@@ -13,6 +13,7 @@ FROM ${SIGNALK_IMAGE}
 USER root
 COPY --from=plugin-build /package/*.tgz /opt/signalk-wakelogger.tgz
 COPY test/docker/signalk-entrypoint.sh /opt/signalk-wakelogger-entrypoint.sh
+COPY test/docker/seed-idle-history.mjs /opt/seed-idle-history.mjs
 RUN chmod 0755 /opt/signalk-wakelogger-entrypoint.sh \
     && chown node:node /opt/signalk-wakelogger.tgz
 USER node

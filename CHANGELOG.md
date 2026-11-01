@@ -2,6 +2,15 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## [0.2.0-beta.14] - 2026-11-01
+
+- Stop adding stationary power-on data to the upload queue. Automatic trips need sustained movement and distance from the berth; departure samples stay onboard until the trip qualifies. Finish trip remains the crew's explicit confirmation of a short recording.
+- Retire positively identified old idle history with compact cloud acknowledgements, so those positions do not need uploading before the next trip. Unknown old recordings remain onboard for review.
+- Keep unacknowledged recording history through age limits. If the protected queue fills, report that recording has paused instead of silently deleting a trip. Idle exclusions, delivered samples and actual retention loss have separate counters.
+- Remove optional polar/calibration models and the obsolete upload switch from the routine Signal K form. Saving normal settings no longer requires empty polar fields, and existing calibrated settings and pairing credentials are retained.
+
+The matching Wake Logger server update is required to retire old idle history. Existing recorded trips still require the boat's internet connection to finish uploading. Read the [full release notes](docs/releases/0.2.0-beta.14.md) before upgrading.
+
 ## [0.2.0-beta.13] - 2026-10-24
 
 - Show port/starboard approaches to the next mark and estimated tack/gybe points, with filtered heading/wind, stable map layers and no persistent guidance box.

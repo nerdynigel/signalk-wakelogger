@@ -12,6 +12,7 @@ export type ConnectionState = 'offline' | 'connecting' | 'online' | 'degraded' |
 
 interface TransportOptions {
   profile: TelemetryProfile
+  uploadDisposition?: (sample: TelemetrySample) => 'upload' | 'skip' | 'wait'
   onState: (state: ConnectionState, detail?: string) => void
   onMode?: (mode: NetworkMode, reason: string) => void
   onCourse?: (payload: Buffer) => Promise<CourseAcknowledgement>
@@ -33,6 +34,7 @@ interface InFlightBatch { through: number; sentAt: number }
 export class WakeLoggerTransport {
   private client?: MqttClient
   private stopped = true
+  private supportsTripPolicy = false
   private reconnectAttempt = 0
   private reconnectTimer?: NodeJS.Timeout
   private pumpTimer?: NodeJS.Timeout
@@ -76,7 +78,7 @@ export class WakeLoggerTransport {
     }, 5000)
     void this.outbox.latest().then((sample) => {
       if (this.stopped) return
-      this.current = sample
+      this.current = sample && this.canUpload(sample) ? sample : undefined
       this.connect()
     }).catch((error) => this.options.onState('degraded', sanitizeError(String(error))))
   }
@@ -101,7 +103,12 @@ export class WakeLoggerTransport {
     await new Promise<void>((resolve) => client.end(force, {}, () => resolve()))
   }
 
+  private canUpload(sample: TelemetrySample): boolean {
+    return !this.options.uploadDisposition || this.options.uploadDisposition(sample) === 'upload'
+  }
+
   updateCurrent(sample: TelemetrySample): void {
+    if (!this.canUpload(sample)) return
     this.current = sample
     this.statePublishPending = true
     if (this.client?.connected) {
@@ -212,6 +219,7 @@ export class WakeLoggerTransport {
   private async onConnect(client: MqttClient): Promise<void> {
     if (client !== this.client || this.stopped) return
     this.reconnectAttempt = 0
+    this.supportsTripPolicy = false
     this.inFlight = []
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
@@ -277,10 +285,42 @@ export class WakeLoggerTransport {
       const byteRate = health.mode === 'CONSTRAINED' ? this.profile.transport.constrainedBacklogBytesPerSecond : this.profile.transport.normalBacklogBytesPerSecond
       const budget = this.refillBacklogBudget(byteRate)
       if (budget < 512) return
-      const samples = await this.outbox.pendingAfter(this.nextPublishAfter, this.profile.transport.batchSize, Math.min(budget, this.profile.transport.maxPayloadBytes - 1024))
+      let samples = await this.outbox.pendingAfter(this.nextPublishAfter, this.profile.transport.batchSize, Math.min(budget, this.profile.transport.maxPayloadBytes - 1024))
       if (!samples.length) return
       const stats = await this.outbox.stats()
       this.backlogMessageCount = stats.messageCount
+      if (this.options.uploadDisposition) {
+        const disposition = this.options.uploadDisposition(samples[0]!)
+        if (disposition === 'wait') return
+        if (disposition === 'skip') {
+          // Older clouds do not understand exclusions. Keep the durable queue
+          // intact and wait for a capability ACK; never label idle data lost.
+          if (!this.supportsTripPolicy || this.inFlight.length) return
+          const skipped: TelemetrySample[] = []
+          for (const sample of samples) {
+            if (this.options.uploadDisposition(sample) !== 'skip') break
+            if (skipped.length && sample.sequence !== skipped.at(-1)!.sequence + 1) break
+            skipped.push(sample)
+          }
+          const through = skipped.at(-1)!.sequence
+          await this.publish(client, this.topics.telemetry, JSON.stringify({ v: 1, deviceId: this.credentials.deviceId,
+            nonTripFrom: skipped[0]!.sequence, nonTripThrough: through,
+            ...(stats.droppedThrough > stats.acknowledgedSequence ? { droppedThrough: stats.droppedThrough } : {}), samples: [] }), { qos: 1 })
+          this.inFlight.push({ through, sentAt: this.now() }); this.nextPublishAfter = through
+          return
+        }
+        const eligible: TelemetrySample[] = []
+        for (const sample of samples) { if (!this.canUpload(sample)) break; eligible.push(sample) }
+        samples = eligible
+        // Qualification can become durable while the sampler is still
+        // committing its newest frame. Publish the latest eligible state before
+        // releasing departure history, without waiting for another sensor poll.
+        if (!this.current) {
+          const latest = await this.outbox.latest()
+          if (latest && this.canUpload(latest)) { this.current = latest; this.statePublishPending = true }
+        }
+        await this.drainCurrentState()
+      }
       const batch: TelemetryBatch = { v: 1, deviceId: this.credentials.deviceId,
         droppedThrough: stats.droppedThrough > stats.acknowledgedSequence ? stats.droppedThrough : undefined, samples }
       const payload = JSON.stringify(batch)
@@ -326,7 +366,10 @@ export class WakeLoggerTransport {
         this.acknowledgementLatencyMs = this.now() - acknowledgedBatch.sentAt
         this.monitor.acknowledgement(this.acknowledgementLatencyMs)
       }
-      await this.outbox.acknowledge(ack.ackSequence)
+      this.supportsTripPolicy = ack.capabilities?.includes('confirmed-trip-upload-v1') === true
+      const excludedCount = Number.isSafeInteger(ack.excludedSampleCount) && ack.excludedSampleCount! >= 0 ? ack.excludedSampleCount : undefined
+      if (excludedCount === undefined) await this.outbox.acknowledge(ack.ackSequence)
+      else await this.outbox.acknowledge(ack.ackSequence, excludedCount)
       const committed = await this.outbox.stats()
       if (Array.isArray(ack.recordingAcks) && ack.recordingAcks.length <= 25) {
         await this.options.onRecordingAcks?.(ack.recordingAcks.filter((entry) => entry && typeof entry.id === 'string' && Number.isSafeInteger(entry.lastSequence) && ['complete', 'cancelled', 'interrupted'].includes(entry.state)))

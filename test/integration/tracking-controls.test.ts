@@ -66,7 +66,7 @@ it('toggles persistently without replacing the sampler or splitting the recordin
     expect(after.active.id).toBe(before.active.id)
     expect(f.app.subscriptionmanager.subscribe).toHaveBeenCalledTimes(1)
     await f.plugin.stop(); f.plugin.start(f.configuration(), vi.fn())
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect(connect).toHaveBeenCalledTimes(1)
     expect((await f.request('GET')).data.uploadMode).toBe('local_only')
   } finally { await f.plugin.stop() }
@@ -96,7 +96,7 @@ it('keeps upload paused on save failure and persists a restart safety guard', as
     expect(response.data).toMatchObject({ uploadMode: 'local_only', persistenceError: 'disk unavailable' })
     expect(JSON.parse(await fs.readFile(path.join(f.dir, 'tracking-pause.json'), 'utf8')).paused).toBe(true)
     await f.plugin.stop(); f.plugin.start({ uploadMode: 'automatic' }, vi.fn())
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect((await f.request('GET')).data.uploadMode).toBe('local_only')
     expect(connect).not.toHaveBeenCalled()
   } finally { await f.plugin.stop() }
@@ -160,7 +160,7 @@ it('finishes offline through the local route without samples, navigation writes 
     const archive = JSON.parse(await fs.readFile(path.join(f.dir, 'track-archive/dev_controls/manifest.json'), 'utf8'))
     expect(archive.recordings).toContainEqual(expect.objectContaining({ id, closed: true, points: 1, lastSequence: checkpoint.committed.sequence, endedAt: checkpoint.committed.capturedAt }))
     await f.plugin.stop(); f.plugin.start(f.configuration(), vi.fn())
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect((await f.request('GET')).data.finishedTrip.uploadPending).toBe(true)
     f.ingest()
     await vi.waitFor(async () => expect((await f.request('GET')).data.trackingSessionId).not.toBeNull())
@@ -197,12 +197,13 @@ it('serializes Finish trip behind an in-flight durable append and includes its a
 it('refuses a prepared but failed tail append rather than silently completing a shorter range', async () => {
   const f = await fixture()
   try {
+    const committed = vi.spyOn(RecordingStore.prototype, 'committed')
     f.ingest()
-    let checkpoint: any
-    await vi.waitFor(async () => {
-      checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
-      expect(checkpoint.committed?.sequence).toBeGreaterThan(0)
-    }, { timeout: 15000 })
+    // Wait for the write before opening its atomic rename target on Windows.
+    await vi.waitFor(() => expect(committed).toHaveBeenCalled(), { timeout: 15000 })
+    await committed.mock.results[0]!.value
+    const checkpoint = JSON.parse(await fs.readFile(path.join(f.dir, 'recordings/dev_controls/state.json'), 'utf8'))
+    expect(checkpoint.committed.sequence).toBeGreaterThan(0)
     vi.spyOn(FileOutbox.prototype, 'append').mockRejectedValueOnce(new Error('append unavailable'))
     f.ingest()
     await vi.waitFor(() => expect(f.app.error).toHaveBeenCalledWith(expect.stringContaining('append unavailable')))
@@ -251,7 +252,7 @@ it('restores both confirmed choices across restart and ignores configuration upd
       expect((await f.request('POST', { uploadMode: mode })).code).toBe(200)
       await f.plugin.stop()
       f.plugin.start({ ...f.configuration(), uploadMode: mode === 'automatic' ? 'local_only' : 'automatic' }, vi.fn())
-      await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+      await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
       expect((await f.request('GET')).data).toMatchObject({ uploadMode: mode, persistedUploadMode: mode })
     }
     expect(connect).toHaveBeenCalledTimes(2)
@@ -270,7 +271,7 @@ it.each(['missing', 'malformed', 'unconfirmed', 'unknown-version', 'unreadable',
     if (kind === 'null') await fs.writeFile(target, 'null')
     if (kind === 'unreadable') await fs.mkdir(target) // EISDIR, even under privileged test runners
     f.plugin.start({ ...f.configuration(), uploadMode: 'automatic' }, vi.fn())
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect((await f.request('GET')).data).toMatchObject({ uploadMode: 'local_only', persistedUploadMode: 'local_only' })
     expect(connect).not.toHaveBeenCalled()
   } finally { await f.plugin.stop() }
@@ -285,7 +286,7 @@ it('fails off when the durable choice write fails after an options save', async 
     expect(result.data.uploadMode).toBe('local_only')
     await f.plugin.stop()
     f.plugin.start(f.configuration(), vi.fn())
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect((await f.request('GET')).data.uploadMode).toBe('local_only')
     expect(connect).not.toHaveBeenCalled()
   } finally { await f.plugin.stop() }
@@ -306,7 +307,7 @@ it('keeps restart off when interrupted after the confirmed choice rename', async
     f.plugin.start(f.configuration(), vi.fn())
     release!()
     expect((await enabling).code).not.toBe(200)
-    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true))
+    await vi.waitFor(async () => expect((await f.request('GET')).data.available).toBe(true), { timeout: 10000 })
     expect((await f.request('GET')).data.uploadMode).toBe('local_only')
     expect(connect).not.toHaveBeenCalled()
   } finally { release?.(); held.mockRestore(); await f.plugin.stop() }

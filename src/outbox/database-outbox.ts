@@ -5,6 +5,7 @@ import type { OutboxOptions, OutboxSeed, OutboxStats, OutboxStore } from './inte
 interface StateRow {
   next_sequence: number
   acknowledged_sequence: number
+  excluded_count?: number
   dropped_count: number
   dropped_through: number
 }
@@ -35,7 +36,7 @@ const MIGRATIONS = [{
     CREATE INDEX IF NOT EXISTS ix_outbox_records_device_sequence ON outbox_records (device_id, sequence);
     CREATE INDEX IF NOT EXISTS ix_outbox_records_device_captured ON outbox_records (device_id, captured_at);
   `
-}]
+}, { version: 2, sql: `ALTER TABLE outbox_state ADD COLUMN excluded_count INTEGER NOT NULL DEFAULT 0;` }]
 
 export class DatabaseOutbox implements OutboxStore {
   private opened = false
@@ -87,6 +88,7 @@ export class DatabaseOutbox implements OutboxStore {
         [droppedThrough - accountedThrough, droppedThrough, droppedThrough, this.deviceId]
       )
     }
+    if ((this.seed?.excludedCount ?? 0) > 0) await this.database.run('UPDATE outbox_state SET excluded_count = MAX(excluded_count, ?) WHERE device_id = ?', [this.seed!.excludedCount, this.deviceId])
     this.opened = true
     await this.enforceLimits()
   }
@@ -95,6 +97,7 @@ export class DatabaseOutbox implements OutboxStore {
     return this.exclusive(async () => {
       this.assertOpen()
       if (deviceId !== this.deviceId) throw new Error('Outbox device identity does not match')
+      if (this.options.protectRecordingHistory) await this.enforceLimitsUnlocked(Buffer.byteLength(JSON.stringify(draft)) + 256)
       const sample = await this.database.transaction(async (database) => {
         const state = await this.readState(database)
         const value: TelemetrySample = { v: 1, deviceId, sequence: state.next_sequence, ...draft }
@@ -106,7 +109,7 @@ export class DatabaseOutbox implements OutboxStore {
         await database.run('UPDATE outbox_state SET next_sequence = ? WHERE device_id = ?', [value.sequence + 1, deviceId])
         return value
       })
-      await this.enforceLimitsUnlocked()
+      if (!this.options.protectRecordingHistory) await this.enforceLimitsUnlocked()
       return sample
     })
   }
@@ -134,14 +137,16 @@ export class DatabaseOutbox implements OutboxStore {
     })
   }
 
-  acknowledge(sequence: number): Promise<void> {
+  acknowledge(sequence: number, excludedCount?: number): Promise<void> {
     return this.exclusive(async () => {
       this.assertOpen()
       await this.database.transaction(async (database) => {
         const state = await this.readState(database)
         const maximum = state.next_sequence - 1
-        if (!Number.isSafeInteger(sequence) || sequence <= state.acknowledged_sequence || sequence > maximum) return
+        if (!Number.isSafeInteger(sequence) || sequence < state.acknowledged_sequence || sequence > maximum) return
+        if (sequence === state.acknowledged_sequence && (excludedCount === undefined || excludedCount <= (state.excluded_count ?? 0))) return
         await database.run('UPDATE outbox_state SET acknowledged_sequence = ? WHERE device_id = ?', [sequence, this.deviceId])
+        if (excludedCount !== undefined && Number.isSafeInteger(excludedCount) && excludedCount >= 0) await database.run('UPDATE outbox_state SET excluded_count = MAX(excluded_count, ?) WHERE device_id = ?', [excludedCount, this.deviceId])
         await database.run('DELETE FROM outbox_records WHERE device_id = ? AND sequence <= ?', [this.deviceId, sequence])
       })
     })
@@ -174,6 +179,7 @@ export class DatabaseOutbox implements OutboxStore {
         oldestCapturedAt: aggregate.oldest_captured_at === null ? undefined : Number(aggregate.oldest_captured_at),
         acknowledgedSequence: Number(state.acknowledged_sequence),
         currentSequence: Number(state.next_sequence) - 1,
+        excludedCount: Number(state.excluded_count ?? 0),
         droppedCount: Number(state.dropped_count),
         droppedThrough: Number(state.dropped_through)
       }
@@ -189,7 +195,7 @@ export class DatabaseOutbox implements OutboxStore {
     await this.exclusive(() => this.enforceLimitsUnlocked())
   }
 
-  private async enforceLimitsUnlocked(): Promise<void> {
+  private async enforceLimitsUnlocked(reserveBytes = 0): Promise<void> {
     const now = this.options.now?.() ?? Date.now()
     const rows = await this.database.query<SizeRow>(
       'SELECT sequence, payload_bytes FROM outbox_records WHERE device_id = ? ORDER BY sequence ASC', [this.deviceId]
@@ -206,11 +212,17 @@ export class DatabaseOutbox implements OutboxStore {
       const captured = capturedRows[index]
       if (!row || !captured) continue
       const tooOld = Number(captured.captured_at) < cutoff
-      if (!tooOld && total <= this.options.maxBytes) break
+      if (!tooOld && total + reserveBytes <= this.options.maxBytes) break
+      if (this.options.protectRecordingHistory) {
+        const retained = await this.database.query<PayloadRow>('SELECT payload FROM outbox_records WHERE device_id = ? AND sequence = ?', [this.deviceId, row.sequence])
+        const document = retained[0] ? JSON.parse(retained[0].payload) as TelemetrySample : undefined
+        if (!document || document.trackingSessionId || document.recording) break
+      }
       total -= Number(row.payload_bytes)
       dropThrough = Number(row.sequence)
       dropCount += 1
     }
+    if (reserveBytes && total + reserveBytes > this.options.maxBytes) throw new Error('Upload queue full: unacknowledged trip history retained; reconnect to upload before recording more samples')
     if (!dropCount) return
     await this.database.transaction(async (database) => {
       await database.run('DELETE FROM outbox_records WHERE device_id = ? AND sequence <= ?', [this.deviceId, dropThrough])
@@ -224,7 +236,7 @@ export class DatabaseOutbox implements OutboxStore {
 
   private async readState(database: PluginDatabase): Promise<StateRow> {
     const rows = await database.query<StateRow>(
-      'SELECT next_sequence, acknowledged_sequence, dropped_count, dropped_through FROM outbox_state WHERE device_id = ?',
+      'SELECT next_sequence, acknowledged_sequence, dropped_count, dropped_through, excluded_count FROM outbox_state WHERE device_id = ?',
       [this.deviceId]
     )
     if (!rows[0]) throw new Error('Outbox state is unavailable')

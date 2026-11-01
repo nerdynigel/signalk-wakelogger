@@ -164,3 +164,36 @@ The shared display formatter and arrow path are `webapp/wind-readout.mjs`.
 The guidance generator copies it to the website and records its SHA-256 in the
 manifest. Keep generated website artifacts with their source change. Wind
 readout updates do not change recorded sensor values or tack/layline geometry.
+
+
+### Uploading confirmed trips
+
+Stationary power-on readings do not enter the upload queue. The automatic detector
+keeps departure samples locally until movement has lasted at least two minutes,
+the boat is at least 200 metres from the berth reference, and positions show at
+least 50 metres of further progress after the initial candidate fix. Speed
+readings alone and a single GPS jump cannot confirm a trip. The saved departure
+samples are released when the trip qualifies. **Finish trip** is also an explicit
+crew confirmation of an existing short recording.
+
+Live tracking ON still permits small connection/status and course-sync messages.
+It sends position history and onboard plan snapshots only for confirmed trips.
+The onboard app distinguishes waiting for movement, checking a departure, and
+uploading saved history.
+
+On upgrade, the plugin reads retained history before opening its upload
+transport. Positively identified stationary ranges and cancelled departures can
+be retired with a compact, authenticated sequence declaration after the server
+advertises support. Positions in those ranges are not sent. An exclusion declaration does not advance the local receipt cursor; that
+requires the application's durable acknowledgement. Ordinary expiry of legacy
+diagnostic readings is still reported separately as retention loss. The cloud keeps any
+existing receipts, rejects exclusions overlapping retained trip evidence, and
+audits exclusions separately from uploaded samples and actual data loss.
+Ambiguous older recordings are held locally; elapsed time never proves them idle.
+
+Unacknowledged recordings are protected from automatic age-based retention. If
+protected history fills the configured queue capacity, new samples pause with an
+explicit recorder error until uploading frees space. The queue must have enough
+capacity for the planned offline trip. Deploy the matching server migration and
+protocol support before releasing this plugin change; older clouds cannot retire
+idle prefixes and the plugin will retain them rather than silently discard them.
