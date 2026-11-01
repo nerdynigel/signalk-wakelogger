@@ -20,16 +20,21 @@ export function trackingPresentation(status) {
   let description = revoked ? 'Device access revoked. Pair Wake Logger again in Signal K plugin settings.'
     : status.paired !== true ? 'Pair Wake Logger in Signal K plugin settings first.'
       : !available ? 'Recorder unavailable. Check the Signal K plugin status.'
-        : !enabled ? 'Recording locally · cloud uploads paused'
+        : !enabled ? status.uploadPolicy === 'confirmed_trips' ? 'Confirmed trips saved onboard · cloud uploads paused' : 'Recording locally · cloud uploads paused'
           : status.connectionState === 'online' ? 'Sending live data and saved history'
             : 'Recording locally · uploads resume when connected'
+  const confirming = status.uploadPolicy === 'confirmed_trips' && status.trackingState === 'START_CANDIDATE'
+  const waiting = status.uploadPolicy === 'confirmed_trips' && status.trackingState === 'STOPPED' && !pending
+  if (available && enabled && confirming) description = 'Checking movement · departure saved onboard until the trip is confirmed'
+  if (available && enabled && waiting) description = 'Waiting for movement · no trip data to upload'
+  if (status.recordingError) description = `Recording paused: ${status.recordingError}`
   if (status.persistenceError) description = 'Setting could not be saved. Check the current mode before restarting Signal K.'
   if (loss) description += ` ${loss.cohortDropped} sample${loss.cohortDropped === 1 ? '' : 's'} in this upload were discarded by retention limits; this recording is not complete.`
   return {
     enabled, available,
-    mode: revoked ? 'Access revoked' : status.paired !== true ? 'Not paired' : !available ? 'Recorder unavailable' : enabled ? status.connectionState === 'online' ? 'Live + history' : 'Waiting for internet' : 'Record locally',
+    mode: revoked ? 'Access revoked' : status.paired !== true ? 'Not paired' : !available ? 'Recorder unavailable' : enabled ? confirming ? 'Checking movement' : waiting ? 'Waiting for movement' : status.connectionState === 'online' ? 'Live + history' : 'Waiting for internet' : 'Record locally',
     description,
-    queue: pending === null ? '' : pending ? `${pending.toLocaleString()} samples ${enabled ? 'waiting to upload' : 'saved onboard'}` : 'Upload queue empty',
+    queue: pending === null ? '' : pending ? `${pending.toLocaleString()} samples ${confirming ? 'saved onboard · awaiting trip confirmation' : enabled ? 'waiting to upload' : 'saved onboard'}` : 'Upload queue empty',
     loss,
     lifetimeDroppedCount: lifetimeDropped
   }

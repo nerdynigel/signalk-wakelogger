@@ -63,3 +63,26 @@ describe('local recording mode', () => {
     } finally { await plugin.stop() }
   })
 })
+
+it('leaves stationary power-on samples out of the durable upload queue', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'stationary-recording-')); directories.push(directory)
+  await new CredentialStore(path.join(directory, 'identity')).save({ version: 1, deviceId: 'dev_idle', clientId: 'dev_idle', username: 'dev_idle', password: 'a-very-long-secret', mqttHost: 'localhost', mqttPort: 1, tls: false, pairedAt: 1000 })
+  let ingest: ((delta: any) => void) | undefined
+  const app: any = { getDataDirPath: () => directory, setPluginStatus: vi.fn(), setPluginError: vi.fn(), error: vi.fn(), debug: Object.assign(vi.fn(), { enabled: false }),
+    subscriptionmanager: { subscribe: (_options: unknown, _unsub: unknown, _error: unknown, callback: (delta: any) => void) => { ingest = callback } } }
+  const append = vi.spyOn(FileOutbox.prototype, 'append')
+  const connect = vi.spyOn(mqtt, 'connect')
+  const plugin = pluginConstructor(app)
+  try {
+    plugin.start({ samplePeriodMs: 250 }, vi.fn())
+    await vi.waitFor(() => expect(ingest).toBeTypeOf('function'))
+    ingest!({ updates: [{ timestamp: new Date().toISOString(), values: [
+      { path: 'navigation.position', value: { latitude: -27, longitude: 153 } },
+      { path: 'navigation.speedOverGround', value: 0.03 }
+    ] }] })
+    await new Promise(resolve => setTimeout(resolve, 1100))
+    expect(append).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
+    expect(app.error).not.toHaveBeenCalled()
+  } finally { await plugin.stop() }
+})

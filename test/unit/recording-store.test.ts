@@ -27,11 +27,11 @@ describe('durable recordings', () => {
     expect(first.recording).toMatchObject({ firstSequence: 11, startedAt: 1000, state: 'recording' })
     const resumed = new RecordingStore(target)
     await resumed.open()
-    const moving = sample(121000)
+    const moving = sample(121000); moving.values.lat = -27.003
     await resumed.prepare(moving, 12)
     expect(moving.trackingSessionId).toBe(first.trackingSessionId)
-    await resumed.prepare(sample(122000, 0), 13)
-    const stopped = sample(1022000, 0)
+    await resumed.prepare({ ...sample(122000, 0), values: { lat: -27.003, lon: 153, sog_kn: 0 } }, 13)
+    const stopped = sample(1022000, 0); stopped.values.lat = -27.003
     await resumed.prepare(stopped, 14)
     expect(stopped.recording).toEqual({ ...first.recording, state: 'complete', endReason: 'stationary', endedAt: 122000, lastSequence: 14 })
     const closedRestart = new RecordingStore(target)
@@ -74,7 +74,7 @@ describe('durable recordings', () => {
     expect(old.recording).toEqual(first.recording)
     const resumed = new RecordingStore(target)
     await resumed.open()
-    const current = sample(first.capturedAt + 120_000)
+    const current = sample(first.capturedAt + 120_000); current.values.lat = -27.003
     await resumed.prepare(current, 3)
     expect(current.trackingSessionId).toBe(first.trackingSessionId)
     expect(resumed.currentState().state).toBe('MOVING')
@@ -201,9 +201,9 @@ it('preserves a completed automatic stop when it wins the explicit finish race',
   const { store } = await fixture()
   const first = sample(1000); await store.prepare(first, 1)
   await store.committed({ ...first, v: 1, deviceId: 'dev_finish', sequence: 1 })
-  await store.prepare(sample(121000), 2)
-  await store.prepare(sample(122000, 0), 3)
-  const last = sample(1022000, 0); await store.prepare(last, 4)
+  const moving = sample(121000); moving.values.lat = -27.003; await store.prepare(moving, 2)
+  const slow = sample(122000, 0); slow.values.lat = -27.003; await store.prepare(slow, 3)
+  const last = sample(1022000, 0); last.values.lat = -27.003; await store.prepare(last, 4)
   expect(await store.finish(first.trackingSessionId!)).toEqual(last.recording)
   expect(store.manifests()).toHaveLength(1)
 })
@@ -241,4 +241,62 @@ it('prioritizes pending confirmation ahead of older metadata-only manifests in e
   const finished = (await store.finish(draft.trackingSessionId!, 45))!
   await store.acknowledge([{ id: finished.id, state: 'complete', lastSequence: 45 }])
   for (let index = 0; index < 3; index += 1) expect(store.statusManifests()[0]).toEqual(finished)
+})
+
+it('holds departure history locally until sustained displacement and retains that decision after restart', async () => {
+  const { store, target } = await fixture()
+  const asSample = (draft: TelemetryDraft, sequence: number): any => ({ v: 1, deviceId: 'dev_policy', sequence, ...draft })
+  const idle = sample(0, 0); await store.prepare(idle, 1)
+  expect(store.uploadDisposition(asSample(idle, 1))).toBe('wait')
+  const first = sample(1000); await store.prepare(first, 1)
+  expect(store.uploadDisposition(asSample(first, 1))).toBe('wait')
+  expect(store.statusManifests()).toEqual([])
+  const spike = sample(121000); await store.prepare(spike, 2)
+  expect(store.uploadDisposition(asSample(first, 1))).toBe('wait')
+  const moved = sample(122000); moved.values.lat = -27.003; await store.prepare(moved, 3)
+  expect(store.uploadDisposition(asSample(first, 1))).toBe('upload')
+  const resumed = new RecordingStore(target); await resumed.open()
+  expect(resumed.uploadDisposition(asSample(first, 1))).toBe('upload')
+  expect(resumed.statusManifests()).toHaveLength(1)
+})
+
+it('keeps unknown old recordings and classifies positively idle history without sending its positions', async () => {
+  const { store } = await fixture()
+  const unknown: any = { v: 1, deviceId: 'dev_policy', sequence: 2, ...sample(1000), trackingSessionId: 'old-unknown' }
+  expect(store.uploadDisposition(unknown)).toBe('wait')
+  const idle = { ...unknown, sequence: 1, trackingSessionId: undefined, values: { ...unknown.values, sog_kn: 0.05 } }
+  expect(store.uploadDisposition(idle)).toBe('wait')
+  const moved = { ...unknown, sequence: 3, capturedAt: 121000, values: { ...unknown.values, lat: -27.003 } }
+  const outbox: any = { pendingAfter: async (cursor: number) => cursor ? [] : [idle, unknown, moved] }
+  await store.recoverUploadDecisions(outbox)
+  expect(store.uploadDisposition(unknown)).toBe('upload')
+  expect(store.uploadDisposition(idle)).toBe('skip')
+})
+
+it('uses fresh detector speed when telemetry sampling omits SOG without adding it to the uploaded values', async () => {
+  const { store } = await fixture()
+  const draft = sample(1000); delete draft.values.sog_kn
+  await store.prepare(draft, 1, 3)
+  expect(draft.trackingSessionId).toBeTruthy()
+  expect(draft.values.sog_kn).toBeUndefined()
+  expect(store.currentState().state).toBe('START_CANDIDATE')
+})
+
+it('does not classify an unlabelled old moving track as idle just because its speed field is missing', async () => {
+  const { store } = await fixture()
+  const first: any = { v: 1, deviceId: 'old', sequence: 1, ...sample(1000) }; delete first.values.sog_kn
+  const later = { ...first, sequence: 2, capturedAt: 121000, values: { ...first.values, lat: -27.003 } }
+  await store.recoverUploadDecisions({ pendingAfter: async (cursor: number) => cursor ? [] : [first, later] } as any)
+  expect(store.uploadDisposition(first)).toBe('wait')
+  expect(store.uploadDisposition(later)).toBe('wait')
+})
+
+it('treats an explicit crew Finish as confirmation of an existing short durable recording', async () => {
+  const { store } = await fixture()
+  const draft = sample(1000); await store.prepare(draft, 1)
+  const durable: any = { v: 1, deviceId: 'short-trip', sequence: 1, ...draft }
+  await store.committed(durable)
+  expect(store.uploadDisposition(durable)).toBe('wait')
+  await store.finish(draft.trackingSessionId!, 1)
+  expect(store.uploadDisposition(durable)).toBe('upload')
 })

@@ -13,6 +13,7 @@ interface Metadata {
   version: 1
   nextSequence: number
   acknowledgedSequence: number
+  excludedCount?: number
   droppedCount: number
   droppedThrough: number
 }
@@ -48,6 +49,7 @@ export class FileOutbox implements OutboxStore {
       this.assertOpen()
       const sample: TelemetrySample = { v: 1, deviceId, sequence: this.metadata.nextSequence, ...draft }
       const record = encodeRecord(sample)
+      if (this.options.protectRecordingHistory) await this.enforceLimitsUnlocked(record.length)
       const segments = await this.segmentNames()
       let segment = segments.at(-1)
       let rotated = false
@@ -101,11 +103,13 @@ export class FileOutbox implements OutboxStore {
     })
   }
 
-  async acknowledge(sequence: number): Promise<void> {
+  async acknowledge(sequence: number, excludedCount?: number): Promise<void> {
     await this.exclusive(async () => {
       this.assertOpen()
       const maximum = this.metadata.nextSequence - 1
-      if (!Number.isSafeInteger(sequence) || sequence <= this.metadata.acknowledgedSequence || sequence > maximum) return
+      if (!Number.isSafeInteger(sequence) || sequence < this.metadata.acknowledgedSequence || sequence > maximum) return
+      if (sequence === this.metadata.acknowledgedSequence && (excludedCount === undefined || excludedCount <= (this.metadata.excludedCount ?? 0))) return
+      if (excludedCount !== undefined && Number.isSafeInteger(excludedCount) && excludedCount >= 0) this.metadata.excludedCount = Math.max(this.metadata.excludedCount ?? 0, excludedCount)
       this.metadata.acknowledgedSequence = sequence
       await this.persistMetadata()
       await this.reclaimAcknowledgedSegments()
@@ -135,6 +139,7 @@ export class FileOutbox implements OutboxStore {
         oldestCapturedAt: pending[0]?.sample.capturedAt,
         acknowledgedSequence: this.metadata.acknowledgedSequence,
         currentSequence: this.metadata.nextSequence - 1,
+        excludedCount: this.metadata.excludedCount ?? 0,
         droppedCount: this.metadata.droppedCount,
         droppedThrough: this.metadata.droppedThrough
       }
@@ -151,7 +156,7 @@ export class FileOutbox implements OutboxStore {
     await this.exclusive(() => this.enforceLimitsUnlocked())
   }
 
-  private async enforceLimitsUnlocked(): Promise<void> {
+  private async enforceLimitsUnlocked(reserveBytes = 0): Promise<void> {
     const segments = await this.readSegments(false)
     let total = segments.reduce((sum, segment) => sum + segment.bytes, 0)
     const now = this.options.now?.() ?? Date.now()
@@ -162,8 +167,9 @@ export class FileOutbox implements OutboxStore {
       if (!segment) continue
       const newest = segment.records.at(-1)?.sample
       const tooOld = newest !== undefined && newest.capturedAt < cutoff
-      if (!tooOld && total <= this.options.maxBytes) break
+      if (!tooOld && total + reserveBytes <= this.options.maxBytes) break
       const unacknowledged = segment.records.filter((record) => record.sample.sequence > this.metadata.acknowledgedSequence)
+      if (this.options.protectRecordingHistory && unacknowledged.some(({ sample }) => sample.trackingSessionId || sample.recording)) break
       if (unacknowledged.length) {
         this.metadata.droppedCount += unacknowledged.length
         this.metadata.droppedThrough = unacknowledged.at(-1)?.sample.sequence ?? this.metadata.droppedThrough
@@ -173,6 +179,7 @@ export class FileOutbox implements OutboxStore {
       total -= segment.bytes
     }
     if (metadataChanged) await this.persistMetadata()
+    if (reserveBytes && total + reserveBytes > this.options.maxBytes) throw new Error('Upload queue full: unacknowledged trip history retained; reconnect to upload before recording more samples')
   }
 
   private async reclaimAcknowledgedSegments(): Promise<void> {
@@ -192,6 +199,7 @@ export class FileOutbox implements OutboxStore {
           version: 1,
           nextSequence: value.nextSequence,
           acknowledgedSequence: value.acknowledgedSequence,
+          excludedCount: nonNegativeInteger(value.excludedCount) ? value.excludedCount : 0,
           droppedCount: nonNegativeInteger(value.droppedCount) ? value.droppedCount : 0,
           droppedThrough: nonNegativeInteger(value.droppedThrough) ? value.droppedThrough : 0
         }

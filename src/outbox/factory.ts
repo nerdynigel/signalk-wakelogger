@@ -50,6 +50,7 @@ export async function createOutbox(
   const seed: OutboxSeed = {
     currentSequence: fileStats.currentSequence,
     acknowledgedSequence: fileStats.acknowledgedSequence,
+    excludedCount: fileStats.excludedCount ?? 0,
     droppedCount: fileStats.droppedCount,
     droppedThrough: fileStats.droppedThrough
   }

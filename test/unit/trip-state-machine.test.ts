@@ -21,6 +21,23 @@ describe('TripStateMachine', () => {
     expect(stopped?.trackingSessionId).toBe(started?.trackingSessionId)
   })
 
+  it('does not confirm speed spikes or sustained speed readings without displacement', () => {
+    const machine = new TripStateMachine(undefined, thresholds)
+    machine.process(sample(0, -27, 0))
+    machine.process(sample(100, -27, 3))
+    expect(machine.process(sample(2100, -27.00001, 4))).toBeUndefined()
+    expect(machine.currentState().state).toBe('START_CANDIDATE')
+    expect(machine.process(sample(2200, -27.003, 3))?.event).toBe('trip_started')
+  })
+
+  it('does not turn a single GPS position jump followed by a stationary fix into a trip', () => {
+    const machine = new TripStateMachine(undefined, thresholds)
+    machine.process(sample(0, -27, 0))
+    expect(machine.process(sample(100, -27.003, 0))?.event).toBe('trip_start_candidate')
+    expect(machine.process(sample(2100, -27.003, 0))).toBeUndefined()
+    expect(machine.currentState().state).toBe('START_CANDIDATE')
+  })
+
   it('uses geographic distance in metres', () => {
     expect(distanceMetres({ lat: 0, lon: 0 }, { lat: 0.001, lon: 0 })).toBeCloseTo(111.2, 0)
   })

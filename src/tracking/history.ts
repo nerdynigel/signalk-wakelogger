@@ -11,10 +11,11 @@ export interface HistoricalUpload {
   remainingSamples: number
   uploadedSamples: number
   droppedSamples: number
+  excludedSamples?: number
   progressKnown?: boolean
   completedAt?: number
 }
-interface Snapshot extends HistoricalUpload { baseSequence: number; initialDroppedCount: number }
+interface Snapshot extends HistoricalUpload { baseSequence: number; initialDroppedCount: number; initialExcludedCount?: number }
 
 export class UploadHistory {
   private snapshot?: Snapshot
@@ -24,7 +25,7 @@ export class UploadHistory {
     try {
       const value = JSON.parse(await fs.readFile(this.target, 'utf8')) as Snapshot
       if (typeof value.id !== 'string' || ![value.throughSequence, value.baseSequence, value.initialDroppedCount, value.totalSamples, value.remainingSamples, value.uploadedSamples, value.droppedSamples].every((count) => Number.isSafeInteger(count) && count >= 0)
-        || value.totalSamples !== value.remainingSamples + value.uploadedSamples + value.droppedSamples) throw new Error('Invalid historical upload checkpoint')
+        || value.totalSamples !== value.remainingSamples + value.uploadedSamples + value.droppedSamples + (value.excludedSamples ?? 0)) throw new Error('Invalid historical upload checkpoint')
       this.snapshot = value
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   }
@@ -33,6 +34,7 @@ export class UploadHistory {
     const value: Partial<Snapshot> = { ...this.snapshot }
     delete value.baseSequence
     delete value.initialDroppedCount
+    delete value.initialExcludedCount
     return value as HistoricalUpload
   }
   update(stats: OutboxStats, begin = false): Promise<void> {
@@ -42,7 +44,7 @@ export class UploadHistory {
         const baseSequence = Math.max(stats.acknowledgedSequence, stats.droppedThrough)
         const totalSamples = Math.max(0, stats.currentSequence - baseSequence)
         if (totalSamples === 0) return
-        next = { id: randomUUID(), throughSequence: stats.currentSequence, baseSequence, initialDroppedCount: stats.droppedCount,
+        next = { id: randomUUID(), throughSequence: stats.currentSequence, baseSequence, initialDroppedCount: stats.droppedCount, initialExcludedCount: stats.excludedCount ?? 0, excludedSamples: 0,
           startedAt: Date.now(), progressKnown: true, totalSamples, remainingSamples: totalSamples, uploadedSamples: 0, droppedSamples: 0 }
       }
       if (!next || next.completedAt !== undefined) return
@@ -54,7 +56,9 @@ export class UploadHistory {
       const lossesObserved = Math.max(0, stats.droppedCount - next.initialDroppedCount)
       if (lossesObserved > 0) next.progressKnown = false
       next.droppedSamples = Math.min(next.totalSamples - next.remainingSamples - next.uploadedSamples, Math.max(next.droppedSamples, lossesObserved))
-      next.uploadedSamples = next.totalSamples - next.remainingSamples - next.droppedSamples
+      const exclusions = Math.max(0, (stats.excludedCount ?? 0) - (next.initialExcludedCount ?? 0))
+      next.excludedSamples = Math.min(next.totalSamples - next.remainingSamples - next.droppedSamples, Math.max(next.excludedSamples ?? 0, exclusions))
+      next.uploadedSamples = next.totalSamples - next.remainingSamples - next.droppedSamples - next.excludedSamples
       if (next.remainingSamples === 0) next.completedAt = Date.now()
       if (JSON.stringify(next) === JSON.stringify(this.snapshot)) return
       await durableJson(this.target, next)

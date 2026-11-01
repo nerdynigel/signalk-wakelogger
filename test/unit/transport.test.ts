@@ -62,6 +62,46 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('WakeLoggerTransport', () => {
+  it('sends only an idle range marker after capability negotiation, then releases confirmed history after application ACK', async () => {
+    let ack = 0
+    const idle = { ...sample, sequence: 1, values: { ...sample.values, sog_kn: 0.05 } }
+    const confirmed = { ...sample, sequence: 2, trackingSessionId: 'qualified-trip' }
+    const outbox: any = { latest: vi.fn().mockResolvedValue(idle),
+      pendingAfter: vi.fn(async (cursor: number) => [idle, confirmed].filter(s => s.sequence > Math.max(cursor, ack))),
+      stats: vi.fn(async () => ({ currentSequence: 2, acknowledgedSequence: ack, droppedThrough: 0, messageCount: 2 - ack })),
+      acknowledge: vi.fn(async (through: number) => { ack = through }) }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 },
+      outbox, { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), uploadDisposition: s => s.sequence === 1 ? 'skip' : 'upload' })
+    try {
+      transport.start(); await tick()
+      const client = clients[0]!; client.emit('connect'); await tick(); await tick()
+      expect(client.publications.filter(p => p.topic.endsWith('/state') || p.topic.endsWith('/telemetry'))).toEqual([])
+      client.emit('message', 'wakelogger/v1/devices/dev_1/ack', Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 0, capabilities: ['confirmed-trip-upload-v1'], excludedSampleCount: 0 })))
+      await tick(); await tick(); await tick()
+      const marker = client.publications.filter(p => p.topic.endsWith('/telemetry')).map(p => JSON.parse(p.payload))
+      expect(marker).toEqual([{ v: 1, deviceId: 'dev_1', samples: [], nonTripFrom: 1, nonTripThrough: 1 }])
+      expect(outbox.acknowledge).toHaveBeenLastCalledWith(0, 0)
+      client.emit('message', 'wakelogger/v1/devices/dev_1/ack', Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: 1, capabilities: ['confirmed-trip-upload-v1'], excludedSampleCount: 1 })))
+      await tick(); await tick(); await tick()
+      expect(outbox.acknowledge).toHaveBeenLastCalledWith(1, 1)
+      const batches = client.publications.filter(p => p.topic.endsWith('/telemetry')).map(p => JSON.parse(p.payload))
+      expect(batches.at(-1).samples.map((s: any) => s.sequence)).toEqual([2])
+      expect(batches.flatMap(b => b.samples).some(s => s.sequence === 1)).toBe(false)
+    } finally { await transport.stop({ publishOffline: false, force: true }) }
+  })
+
+  it('holds an unqualified departure without publishing state or history', async () => {
+    const outbox: any = { latest: vi.fn().mockResolvedValue(sample), pendingAfter: vi.fn().mockResolvedValue([sample]),
+      stats: vi.fn().mockResolvedValue({ currentSequence: 1, acknowledgedSequence: 0, messageCount: 1, droppedThrough: 0 }) }
+    const transport = new WakeLoggerTransport({ version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'a-very-long-secret', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 }, outbox,
+      { profile: DEFAULT_TELEMETRY_PROFILE, onState: vi.fn(), uploadDisposition: () => 'wait' })
+    try {
+      transport.start(); await tick(); const client = clients[0]!; client.emit('connect'); await tick(); await tick()
+      transport.updateCurrent(sample); await tick()
+      expect(client.publications.filter(p => p.topic.endsWith('/state') || p.topic.endsWith('/telemetry'))).toEqual([])
+    } finally { await transport.stop({ publishOffline: false, force: true }) }
+  })
+
   it.each(['state', 'telemetry'] as const)('releases an abandoned %s callback and drains the replacement connection', async (kind) => {
     const outbox: any = { latest: vi.fn().mockResolvedValue(sample),
       pendingAfter: vi.fn().mockResolvedValue([sample]),

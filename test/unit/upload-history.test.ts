@@ -30,3 +30,14 @@ it('never labels observed retention losses as uploads and marks ambiguous attrib
   await history.update(stats({ acknowledgedSequence: 20, droppedThrough: 15, droppedCount: 5 }))
   expect(history.current()).toMatchObject({ remainingSamples: 0, uploadedSamples: 5, droppedSamples: 5, progressKnown: false })
 })
+
+it('counts acknowledged idle exclusions separately from uploaded trip samples across restart', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-idle-')); directories.push(dir)
+  const target = path.join(dir, 'state.json')
+  const history = new UploadHistory(target); await history.open(); await history.update(stats(), true)
+  await history.update(stats({ acknowledgedSequence: 15, excludedCount: 5 }))
+  expect(history.current()).toMatchObject({ remainingSamples: 5, excludedSamples: 5, uploadedSamples: 0, droppedSamples: 0 })
+  const resumed = new UploadHistory(target); await resumed.open()
+  await resumed.update(stats({ acknowledgedSequence: 20, excludedCount: 5 }))
+  expect(resumed.current()).toMatchObject({ remainingSamples: 0, excludedSamples: 5, uploadedSamples: 5, droppedSamples: 0 })
+})

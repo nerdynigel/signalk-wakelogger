@@ -16,6 +16,7 @@ let events = []
 let processing = Promise.resolve()
 const maximumAcknowledged = new Map()
 const receivedSequences = new Set()
+let excludedSampleCount = 0
 
 await fs.mkdir('/data', { recursive: true })
 try {
@@ -62,14 +63,29 @@ async function processMessage(topic, payloadBuffer) {
   persistedCount += 1
   events.push(event)
   if (events.length > maximumEvents) events = events.slice(-maximumEvents)
+  if (topic === `${baseTopic}/status`) {
+    await publish(`${baseTopic}/ack`, JSON.stringify({ v: 1, deviceId, ackSequence: maximumAcknowledged.get(deviceId) ?? 0,
+      acknowledgedAt: Date.now(), capabilities: ['confirmed-trip-upload-v1'], excludedSampleCount }))
+    return
+  }
   if (topic !== `${baseTopic}/telemetry` || !Array.isArray(payload?.samples)) return
+  if (Number.isSafeInteger(payload.nonTripFrom) && Number.isSafeInteger(payload.nonTripThrough) && !payload.samples.length) {
+    const prior = maximumAcknowledged.get(deviceId) ?? 0
+    if (payload.nonTripFrom > prior + 1 || payload.nonTripThrough < payload.nonTripFrom) throw new Error('invalid_non_trip_range')
+    for (let sequence = prior + 1; sequence <= payload.nonTripThrough; sequence++) if (!receivedSequences.has(sequence)) excludedSampleCount++
+    const through = Math.max(prior, payload.nonTripThrough)
+    maximumAcknowledged.set(deviceId, through)
+    await publish(`${baseTopic}/ack`, JSON.stringify({ v: 1, deviceId, ackSequence: through,
+      acknowledgedAt: Date.now(), capabilities: ['confirmed-trip-upload-v1'], excludedSampleCount }))
+    return
+  }
   const sequences = payload.samples.map((sample) => sample?.sequence).filter(Number.isSafeInteger)
   if (!sequences.length) return
   for (const sequence of sequences) receivedSequences.add(sequence)
   const prior = maximumAcknowledged.get(deviceId) ?? 0
   let through = Math.max(prior, Number.isSafeInteger(payload.droppedThrough) ? payload.droppedThrough : 0)
   while (receivedSequences.has(through + 1)) through += 1
-  await publish(`${baseTopic}/ack`, JSON.stringify({ v: 1, deviceId, ackSequence: through, acknowledgedAt: Date.now() }))
+  await publish(`${baseTopic}/ack`, JSON.stringify({ v: 1, deviceId, ackSequence: through, acknowledgedAt: Date.now(), capabilities: ['confirmed-trip-upload-v1'], excludedSampleCount }))
   maximumAcknowledged.set(deviceId, Math.max(prior, through))
 }
 

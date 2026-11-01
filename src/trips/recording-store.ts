@@ -1,10 +1,12 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { RecordingAcknowledgement, RecordingManifest, TelemetryDraft, TelemetrySample, RecordingStatus } from '../telemetry/types'
-import { TripStateMachine, type TripSnapshot } from './state-machine'
+import { TripStateMachine, distanceMetres, type TripSnapshot } from './state-machine'
 
 interface RecordingSnapshot {
   version: 1
+  uploadDecisions?: Record<string, 'confirmed' | 'cancelled'>
+  idleRanges?: Array<{ first: number; last: number }>
   trip: TripSnapshot
   active?: RecordingManifest
   closed: RecordingManifest[]
@@ -41,7 +43,71 @@ export class RecordingStore {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       if (legacy) this.snapshot.trip = legacy
     }
+    this.snapshot.uploadDecisions ??= {}
+    if (this.snapshot.active && ['MOVING', 'STOP_CANDIDATE'].includes(this.snapshot.trip.state)) this.snapshot.uploadDecisions[this.snapshot.active.id] = 'confirmed'
     this.trip = new TripStateMachine(this.snapshot.trip)
+  }
+
+  isConfirmed(recordingId?: string | null): boolean { return !!recordingId && this.snapshot.uploadDecisions?.[recordingId] === 'confirmed' }
+
+  uploadDisposition(sample: TelemetrySample): 'upload' | 'skip' | 'wait' {
+    const id = sample.trackingSessionId ?? sample.recording?.id
+    if (!id) return this.snapshot.idleRanges?.some(range => sample.sequence >= range.first && sample.sequence <= range.last) ? 'skip' : 'wait'
+    const decision = this.snapshot.uploadDecisions?.[id]
+    if (decision === 'confirmed') return 'upload'
+    if (decision === 'cancelled' || sample.recording?.state === 'cancelled') return 'skip'
+    return 'wait'
+  }
+
+  // Migration reads only. Do not assume that an unrecognised old recording is
+  // idle: retain it unless durable start evidence or sustained displacement
+  // establishes a trip. This runs once before opening the transport.
+  async recoverUploadDecisions(outbox: import('../outbox/interface').OutboxStore): Promise<void> {
+    const decisions = { ...this.snapshot.uploadDecisions }
+    const idleRanges: Array<{ first: number; last: number }> = []
+    let idle: { first: TelemetrySample; last: number; count: number; stationary: boolean; knownSlow: boolean } | undefined
+    const flushIdle = () => {
+      if (idle?.stationary && (idle.count > 1 || idle.knownSlow)) idleRanges.push({ first: idle.first.sequence, last: idle.last })
+      idle = undefined
+    }
+    const origins = new Map<string, { first: TelemetrySample; lastAt: number }>()
+    let cursor = 0
+    while (true) {
+      const samples = await outbox.pendingAfter(cursor, 250, 1024 * 1024)
+      if (!samples.length) break
+      for (const sample of samples) {
+        const id = sample.trackingSessionId ?? sample.recording?.id
+        if (!id && !sample.evidence) {
+          const knownSlow = Number.isFinite(sample.values.sog_kn) && sample.values.sog_kn! >= 0 && sample.values.sog_kn! < 1.5
+          const noSpeed = sample.values.sog_kn === undefined
+          if (!idle) idle = { first: sample, last: sample.sequence, count: 0, stationary: true, knownSlow }
+          idle.stationary &&= (knownSlow || noSpeed) && distanceMetres(
+            { lat: idle.first.values.lat, lon: idle.first.values.lon }, { lat: sample.values.lat, lon: sample.values.lon }) < 75
+          idle.last = sample.sequence; idle.count += 1
+          continue
+        }
+        flushIdle()
+        if (!id) continue
+        if (sample.evidence?.event === 'trip_started') decisions[id] = 'confirmed'
+        if (decisions[id] === 'confirmed') continue
+        if (sample.recording?.state === 'cancelled') { decisions[id] = 'cancelled'; continue }
+        const origin = origins.get(id)
+        if (!origin || sample.capturedAt < origin.lastAt || sample.capturedAt - origin.lastAt > 5 * 60_000) origins.set(id, { first: sample, lastAt: sample.capturedAt })
+        else {
+          origin.lastAt = sample.capturedAt
+          if (sample.capturedAt - origin.first.capturedAt >= 120_000 && distanceMetres(
+            { lat: origin.first.values.lat, lon: origin.first.values.lon }, { lat: sample.values.lat, lon: sample.values.lon }) >= 200) decisions[id] = 'confirmed'
+        }
+      }
+      const through = samples.at(-1)!.sequence
+      if (through <= cursor) throw new Error('Unable to classify retained upload history')
+      cursor = through
+    }
+    flushIdle()
+    if (JSON.stringify(decisions) !== JSON.stringify(this.snapshot.uploadDecisions) || JSON.stringify(idleRanges) !== JSON.stringify(this.snapshot.idleRanges)) {
+      const next = { ...this.snapshot, uploadDecisions: decisions, idleRanges }
+      await this.persist(next); this.snapshot = next
+    }
   }
 
   currentState(): TripSnapshot { return this.trip.currentState() }
@@ -61,7 +127,7 @@ export class RecordingStore {
     if (finished && closed.some((entry) => entry.id === finished.id) && !page.some((entry) => entry.id === finished.id)) page.push(finished)
     const priority = (manifest: RecordingManifest): number => (this.snapshot.confirmations ?? []).some((entry) => entry.manifest.id === manifest.id) ? manifest.id === finished?.id ? 2 : 1 : 0
     page.sort((a, b) => priority(b) - priority(a))
-    return structuredClone([...page, ...(this.snapshot.active ? [this.snapshot.active] : [])])
+    return structuredClone([...page, ...(this.snapshot.active ? [this.snapshot.active] : [])].filter(manifest => manifest.state !== 'recording' || this.snapshot.uploadDecisions?.[manifest.id] === 'confirmed'))
   }
 
   finishedStatus(): { manifest: RecordingManifest; uploadPending: boolean; confirmationPending: boolean; cloudStatus: RecordingStatus | null } | null {
@@ -128,6 +194,8 @@ export class RecordingStore {
     const next = structuredClone(this.snapshot)
     next.closed.push(closed)
     next.active = undefined
+    // Finish is the crew's explicit confirmation of this durable recording.
+    next.uploadDecisions = { ...next.uploadDecisions, [closed.id]: 'confirmed' }
     next.lastFinished = closed
     next.lastFinishedStatus = undefined
     next.confirmations = [...(next.confirmations ?? []), { manifest: closed }]
@@ -151,7 +219,7 @@ export class RecordingStore {
   // Checkpoint BEFORE append: a power loss may leave a declared missing sample,
   // but can never make an incomplete recording look complete. Cloud receipt
   // counts must match both recording ID and sequence, never sequence alone.
-  async prepare(draft: TelemetryDraft, sequence: number): Promise<void> {
+  async prepare(draft: TelemetryDraft, sequence: number, movementSogKn = draft.values.sog_kn): Promise<void> {
     if (!this.snapshot.active && this.snapshot.restartAfter !== undefined && draft.capturedAt <= this.snapshot.restartAfter) return
     const next = structuredClone(this.snapshot)
     let trip = new TripStateMachine(next.trip)
@@ -173,9 +241,11 @@ export class RecordingStore {
     // do not let an old source clock cancel a current trip or move its bounds
     // backwards. Receipt-time fallbacks and replayed instruments can interleave.
     const outOfOrder = next.lastCapturedAt !== undefined && draft.capturedAt < next.lastCapturedAt
-    const evidence = outOfOrder ? undefined : trip.process(draft)
+    const evidence = outOfOrder ? undefined : trip.process({ ...draft, values: { ...draft.values, sog_kn: movementSogKn } })
     if (evidence) draft.evidence = evidence
     const state = trip.currentState()
+    next.uploadDecisions ??= {}
+    if (evidence?.event === 'trip_started' && evidence.trackingSessionId) next.uploadDecisions[evidence.trackingSessionId] = 'confirmed'
     if (!next.active && state.trackingSessionId) {
       next.active = { id: state.trackingSessionId, startedAt: evidence?.effectiveAt ?? draft.capturedAt, firstSequence: sequence, state: 'recording' }
     }
@@ -187,6 +257,7 @@ export class RecordingStore {
           endReason: evidence?.event === 'trip_stopped' ? 'stationary' : undefined,
           endedAt: Math.max(next.active.startedAt, evidence?.effectiveAt ?? draft.capturedAt), lastSequence: sequence
         }
+        if (closed.state === 'cancelled' && next.uploadDecisions[next.active.id] !== 'confirmed') next.uploadDecisions[next.active.id] = 'cancelled'
         next.closed.push(closed)
         next.active = undefined
         draft.recording = closed

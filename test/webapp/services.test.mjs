@@ -926,3 +926,14 @@ test('onboard instrument output supplies direct ground wind even when the displa
   const waterOnly = instrumentReadings({ navigation, environment: { wind: { ...environment.wind, speedOverGround: undefined } }, now })
   assert.equal(vesselGuideBearings(waterOnly.readings, null, waterOnly.guideWind).maneuverBearing, null)
 })
+
+
+test('confirmed-trip upload presentation distinguishes idle, departure confirmation and a full protected queue', () => {
+  const status = { uploadMode: 'automatic', paired: true, available: true, recording: true, connectionState: 'online', uploadPolicy: 'confirmed_trips', trackingState: 'STOPPED', queue: { messageCount: 0 } }
+  assert.equal(trackingPresentation(status).mode, 'Waiting for movement')
+  assert.match(trackingPresentation(status).description, /no trip data to upload/)
+  const candidate = trackingPresentation({ ...status, trackingState: 'START_CANDIDATE', queue: { messageCount: 12 } })
+  assert.equal(candidate.mode, 'Checking movement')
+  assert.match(candidate.queue, /saved onboard.*awaiting trip confirmation/)
+  assert.match(trackingPresentation({ ...status, recordingError: 'Upload queue full; saved trips retained' }).description, /Recording paused.*saved trips retained/)
+})

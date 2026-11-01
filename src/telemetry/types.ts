@@ -74,6 +74,8 @@ export interface TelemetryBatch {
   v: 1
   deviceId: string
   droppedThrough?: number
+  nonTripFrom?: number
+  nonTripThrough?: number
   samples: TelemetrySample[]
 }
 
@@ -87,6 +89,8 @@ export interface ApplicationAck {
   deviceId: string
   ackSequence: number
   acknowledgedAt?: number
+  capabilities?: string[]
+  excludedSampleCount?: number
 }
 
 export interface PluginStatusMetrics {

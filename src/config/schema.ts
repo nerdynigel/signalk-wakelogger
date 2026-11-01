@@ -1,17 +1,23 @@
+// Null defaults keep optional expert models absent when Signal K builds form
+// defaults. Its form otherwise creates empty objects with required children.
+function optionalModel<T extends object>(schema: T) {
+  return { default: null, anyOf: [{ type: 'null' }, schema] } as const
+}
+
 export const configSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    guidance: { type: 'object', title: 'Sailing guidance', additionalProperties: false, properties: {
+    guidance: optionalModel({ type: 'object', title: 'Sailing guidance', additionalProperties: false, properties: {
       enabled: { type: 'boolean', title: 'Enabled', default: true },
-      polar: { type: 'object', title: 'Validated vessel polars', additionalProperties: false, required: ['id', 'validated', 'points'], properties: {
+      polar: optionalModel({ type: 'object', title: 'Validated vessel polars', additionalProperties: false, required: ['id', 'validated', 'points'], properties: {
         id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,64}$' }, validated: { type: 'boolean', enum: [true] },
         points: { type: 'array', minItems: 1, maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['twsKn', 'upwindTwaDeg', 'upwindSpeedKn', 'downwindTwaDeg', 'downwindSpeedKn'], properties: {
           twsKn: { type: 'number', minimum: 0, maximum: 150 }, upwindTwaDeg: { type: 'number', minimum: 20, maximum: 75 }, upwindSpeedKn: { type: 'number', minimum: 0.5, maximum: 80 },
           downwindTwaDeg: { type: 'number', minimum: 100, maximum: 175 }, downwindSpeedKn: { type: 'number', minimum: 0.5, maximum: 80 }
         } } }
-      } },
-      calibration: { type: 'object', title: 'Validated vessel calibration', additionalProperties: false,
+      } }),
+      calibration: optionalModel({ type: 'object', title: 'Validated vessel calibration', additionalProperties: false,
         required: ['id', 'validated', 'heelCoefficient'], properties: {
           id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,64}$' }, validated: { type: 'boolean', enum: [true] },
           heelCoefficient: { type: 'number', minimum: -100, maximum: 100 },
@@ -20,8 +26,8 @@ export const configSchema = {
           rudderCoefficient: { type: 'number', minimum: -2, maximum: 2 },
           minSpeedKn: { type: 'number', minimum: 0.5, maximum: 10 },
           maxLeewayDeg: { type: 'number', minimum: 1, maximum: 25 }
-        } }
-    } },
+        } })
+    } }),
     uploadMode: {
       type: 'string',
       title: 'Upload mode',
@@ -33,7 +39,7 @@ export const configSchema = {
     pairingCode: {
       type: 'string',
       title: 'Wake Logger pairing code',
-      description: 'Single-use code generated in Wake Logger. It is not retained as an MQTT credential.'
+      description: 'Enter a single-use code only when pairing a new device. Leave blank when already paired: saved device credentials survive updates and restarts.'
     },
     pairingApiUrl: {
       type: 'string',
@@ -76,4 +82,11 @@ export const configSchema = {
       description: 'Automatic advances the active course point when the onboard app detects a rounding, start or finish; it also records evidence for Wake Logger. Suggest asks the crew first. Off records evidence only.'
     }
   }
+} as const
+
+// Model coefficients belong in expert configuration, not the routine pairing
+// form. Keep their schema and saved values for existing calibrated vessels.
+export const configUiSchema = {
+  guidance: { 'ui:field': 'NullField', 'ui:fieldReplacesAnyOrOneOf': true },
+  uploadMode: { 'ui:widget': 'hidden' }
 } as const

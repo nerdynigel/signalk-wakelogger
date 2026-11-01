@@ -20,6 +20,29 @@ function options(overrides: object = {}): any {
 afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 
 describe('FileOutbox', () => {
+  it('retains unacknowledged trip history past the age limit and refuses capacity pressure before committing another sample', async () => {
+    const dir = await tempDir()
+    let now = 1000
+    const settings = options({ protectRecordingHistory: true, maxBytes: 1800, maxAgeMs: 500, segmentBytes: 300, now: () => now })
+    const outbox = new FileOutbox(dir, settings); await outbox.open()
+    const trip = { ...draft(1000), trackingSessionId: 'confirmed-trip' }
+    await outbox.append('dev_1', trip); now = 1000000
+    await outbox.append('dev_1', { ...trip, capturedAt: now })
+    expect((await outbox.pending(100, 100000)).map(s => s.sequence)).toEqual([1, 2])
+    let failed = false
+    for (let index = 0; index < 20; index++) {
+      const before = (await outbox.stats()).currentSequence
+      try { await outbox.append('dev_1', { ...trip, capturedAt: now + index }) }
+      catch { expect((await outbox.stats()).currentSequence).toBe(before); failed = true; break }
+    }
+    expect(failed).toBe(true)
+    expect((await outbox.stats()).droppedCount).toBe(0)
+    await outbox.close()
+    const resumed = new FileOutbox(dir, settings); await resumed.open()
+    expect((await resumed.pending(100, 100000))[0]?.sequence).toBe(1)
+    await resumed.close()
+  })
+
   it('persists sequence and acknowledgement state across restart', async () => {
     const dir = await tempDir()
     const first = new FileOutbox(dir, options())

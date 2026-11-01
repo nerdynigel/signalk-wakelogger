@@ -204,7 +204,7 @@ describe('onboard race plan integration', () => {
     } finally { await f.stop() }
   })
 
-  it('queues onboard snapshots while local-only and uploads them when Live tracking returns', async () => {
+  it('queues confirmed-trip snapshots while local-only and uploads them when Live tracking returns', async () => {
     const clients: FakeMqttClient[] = []
     vi.spyOn(mqtt, 'connect').mockImplementation(() => {
       const client = new FakeMqttClient()
@@ -214,6 +214,13 @@ describe('onboard race plan integration', () => {
     vi.stubGlobal('fetch', vi.fn())
     const f = await fixture()
     const config = { uploadMode: 'local_only', samplePeriodMs: 250 }
+    // This scenario resumes an already qualified trip. A route preview at the
+    // berth must remain local even when the upload switch is subsequently ON.
+    const recordingId = '00000000-0000-4000-8000-000000000042'
+    const startedAt = Date.now() - 180000
+    const recordingTarget = path.join(f.directory, 'recordings', 'dev_onboard', 'state.json')
+    await fs.mkdir(path.dirname(recordingTarget), { recursive: true })
+    await fs.writeFile(recordingTarget, JSON.stringify({ version: 1, trip: { state: 'MOVING', trackingSessionId: recordingId }, active: { id: recordingId, startedAt, firstSequence: 1, state: 'recording' }, closed: [] }))
     try {
       f.start(config)
       await vi.waitFor(async () => expect((await f.request('GET', '/tracking')).data.available).toBe(true))
