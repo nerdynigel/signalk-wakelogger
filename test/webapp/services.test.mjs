@@ -937,3 +937,48 @@ test('confirmed-trip upload presentation distinguishes idle, departure confirmat
   assert.match(candidate.queue, /saved onboard.*awaiting trip confirmation/)
   assert.match(trackingPresentation({ ...status, recordingError: 'Upload queue full; saved trips retained' }).description, /Recording paused.*saved trips retained/)
 })
+
+
+test('current and following legs retain separate estimated apparent wind offline', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const state = { uploadMode: 'local_only', pack: { available: true, applicable: true }, latestSnapshot: { plan: { legs: [
+    { to: { name: 'Top' }, awaDeg: 34.2, awsKnots: 19.4, plan: { summary: 'Reef 1 + J3' } },
+    { to: { name: 'Finish' }, awaDeg: 125, awsKnots: 11.2, plan: { summary: 'Main + A2' } }
+  ] } } }
+  const view = racePlanPresentation(state)
+  assert.equal(view.currentLeg.awaDeg, 34.2)
+  assert.equal(view.currentLeg.awsKnots, 19.4)
+  assert.equal(view.followingLeg.awaDeg, 125)
+  assert.equal(view.followingLeg.summary, 'Main + A2')
+  state.latestSnapshot.plan.legs.shift()
+  assert.equal(racePlanPresentation(state).currentLeg.name, 'Finish')
+  assert.equal(racePlanPresentation(state).followingLeg, null)
+  for (const value of [null, undefined, NaN, Infinity, '12']) {
+    state.latestSnapshot.plan.legs[0].awaDeg = value
+    state.latestSnapshot.plan.legs[0].awsKnots = value
+    assert.equal(racePlanPresentation(state).currentLeg.awaDeg, null)
+    assert.equal(racePlanPresentation(state).currentLeg.awsKnots, null)
+  }
+  Object.assign(state.latestSnapshot.plan.legs[0], { awaDeg: 0, awsKnots: 0 })
+  assert.equal(racePlanPresentation(state).currentLeg.awaDeg, 0)
+  state.latestSnapshot.plan.legs[0].conditions = { forecastCoverage: 'out_of_range' }
+  assert.equal(racePlanPresentation(state).currentLeg.awsKnots, null)
+  state.pack.applicable = false
+  assert.equal(racePlanPresentation(state).currentLeg, null)
+  assert.equal(racePlanPresentation(state).followingLeg, null)
+})
+
+
+test('cloud preview is current while mismatched and completed onboard legs are suppressed', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const snapshot = { tracking: { activeIndex: 1 }, plan: { legs: [{ awaDeg: 45, awsKnots: 18 }] } }
+  const state = { uploadMode: 'automatic', pack: { available: true, applicable: true }, preview: snapshot }
+  assert.equal(racePlanPresentation(state).historyOnly, false)
+  assert.equal(racePlanPresentation(state).preview, true)
+  assert.equal(racePlanPresentation(state).currentLeg.awsKnots, 18)
+  state.courseComplete = true
+  assert.equal(racePlanPresentation(state).currentLeg, null)
+  state.courseComplete = false
+  state.activeIndex = 2
+  assert.equal(racePlanPresentation(state).currentLeg, null)
+})

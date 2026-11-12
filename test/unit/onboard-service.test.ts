@@ -92,6 +92,26 @@ describe('onboard calculation authority', () => {
     service.close()
   })
 
+  it('provides a read-only onboard preview under cloud authority without writing snapshots', async () => {
+    const { service, snapshots } = await fixture({ authority: 'automatic' })
+    const status = service.status() as { calculationAuthority: string; preview: { plan: { legs: Array<{ awaDeg: number; awsKnots: number }> } } }
+    expect(status.calculationAuthority).toBe('cloud')
+    expect(status.preview.plan.legs).toHaveLength(2)
+    expect(status.preview.plan.legs[0]!.awaDeg).toEqual(expect.any(Number))
+    expect(status.preview.plan.legs[1]!.awsKnots).toEqual(expect.any(Number))
+    expect(snapshots.latest()).toBeNull()
+    expect(snapshots.pending()).toHaveLength(0)
+    service.close()
+  })
+
+  it('withholds cloud previews for reversed courses and inactive races', async () => {
+    for (const options of [{ reverse: true }, { racing: false }]) {
+      const { service } = await fixture({ authority: 'automatic', ...options })
+      expect(service.status()).toMatchObject({ calculationAuthority: 'cloud', preview: null })
+      service.close()
+    }
+  })
+
   it('runs onboard as soon as authority transfers to local-only', async () => {
     const { service, snapshots } = await fixture()
     expect(service.calculationAuthority).toBe('onboard')

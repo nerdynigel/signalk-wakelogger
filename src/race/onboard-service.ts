@@ -160,8 +160,8 @@ export class OnboardRaceService {
     return snapshot
   }
 
-  availability(force = false): { ok: true; pack: RacePack; course: OnboardCourseState } | { ok: false; reason: OnboardAvailabilityReason } {
-    if (this.authority !== 'onboard') return { ok: false, reason: 'cloud_authority' }
+  availability(force = false, preview = false): { ok: true; pack: RacePack; course: OnboardCourseState } | { ok: false; reason: OnboardAvailabilityReason } {
+    if (!preview && this.authority !== 'onboard') return { ok: false, reason: 'cloud_authority' }
     const pack = this.options.packs.current()
     if (!pack) return { ok: false, reason: 'no_race_pack' }
     const course = this.options.course()
@@ -193,8 +193,27 @@ export class OnboardRaceService {
     const course = this.options.course()
     const observations = this.options.observations.observations(this.now())
     const reason = this.lastReason
+    // A read-only onboard preview keeps sail preparation available while the
+    // cloud owns live recalculation. Never persist or publish this as authority.
+    let preview = null
+    const available = this.authority === 'cloud' ? this.availability(true, true) : null
+    if (available?.ok) {
+      try {
+        const plan = buildOnboardPlan({
+          pack: available.pack, activeIndex: available.course.activeIndex,
+          averages: observations.readiness.ready ? observations.averages : null,
+          position: observations.position,
+          now: this.now(),
+          vessel: vesselPerformanceFromPack(available.pack) ?? this.options.vessel?.() ?? null
+        })
+        preview = { generatedAt: this.now(), plan, warning: plan.warnings[0] ?? null, forecastCoverage: plan.forecastCoverage }
+      } catch { /* Incomplete data leaves the historical snapshot explicitly labelled. */ }
+    }
     return {
       calculationAuthority: this.authority,
+      preview,
+      courseComplete: Boolean(course && course.activeIndex >= course.totalPoints),
+      activeIndex: course?.activeIndex ?? null,
       lastLocalCalculationAt: this.lastCalculationAt,
       reason,
       warning: this.lastWarning,

@@ -636,3 +636,19 @@ deterministic for identical inputs. The rule-set version travels with the pack.
 5. Calibration: compare onboard plans and detections with cloud analysis and
    tune thresholds. **Ongoing; onboard snapshots publish as evidence when Live
    tracking resumes.**
+
+## Current and following leg display
+
+The Race tab distinguishes Current leg from After next mark, showing sail-plan
+summaries (including reefing) and estimated AWA in degrees / AWS in knots.
+Missing estimates display —. An expired forecast suppresses that leg's estimates.
+The final leg shows Finish — no following leg.
+
+GET /race-plan adds a nullable `preview`, `activeIndex`, and `courseComplete`.
+In automatic tracking, `preview` is a read-only calculation from the applicable
+Race Pack and fresh position, using the same observation readiness and forecast
+rules as the onboard planner. It never creates or uploads an authoritative
+snapshot, starts the local scheduler, or changes cloud authority. The UI labels
+it Onboard preview. With no usable preview, older snapshots stay historical.
+Local-only tracking continues to use durable onboard snapshots. Snapshots for
+a previous active waypoint are held until recalculation catches up.

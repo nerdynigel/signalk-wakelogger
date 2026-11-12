@@ -339,8 +339,8 @@ const onboardRacePlan = {
   latestSnapshot: {
     generatedAt: Date.now(),
     plan: { legs: [
-      { sequence: 1, to: { name: 'Eastern mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45 }, pointOfSail: 'close reach', plan: { summary: 'Full main + No. 3 jib', confidence: 'high' } },
-      { sequence: 2, to: { name: 'Race finish' }, conditions: { source: 'forecast', twsKnots: 14, twdDeg: 60 }, pointOfSail: 'beam reach', plan: { summary: 'Full main + A2 kite', confidence: 'medium' } }
+      { sequence: 1, awaDeg: 34, awsKnots: 19.4, to: { name: 'Eastern mark' }, conditions: { source: 'observed', twsKnots: 12, twdDeg: 45 }, pointOfSail: 'close reach', plan: { summary: 'Full main + No. 3 jib', confidence: 'high' } },
+      { sequence: 2, awaDeg: 125, awsKnots: 11.2, to: { name: 'Race finish' }, conditions: { source: 'forecast', twsKnots: 14, twdDeg: 60 }, pointOfSail: 'beam reach', plan: { summary: 'Full main + A2 kite', confidence: 'medium' } }
     ] }
   }
 }
@@ -353,6 +353,12 @@ test('shows onboard Race Plan authority and recommendations in local-only mode',
   await expect(page.locator('[data-leg=current]')).toContainText('Eastern mark')
   await expect(page.locator('[data-leg=current]')).toContainText('Full main + No. 3 jib')
   await expect(page.locator('[data-leg=current]')).toContainText('observed')
+  await expect(page.locator('[data-leg=current]')).toContainText('Current leg')
+  await expect(page.locator('[data-leg=current]')).toContainText('Estimated AWA / AWS: 34° / 19.4 kn')
+  await expect(page.locator('[data-leg=remaining]')).toContainText('After next mark')
+  await expect(page.locator('[data-leg=remaining]')).toContainText('Estimated AWA / AWS: 125° / 11.2 kn')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('[data-leg=remaining]')).toBeVisible()
   await expect(page.locator('[data-leg=remaining]')).toContainText('Race finish')
   await page.screenshot({ path: testInfo.outputPath('onboard-race-plan.png'), fullPage: true })
   expect(external).toEqual([])
@@ -1424,4 +1430,15 @@ test('GPS loss preserves fresh standalone wind without reusing a published track
   await expect(twd).toContainText('060°')
   await expect(page.locator('#map')).toHaveAttribute('data-heading-guide-bearing', '')
   await expect(page.locator('.opposite-tack-guide')).toHaveCount(0)
+})
+
+
+test('automatic mode displays a fresh onboard preview without internet', async ({ page }) => {
+  const { external } = await mockBoat(page, { racePlan: { ...onboardRacePlan, uploadMode: 'automatic', calculationAuthority: 'cloud', preview: onboardRacePlan.latestSnapshot } })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#race-plan-list')).toContainText('Onboard preview · cloud remains authoritative')
+  await expect(page.locator('[data-leg=current]')).toContainText('34° / 19.4 kn')
+  await expect(page.locator('[data-leg=remaining]')).toContainText('125° / 11.2 kn')
+  await expect(page.locator('#race-plan-list')).not.toContainText('historical')
+  expect(external).toEqual([])
 })

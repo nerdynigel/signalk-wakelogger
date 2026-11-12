@@ -18,7 +18,9 @@ function formatLeg(leg, index) {
   const outOfRange = leg.conditions?.forecastCoverage === 'out_of_range'
   return {
     index,
-    name: leg.to?.name || `Leg ${leg.sequence ?? index + 1}`,
+    name: [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ') || `Leg ${leg.sequence ?? index + 1}`,
+    awaDeg: !outOfRange && Number.isFinite(leg.awaDeg) ? leg.awaDeg : null,
+    awsKnots: !outOfRange && Number.isFinite(leg.awsKnots) ? leg.awsKnots : null,
     sequence: leg.sequence ?? null,
     distanceNm: typeof leg.distanceNm === 'number' ? leg.distanceNm : null,
     pointOfSail: leg.pointOfSail ?? null,
@@ -37,20 +39,23 @@ export function racePlanPresentation(racePlan) {
     return {
       uploadMode: null, authority: 'Wake Logger', authorityDetail: 'Waiting for Signal K',
       packAvailable: false, packStatus: 'No Race Pack synced yet', packApplicable: false,
-      stale: true, warning: null, lastUpdated: null, currentLeg: null, remainingLegs: [], historyOnly: false
+      stale: true, warning: null, lastUpdated: null, currentLeg: null, followingLeg: null, remainingLegs: [], historyOnly: false
     }
   }
   const onboardAuthority = racePlan.calculationAuthority === 'onboard' || racePlan.uploadMode === 'local_only'
   const authority = onboardAuthority ? 'Onboard' : 'Wake Logger'
   const pack = racePlan.pack || {}
-  const snapshot = racePlan.latestSnapshot || null
+  const preview = !onboardAuthority && racePlan.preview ? racePlan.preview : null
+  const snapshot = preview || racePlan.latestSnapshot || null
   const legs = Array.isArray(snapshot?.plan?.legs) ? snapshot.plan.legs : []
   const packAvailable = pack.available === true
   const packApplicable = pack.applicable === true
   // An available but inapplicable pack is retained ("stored"), never "ready for
   // this race", and an old snapshot must not be shown as current for a changed
   // course.
-  const usable = packAvailable && packApplicable
+  const courseComplete = racePlan.courseComplete === true
+  const snapshotMatchesLeg = !snapshot?.tracking || racePlan.activeIndex == null || snapshot.tracking.activeIndex === racePlan.activeIndex
+  const usable = packAvailable && packApplicable && !courseComplete && snapshotMatchesLeg
   const currentLeg = usable ? formatLeg(legs[0], 0) : null
   const remainingLegs = usable ? legs.map((leg, index) => formatLeg(leg, index)).filter(Boolean) : []
   const revision = pack.revision ?? null
@@ -69,20 +74,23 @@ export function racePlanPresentation(racePlan) {
     if (!packAvailable) warning = NO_PACK_WARNING
     else if (!packApplicable) warning = 'The Race Pack does not match the selected Wake Logger course. Onboard recommendations are held until the courses match.'
     else if (!snapshot) { warning = NO_CALCULATION_WARNING; stale = true }
-  } else if (snapshot) {
+  } else if (snapshot && !preview) {
     stale = true
   }
+  if (!onboardAuthority && !snapshot && packAvailable && packApplicable) warning = 'Waiting for current position and race conditions to calculate onboard guidance.'
   // Per-snapshot warnings (observation fallback, forecast expiry) take
   // precedence because they describe the current plan precisely.
-  if (onboardAuthority) {
+  if (onboardAuthority || preview) {
     if (snapshot?.warning) { warning = snapshot.warning; stale = true }
     else if (snapshot?.forecastCoverage === 'partial' && snapshot?.plan?.warnings?.length) { warning = snapshot.plan.warnings[0]; stale = true }
   }
 
   return {
+    courseComplete,
+    preview: !!preview,
     uploadMode: racePlan.uploadMode ?? null,
     authority,
-    authorityDetail: onboardAuthority ? 'Calculated on this vessel' : 'Calculated by Wake Logger cloud',
+    authorityDetail: onboardAuthority ? 'Calculated on this vessel' : preview ? 'Onboard preview; Wake Logger cloud remains authoritative' : 'Calculated by Wake Logger cloud',
     packAvailable,
     packStatus,
     packApplicable,
@@ -92,7 +100,8 @@ export function racePlanPresentation(racePlan) {
     observationsReady: racePlan.observationsReady !== false,
     lastUpdated: clock(snapshot?.generatedAt ?? null),
     currentLeg,
+    followingLeg: remainingLegs[1] ?? null,
     remainingLegs,
-    historyOnly: !onboardAuthority && !!snapshot
+    historyOnly: !onboardAuthority && !preview && !!snapshot
   }
 }

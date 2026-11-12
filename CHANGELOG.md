@@ -2,6 +2,12 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased — Sail preparation for current and following legs
+
+- The Race panel shows the recommended sail plan and estimated apparent wind angle (AWA) and speed (AWS) for the current leg and the leg after the next mark. Sail summaries retain reefing instructions.
+- The standalone Signal K app labels the two legs clearly and shows unavailable estimates as —. With a previously synced, applicable Race Pack and fresh position, guidance works without internet. Automatic tracking offers an onboard preview while Wake Logger remains authoritative; historical calculations remain labelled.
+- Upgrade the Wake Logger Signal K plugin to the release containing this change. Before departure, turn Live tracking on to sync the selected Race Plan and confirm Race Pack readiness. The website change is available after the matching website update.
+
 ## [0.2.0-beta.14] - 2026-11-01
 
 - Stop adding stationary power-on data to the upload queue. Automatic trips need sustained movement and distance from the berth; departure samples stay onboard until the trip qualifies. Finish trip remains the crew's explicit confirmation of a short recording.

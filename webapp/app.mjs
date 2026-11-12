@@ -746,20 +746,28 @@ function renderRacePlan() {
   heading.className = 'race-plan-heading'
   const pieces = [view.packStatus]
   if (view.lastUpdated) pieces.push(view.historyOnly ? `Last onboard plan ${view.lastUpdated} (historical)` : `Updated ${view.lastUpdated}`)
-  heading.textContent = pieces.join(' · ')
   list.append(heading)
+  if (view.preview) pieces.push('Onboard preview · cloud remains authoritative')
+  if (view.courseComplete) pieces.push('Course complete')
+  heading.textContent = pieces.join(' · ')
   if (view.currentLeg) {
     const current = document.createElement('div')
     current.className = 'race-plan-current'
     current.dataset.leg = 'current'
-    current.append(racePlanLeg(view.currentLeg, 'Next leg'))
+    current.append(racePlanLeg(view.currentLeg, 'Current leg'))
     list.append(current)
   }
-  for (const leg of view.remainingLegs.slice(1)) {
+  if (view.currentLeg && !view.followingLeg) {
+    const finish = document.createElement('p')
+    finish.className = 'muted'
+    finish.textContent = 'Finish — no following leg'
+    list.append(finish)
+  }
+  for (const [index, leg] of view.remainingLegs.slice(1).entries()) {
     const row = document.createElement('div')
-    row.className = 'race-plan-leg'
+    row.className = index === 0 ? 'race-plan-current' : 'race-plan-leg'
     row.dataset.leg = 'remaining'
-    row.append(racePlanLeg(leg))
+    row.append(racePlanLeg(leg, index === 0 ? 'After next mark' : undefined))
     list.append(row)
   }
 }
@@ -788,6 +796,11 @@ function racePlanLeg(leg, eyebrow) {
     detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
   }
   fragment.append(detail)
+  const apparent = document.createElement('span')
+  const awa = leg.awaDeg === null ? '—' : `${Math.round(leg.awaDeg)}°`
+  const aws = leg.awsKnots === null ? '—' : `${leg.awsKnots.toFixed(1)} kn`
+  apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws}`
+  fragment.append(apparent)
   return fragment
 }
 
