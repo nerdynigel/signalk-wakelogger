@@ -76,7 +76,7 @@ describe('rolling sailing averages', () => {
 })
 
 describe('onboard sail plan', () => {
-  it('builds the remaining legs from observed and forecast conditions', () => {
+  it('builds current and following legs from the same observed wind', () => {
     const averages = new RollingAverages()
     averages.add({ at: NOW, twsKnots: 12, twdDeg: 45, headingDeg: 10, sogKnots: 6 })
     const plan = buildOnboardPlan({ pack: pack(), activeIndex: 1, averages: averages.value(NOW), now: NOW })
@@ -93,19 +93,19 @@ describe('onboard sail plan', () => {
 
     const second = plan.legs[1]!
     expect(second.to.name).toBe('Race finish')
-    expect(second.conditions.source).toBe('forecast')
+    expect(second.conditions.source).toBe('observed')
     expect(second.conditions.twsKnots).not.toBeNull()
     expect(second.conditions.sampleTime).toBe('2026-09-17T02:00:00Z')
     expect(second.plan).not.toBeNull()
   })
 
-  it('returns legs without plans when the current observation has no wind', () => {
+  it('falls back to forecast when the observation window has no usable wind', () => {
     const averages = new RollingAverages()
     averages.add({ at: NOW, twsKnots: null, twdDeg: null, headingDeg: 10, sogKnots: 6 })
     const plan = buildOnboardPlan({ pack: pack(), activeIndex: 1, averages: averages.value(NOW), now: NOW })
     expect(plan.legs).toHaveLength(2)
-    expect(plan.legs[0]!.conditions.twsKnots).toBeNull()
-    expect(plan.legs[0]!.plan).toBeNull()
+    expect(plan.legs[0]!.conditions.source).toBe('forecast')
+    expect(plan.legs[0]!.plan).not.toBeNull()
     expect(plan.legs[1]!.conditions.twsKnots).not.toBeNull()
   })
 
@@ -117,7 +117,7 @@ describe('onboard sail plan', () => {
     expect(plan.legs.map((leg) => leg.to.name)).toEqual(['Race finish'])
   })
 
-  it('uses each leg own forecast series at its recalculated ETA and never another leg series', () => {
+  it('retains next-leg observed wind while selecting ancillary forecast conditions at its ETA', () => {
     // Leg 2 has a materially different forecast at 13:00 (light) and 15:00
     // (heavy). Leg 1 is long, so a slow actual progress pushes Leg 2's
     // midpoint near 15:00 while fast progress keeps it near 13:00.
@@ -153,11 +153,12 @@ describe('onboard sail plan', () => {
     const fast = buildOnboardPlan({ pack: build(), activeIndex: 1, averages: average(20), now })
     const slow = buildOnboardPlan({ pack: build(), activeIndex: 1, averages: average(4), now })
     expect(fast.legs[1]!.conditions.sampleTime).toBe('2026-09-17T13:00:00Z')
-    expect(fast.legs[1]!.conditions.twsKnots).toBe(8)
+    expect(fast.legs[1]!.conditions.twsKnots).toBe(20)
     expect(slow.legs[1]!.conditions.sampleTime).toBe('2026-09-17T15:00:00Z')
-    expect(slow.legs[1]!.conditions.twsKnots).toBe(24)
-    // The recommendation itself moves with the later forecast.
-    expect(slow.legs[1]!.pointOfSail).not.toBe(fast.legs[1]!.pointOfSail)
+    expect(slow.legs[1]!.conditions.twsKnots).toBe(4)
+    // Forecast directions must not override the observed wind for either speed.
+    expect(slow.legs[1]!.conditions.twdDeg).toBe(180)
+    expect(fast.legs[1]!.conditions.twdDeg).toBe(180)
     expect(JSON.stringify(slow.legs[1]!.plan)).not.toBe(JSON.stringify(fast.legs[1]!.plan))
   })
 
