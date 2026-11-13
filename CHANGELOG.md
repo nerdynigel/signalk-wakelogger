@@ -1,6 +1,14 @@
 # What's new in Wake Logger for Signal K
 
-Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
+## [0.2.0-beta.15] - 2026-11-13
+
+- Show the recommended sail plan and estimated AWA/AWS across every remaining leg. Keep the current sail plan beside the live instruments and show TWD/TWS on the next leg.
+- Use the latest fresh vessel wind at startup, then a rolling five-minute average when available; fall back to forecast when usable vessel wind is unavailable.
+- Steady live AWA/AWS displays with smoothing and display deadbands, and hold routine sail changes for 30 seconds. Stronger reefing recommendations apply immediately.
+- Simplify leg cards to the recommended sail match and wind boxes, without sail-limit warning text or repeated wind-source prose.
+- Add signed roll in degrees to Instruments and fix clipped desktop tabs, including Charts.
+
+Update the plugin, restart Signal K if prompted and reload the onboard app. Sync the selected Race Pack before departure for offline guidance. Read the [full release notes](docs/releases/0.2.0-beta.15.md) for upgrade steps and the live-versus-planning wind distinction.
 
 ## [0.2.0-beta.14] - 2026-11-01
 

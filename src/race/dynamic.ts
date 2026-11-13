@@ -200,11 +200,11 @@ export function selectSampleForEta(samples: PackForecastSample[], targetAt: numb
 }
 
 function conditionsAt(series: PackLegForecast | undefined, targetAt: number, useObserved: boolean, observed: DynamicObservedWind | null): DynamicPlanConditions {
-  const sample = series ? selectSampleForEta(series.samples, targetAt) : null
-  if (!sample) return outOfCoverageConditions()
-  const delta = Math.abs(Date.parse(sample.time) - targetAt)
-  if (!Number.isFinite(delta) || delta > MAX_FORECAST_EXTRAPOLATION_MS) return outOfCoverageConditions()
-  return useObserved && observed ? observedConditions(observed, sample) : forecastConditions(sample)
+  let sample = series ? selectSampleForEta(series.samples, targetAt) : null
+  const delta = sample ? Math.abs(Date.parse(sample.time) - targetAt) : Infinity
+  if (!Number.isFinite(delta) || delta > MAX_FORECAST_EXTRAPOLATION_MS) sample = null
+  if (useObserved && observed) return observedConditions(observed, sample)
+  return sample ? forecastConditions(sample) : outOfCoverageConditions()
 }
 
 function twaFor(conditions: DynamicPlanConditions, bearing: number): number | null {
@@ -234,7 +234,7 @@ function legSpeed(
   if (pointOfSail === null || conditions.twsKnots === null) return { speed: null, polarSpeed: null, warnings: [] }
   const tws = conditions.twsKnots
   const gust = conditions.gustKnots ?? tws
-  const [estimated, speedWarnings] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust })
+  const [estimated, speedWarnings] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust, twaDeg: twaFor(conditions, bearing) })
   const [polar] = polarSpeedForLeg(polarSummary, { twaDeg: twaFor(conditions, bearing) ?? 0, forecastTwsKnots: tws, windSide: windSideFor(conditions, bearing) })
   // Fallback order: usable polar, then vessel-specific performance, then the
   // documented generic hull-speed fallback (which carries a warning).
@@ -243,6 +243,7 @@ function legSpeed(
 }
 
 export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
+  const observed = input.observed && Number.isFinite(input.observed.twsKnots) && Number.isFinite(input.observed.twdDeg) ? input.observed : null
   const points = input.points
   const lastIndex = points.length - 1
   const firstIndex = Math.min(Math.max(input.activeIndex, 1), lastIndex)
@@ -271,19 +272,21 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
       : { name: markFrom.name, latitude: markFrom.latitude, longitude: markFrom.longitude }
     const distance = distanceNm(from.latitude, from.longitude, to.latitude, to.longitude)
     const bearing = bearingDegrees(from.latitude, from.longitude, to.latitude, to.longitude)
-    const useObserved = index === firstIndex && input.observed !== null
+    // Project the same selected vessel wind onto every remaining leg.
+    // Each leg retains its own bearing, speed and forecast current/waves.
+    const useObserved = observed !== null
 
     // Bounded midpoint refinement. Start from the conditions at the leg start,
     // re-select at each provisional midpoint and stop as soon as the selected
     // sample is stable (or after MAX_MIDPOINT_ITERATIONS).
-    let conditions = conditionsAt(forecastByLeg.get(index), cursor, useObserved, input.observed)
+    let conditions = conditionsAt(forecastByLeg.get(index), cursor, useObserved, observed)
     let speed = legSpeed(vessel, input.polarSummary, conditions, bearing)
     for (let iteration = 0; iteration < MAX_MIDPOINT_ITERATIONS; iteration += 1) {
       const provisionalSpeed = speed.speed ?? TIMING_FALLBACK_SPEED_KNOTS
       const provisionalSog = Math.max(MIN_ESTIMATED_SOG_KNOTS, provisionalSpeed + currentFor(conditions, bearing))
       const duration = distance / provisionalSog
       const midpoint = cursor + (duration * MILLISECONDS_PER_HOUR) / 2
-      const next = conditionsAt(forecastByLeg.get(index), midpoint, useObserved, input.observed)
+      const next = conditionsAt(forecastByLeg.get(index), midpoint, useObserved, observed)
       const stable = next.sampleTime === conditions.sampleTime && next.source === conditions.source
       conditions = next
       speed = legSpeed(vessel, input.polarSummary, conditions, bearing)
@@ -294,7 +297,7 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
       partialCoverage = true
       warnings.push(`Leg ${index} forecast does not cover the recalculated time`)
     }
-    if (index === firstIndex && conditions.source === 'forecast' && input.observed === null) {
+    if (index === firstIndex && conditions.source === 'forecast' && observed === null) {
       warnings.push('Fresh onboard observations not yet available')
     }
     const twa = twaFor(conditions, bearing)

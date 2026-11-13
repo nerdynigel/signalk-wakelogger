@@ -48,7 +48,7 @@ function observedWindDelta(): never {
   ])
 }
 
-async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number; reverse?: boolean; position?: boolean } = {}) {
+async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number; reverse?: boolean; position?: boolean; session?: { id: string } } = {}) {
   const directory = await temporaryDirectory('onboard-service-')
   const clock = { value: NOW }
   const observations = new ObservationCollector(5 * 60 * 1000, () => clock.value)
@@ -63,7 +63,7 @@ async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 
     observations,
     course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: options.reverse ?? false }),
     racing: () => options.racing ?? true,
-    trackingSessionId: () => 'sess-1',
+    trackingSessionId: () => options.session?.id ?? 'sess-1',
     now: () => clock.value,
     cadenceMs: options.cadenceMs
   })
@@ -90,6 +90,26 @@ describe('onboard calculation authority', () => {
     expect((service.availability() as { reason: string }).reason).toBe('cloud_authority')
     expect(snapshots.latest()).toBeNull()
     service.close()
+  })
+
+  it('provides a read-only onboard preview under cloud authority without writing snapshots', async () => {
+    const { service, snapshots } = await fixture({ authority: 'automatic' })
+    const status = service.status() as { calculationAuthority: string; preview: { plan: { legs: Array<{ awaDeg: number; awsKnots: number }> } } }
+    expect(status.calculationAuthority).toBe('cloud')
+    expect(status.preview.plan.legs).toHaveLength(2)
+    expect(status.preview.plan.legs[0]!.awaDeg).toEqual(expect.any(Number))
+    expect(status.preview.plan.legs[1]!.awsKnots).toEqual(expect.any(Number))
+    expect(snapshots.latest()).toBeNull()
+    expect(snapshots.pending()).toHaveLength(0)
+    service.close()
+  })
+
+  it('withholds cloud previews for reversed courses and inactive races', async () => {
+    for (const options of [{ reverse: true }, { racing: false }]) {
+      const { service } = await fixture({ authority: 'automatic', ...options })
+      expect(service.status()).toMatchObject({ calculationAuthority: 'cloud', preview: null })
+      service.close()
+    }
   })
 
   it('runs onboard as soon as authority transfers to local-only', async () => {
@@ -207,12 +227,12 @@ describe('onboard observations and calculations', () => {
     service.close()
   })
 
-  it('uses the local observation window for the current leg and a forecast for later legs', async () => {
+  it('uses the five-minute observation window for both current and following legs', async () => {
     const { service, snapshots } = await fixture()
     const plan = snapshots.latest()!.plan
     expect(plan.legs[0]!.conditions.source).toBe('observed')
     expect(plan.legs[0]!.conditions.twsKnots).toBeCloseTo(14, 0)
-    expect(plan.legs[1]!.conditions.source).toBe('forecast')
+    expect(plan.legs[1]!.conditions.source).toBe('observed')
     service.close()
   })
 
@@ -250,8 +270,51 @@ describe('onboard observations and calculations', () => {
     const observed = snapshots.latest()!
     expect(observed.plan.legs[0]!.conditions.source).toBe('observed')
     expect(observed.plan.legs[0]!.conditions.twsKnots).toBeCloseTo(14, 0)
-    expect(observed.plan.legs[1]!.conditions.source).toBe('forecast')
+    expect(observed.plan.legs[1]!.conditions.source).toBe('observed')
     expect(observed.warning).toBeNull()
+    // Wind ages out while fresh GPS remains: both estimates return to forecast.
+    clock.value += 6 * 60_000
+    observations.ingest({ updates: [{ timestamp: new Date(clock.value).toISOString(), values: [
+      { path: 'navigation.position', value: { latitude: -27.395, longitude: 153.18 } }
+    ] }] } as never)
+    await service.refresh(true)
+    expect(snapshots.latest()!.plan.legs.slice(0, 2).every(leg => leg.conditions.source === 'forecast')).toBe(true)
+    service.close()
+  })
+
+  it('uses fresh five-minute wind after forecast expiry, but rejects expired fallback data', async () => {
+    const { service, snapshots, observations, clock } = await fixture({ pack: makeFixturePack({ validUntil: '2026-09-17T04:00:00Z' }) })
+    clock.value += 3 * 24 * 60 * 60_000
+    primeObservations(observations, clock, 30, clock.value)
+    await service.refresh(true)
+    expect(snapshots.latest()!.plan.legs.slice(0, 2).every(leg => leg.conditions.source === 'observed')).toBe(true)
+    expect(snapshots.latest()!.plan.legs[1]!.plan).not.toBeNull()
+    clock.value += 6 * 60_000
+    expect(service.availability(true)).toMatchObject({ ok: false, reason: 'pack_expired' })
+    service.close()
+  })
+
+  it('clears the previous trip window and immediately uses a fresh sample in the new trip', async () => {
+    const session = { id: 'first' }
+    const { service, observations, clock } = await fixture({ authority: 'automatic', session })
+    session.id = 'second'
+    expect(service.status()).toMatchObject({ observationsReady: false, observationBasis: 'forecast' })
+    clock.value += 1000
+    observations.ingest(observedWindDelta())
+    expect(service.status()).toMatchObject({ observationsReady: true, observationBasis: 'latest' })
+    const status = service.status() as { preview: { plan: { legs: Array<{ conditions: { source: string } }> } } }
+    expect(status.preview.plan.legs[1]!.conditions.source).toBe('observed')
+    service.close()
+  })
+
+  it('refreshes displayed guidance in local-only mode without creating another durable snapshot', async () => {
+    const { service, snapshots, observations, clock } = await fixture()
+    const previous = snapshots.latest()!.id
+    clock.value += 1000
+    observations.ingest(delta([{ path: 'environment.wind.directionTrue', value: 130 * Math.PI / 180 }]))
+    const status = service.status() as { preview: { plan: { legs: { conditions: { twdDeg: number } }[] } } }
+    expect(status.preview.plan.legs.every(leg => leg.conditions.twdDeg === 130)).toBe(true)
+    expect(snapshots.latest()!.id).toBe(previous)
     service.close()
   })
 

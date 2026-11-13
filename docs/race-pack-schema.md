@@ -43,12 +43,14 @@ mirror):
    set, degrees true) to the boat speed and clamp to
    `MIN_ESTIMATED_SOG_KNOTS = 0.5`. SOG drives duration and ETA; TWA is not
    adjusted for current.
-5. **Observed current leg.** Once the five-minute observation window is ready
-   the active leg uses observed wind but retains the forecast current/wave at
-   the calculated time. Future legs are always forecast-driven.
-6. **Coverage / out of range.** If the nearest sample for a leg is more than
-   `maxForecastExtrapolationMs` (6 h) from the calculated time, that leg is
-   reported `out_of_range` with no wind and no recommendation.
+5. **Observed wind for the remaining course.** Every remaining leg uses the
+   selected fresh vessel wind: the latest sample at startup, then the trailing
+   five-minute average once available. Forecast wind is used only without
+   usable fresh observations. Each leg retains its own ETA-selected forecast
+   current/waves when covered. Observed wind does not require forecast coverage.
+6. **Coverage / out of range.** Without fresh vessel wind, if the nearest forecast sample is more than
+   `maxForecastExtrapolationMs` (6 h) from the calculated time, the leg is
+   reported `out_of_range` with no wind or recommendation.
 7. **Reverse courses.** Reversed native course order is not supported by v1:
    onboard calculation fails closed with `reverse_course_unsupported` rather
    than calculating the course forwards.
@@ -313,3 +315,20 @@ Transport shutdown separates the two decisions:
 published first. The real-broker E2E proves a brand-new observer still reads
 `local_only` after the plugin is gone, and that an ungraceful automatic close
 still publishes the retained `offline` Will.
+
+### Planning wind at startup
+
+All remaining legs use the latest valid vessel wind sample
+while less than five minutes of wind history is available. Once five minutes
+has elapsed since the first qualifying wind reading, use the average of valid
+samples in the trailing 300-second window. Samples older than that window do
+not enter the average. TWD uses a circular mean. The newest wind sample must
+remain within the existing 30-second freshness bound; otherwise use forecast.
+The older full-window readiness metrics remain diagnostic and do not block
+startup guidance. Restarting a trip resets its onboard history anchor.
+
+All remaining legs project the selected vessel wind onto their own course and
+boat-speed estimate to calculate AWA/AWS and sail recommendations. New selected
+readings update the whole remaining course. The five-minute rolling average
+smooths changes once that history is available; completed legs remain historical.
+Without fresh vessel wind, each remaining leg uses its own forecast wind.

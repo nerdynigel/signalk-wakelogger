@@ -1,4 +1,5 @@
-import { WIND_ARROW_PATH } from './wind-readout.mjs'
+import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
+import { WIND_ARROW_PATH, windAngleText, windDirectionText } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
 import { guidanceBearings } from './sailing-guidance.mjs'
@@ -46,6 +47,7 @@ if (!clientId) {
 let navigationControl = false
 let navigationControlGeneration = null
 try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
+const legGuidanceStabilizer = new LegGuidanceStabilizer()
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
@@ -353,26 +355,28 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map((item) => {
-    const row = document.createElement('div')
-    row.className = 'race-live-nav-item'
-    row.dataset.reading = item.id
-    row.dataset.available = String(item.available)
-    const label = document.createElement('span')
-    label.className = 'label'
-    label.textContent = item.label
-    const value = document.createElement('span')
-    value.className = 'value'
-    value.textContent = item.formatted
-    const values = document.createElement('span')
-    values.className = 'wind-value-row'
-    values.append(value)
-    const arrow = windIndicator(item)
-    if (arrow) values.append(arrow)
-    row.dataset.windBasis = item.basis || ''
-    row.append(label, values)
-    return row
-  }))
+  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map(raceInstrumentBox))
+}
+
+function raceInstrumentBox(item) {
+  const row = document.createElement('div')
+  row.className = 'race-live-nav-item'
+  row.dataset.reading = item.id
+  row.dataset.available = String(item.available)
+  const label = document.createElement('span')
+  label.className = 'label'
+  label.textContent = item.label
+  const value = document.createElement('span')
+  value.className = 'value'
+  value.textContent = item.formatted
+  const values = document.createElement('span')
+  values.className = 'wind-value-row'
+  values.append(value)
+  const arrow = windIndicator(item)
+  if (arrow) values.append(arrow)
+  row.dataset.windBasis = item.basis || ''
+  row.append(label, values)
+  return row
 }
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
@@ -725,7 +729,16 @@ function renderRacePlan() {
   renderRaceLiveNav()
   const list = $('race-plan-list')
   if (!list) return
-  const view = racePlanPresentation(racePlan)
+  const snapshot = racePlan?.preview || racePlan?.latestSnapshot
+  const context = JSON.stringify([trackingStatus?.trackingSessionId, racePlan?.pack?.courseId, racePlan?.pack?.courseDefinitionDigest, racePlan?.activeIndex])
+  const legs = legGuidanceStabilizer.update(context, snapshot?.plan?.legs || [], Date.now())
+  const stabilized = snapshot ? { ...racePlan, [racePlan.preview ? 'preview' : 'latestSnapshot']: { ...snapshot, plan: { ...snapshot.plan, legs } } } : racePlan
+  const view = racePlanPresentation(stabilized)
+  const sailBox = $('race-current-sail')
+  const current = view.currentLeg
+  sailBox.dataset.available = String(Boolean(current?.summary))
+  sailBox.querySelector('.value').textContent = current?.summary ? `${current.summary}${current.pendingSailChange ? ' · Sail change pending' : ''}` : '—'
+
   const authority = $('race-authority')
   authority.textContent = `Race plan authority: ${view.authority}`
   authority.dataset.authority = view.authority === 'Onboard' ? 'onboard' : 'cloud'
@@ -746,25 +759,26 @@ function renderRacePlan() {
   heading.className = 'race-plan-heading'
   const pieces = [view.packStatus]
   if (view.lastUpdated) pieces.push(view.historyOnly ? `Last onboard plan ${view.lastUpdated} (historical)` : `Updated ${view.lastUpdated}`)
-  heading.textContent = pieces.join(' · ')
   list.append(heading)
-  if (view.currentLeg) {
-    const current = document.createElement('div')
-    current.className = 'race-plan-current'
-    current.dataset.leg = 'current'
-    current.append(racePlanLeg(view.currentLeg, 'Next leg'))
-    list.append(current)
+  if (view.preview) pieces.push('Onboard preview · cloud remains authoritative')
+  if (view.courseComplete) pieces.push('Course complete')
+  heading.textContent = pieces.join(' · ')
+  if (view.currentLeg && !view.followingLeg) {
+    const finish = document.createElement('p')
+    finish.className = 'muted'
+    finish.textContent = 'Finish — no following leg'
+    list.append(finish)
   }
-  for (const leg of view.remainingLegs.slice(1)) {
+  for (const [index, leg] of view.remainingLegs.slice(1).entries()) {
     const row = document.createElement('div')
-    row.className = 'race-plan-leg'
+    row.className = index === 0 ? 'race-plan-current' : 'race-plan-leg'
     row.dataset.leg = 'remaining'
-    row.append(racePlanLeg(leg))
+    row.append(racePlanLeg(leg, index === 0 ? 'After next mark' : undefined, index === 0))
     list.append(row)
   }
 }
 
-function racePlanLeg(leg, eyebrow) {
+function racePlanLeg(leg, eyebrow, showTrueWind = false) {
   const fragment = document.createDocumentFragment()
   if (eyebrow) {
     const label = document.createElement('span')
@@ -781,13 +795,27 @@ function racePlanLeg(leg, eyebrow) {
   } else {
     const parts = []
     if (leg.summary) parts.push(leg.summary)
-    if (leg.wind) parts.push(leg.wind)
-    if (leg.pointOfSail) parts.push(leg.pointOfSail)
-    if (leg.usedObserved) parts.push('observed')
-    if (leg.confidence) parts.push(`${leg.confidence} confidence`)
+    if (leg.pendingSailChange) parts.push('Sail change pending')
     detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
   }
   fragment.append(detail)
+  const windGrid = document.createElement('div')
+  windGrid.className = 'race-live-nav race-leg-wind'
+  windGrid.setAttribute('aria-label', 'Estimated leg wind')
+  const signed = angle => Number.isFinite(angle) ? (leg.windSide === 'port' ? -Math.abs(angle) : Math.abs(angle)) : null
+  const readings = [
+    ...(showTrueWind ? [
+      { id: 'twd', label: 'TWD', value: leg.twdDeg, direction: true },
+      { id: 'tws', label: 'TWS', value: leg.twsKnots }
+    ] : []),
+    { id: 'awa', label: 'AWA', value: signed(leg.awaDeg), angle: true },
+    { id: 'aws', label: 'AWS', value: leg.awsKnots }
+  ]
+  windGrid.append(...readings.map(item => raceInstrumentBox({ ...item,
+    available: Number.isFinite(item.value),
+    formatted: item.direction ? windDirectionText(item.value) : item.angle ? windAngleText(item.value) : Number.isFinite(item.value) ? `${item.value.toFixed(1)} kn` : '—'
+  })))
+  fragment.append(windGrid)
   return fragment
 }
 

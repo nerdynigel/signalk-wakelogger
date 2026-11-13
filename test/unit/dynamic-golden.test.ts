@@ -8,7 +8,7 @@ import { computeDynamicPlan } from '../../src/race/dynamic'
 // api/tests/fixtures/race_pack/dynamic_golden.json. The cloud test suite asserts
 // the same SHA and runs the same scenario through its Python engine.
 export const DYNAMIC_GOLDEN_FIXTURE_SHA256 = '7c6ad12a67dd3f06d59448961c53dfbb45ac1f2abed6809b057830f363b436ad'
-export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = '9fa4f341b4c81bca7c9f5ba1780044ddcb38b2b96eec0746c6a264dd48d09dd0'
+export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = 'edc1d4de8c7d2de6b170753f45f0b288191ef5afee2ade1b03b2b6f30a4ad746'
 
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures')
 const fixture = JSON.parse(readFileSync(path.join(FIXTURE_DIR, 'dynamic_golden.json'), 'utf8'))
@@ -68,19 +68,22 @@ describe('shared dynamic golden scenario', () => {
     expect(plan.legs[1]!.fromVesselPosition).toBe(false)
   })
 
-  it('uses observed wind on the active leg and forecast on future legs', () => {
+  it('uses selected vessel wind on all remaining legs', () => {
     const plan = computeDynamicPlan(fixture)
     expect(plan.legs[0]!.conditions.source).toBe('observed')
     expect(plan.legs[0]!.conditions.twsKnots).toBeCloseTo(13.4, 5)
     expect(plan.legs[0]!.conditions.currentVelocityKn).not.toBeNull()
-    expect(plan.legs.slice(1).every((leg) => leg.conditions.source === 'forecast')).toBe(true)
+    expect(plan.legs[1]!.conditions.source).toBe('observed')
+    expect(plan.legs[1]!.conditions.twsKnots).toBe(plan.legs[0]!.conditions.twsKnots)
+    expect(plan.legs[1]!.conditions.twdDeg).toBe(plan.legs[0]!.conditions.twdDeg)
+    expect(plan.legs.every((leg) => leg.conditions.source === 'observed')).toBe(true)
   })
 
   it('delays a future leg onto a different forecast sample than the original schedule', () => {
     const plan = computeDynamicPlan(fixture)
     const third = plan.legs.find((leg) => leg.sequence === 3)!
     expect(third.selectedForecastSampleTime).toBe('2026-06-14T03:00:00Z')
-    expect(third.conditions.twsKnots).toBe(14)
+    expect(third.conditions.twsKnots).toBe(fixture.observed.twsKnots)
 
     // The original all-marks schedule computed from the race start (no actual
     // progress, no observations) lands on a different hourly sample, proving
@@ -107,4 +110,47 @@ describe('shared dynamic golden scenario', () => {
     expect(sampleDirections.some((direction: number) => direction > 350)).toBe(true)
     expect(sampleDirections.some((direction: number) => direction < 10)).toBe(true)
   })
+  it('uses observed wind for next-leg sails and apparent estimates, falling back only without observations', () => {
+    const observed = computeDynamicPlan(fixture).legs[1]!
+    const forecast = computeDynamicPlan({ ...fixture, observed: null }).legs[1]!
+    expect(forecast.conditions.source).toBe('forecast')
+    expect(observed.awaDeg).not.toBe(forecast.awaDeg)
+    expect(observed.awsKnots).not.toBe(forecast.awsKnots)
+    expect(observed.plan).not.toEqual(forecast.plan)
+    const noForecast = computeDynamicPlan({ ...fixture, forecast: { legs: [] } })
+    expect(noForecast.legs.every(l => l.conditions.source === 'observed')).toBe(true)
+    expect(noForecast.legs[1]!.awaDeg).not.toBeNull()
+    expect(noForecast.legs[1]!.plan).not.toBeNull()
+    const unavailable = computeDynamicPlan({ ...fixture, observed: null, forecast: { legs: [] } })
+    expect(unavailable.legs[1]!.awaDeg).toBeNull()
+    expect(unavailable.legs[1]!.plan).toBeNull()
+  })
+
+  it('reprojects apparent wind and sail plans on every remaining leg as vessel wind changes', () => {
+    const plan = computeDynamicPlan(fixture)
+    expect(plan.legs.length).toBeGreaterThan(2)
+    for (const leg of plan.legs) {
+      expect(leg.conditions.twdDeg).toBe(fixture.observed.twdDeg)
+      expect(leg.conditions.twsKnots).toBe(fixture.observed.twsKnots)
+      const angle = (fixture.observed.twdDeg - leg.bearingDeg) * Math.PI / 180
+      const across = fixture.observed.twsKnots * Math.sin(angle)
+      const along = fixture.observed.twsKnots * Math.cos(angle) + leg.estimatedBoatSpeedKnots!
+      expect(Math.abs(leg.awaDeg! - Math.abs(Math.atan2(across, along) * 180 / Math.PI))).toBeLessThanOrEqual(0.051)
+      expect(Math.abs(leg.awsKnots! - Math.hypot(across, along))).toBeLessThanOrEqual(0.011)
+      expect(leg.plan).not.toBeNull()
+    }
+    const changed = computeDynamicPlan({ ...fixture, observed: { ...fixture.observed, twdDeg: 130, twsKnots: 22 } })
+    expect(changed.legs.at(-1)!.awaDeg).not.toBe(plan.legs.at(-1)!.awaDeg)
+    expect(changed.legs.at(-1)!.plan).not.toEqual(plan.legs.at(-1)!.plan)
+    expect(computeDynamicPlan({ ...fixture, observed: null }).legs.every(leg => leg.conditions.source === 'forecast')).toBe(true)
+  })
+
+})
+
+it('fallback speed is continuous across sailing-angle and light-wind boundaries', async () => {
+  const { estimateBoatSpeedKnots, classifyPointOfSail } = await import('../../src/race/sailing/physics')
+  const speed = (angle: number, tws = 12, gust = 16) => estimateBoatSpeedKnots({ vessel: { hull_speed_knots: 8 }, pointOfSail: classifyPointOfSail(angle), forecastTwsKnots: tws, forecastGustKnots: gust, twaDeg: angle })[0]
+  for (const angle of [60, 90, 135]) expect(Math.abs(speed(angle - 0.01) - speed(angle + 0.01))).toBeLessThanOrEqual(0.02)
+  for (const wind of [5, 8]) expect(Math.abs(speed(75, wind - 0.01) - speed(75, wind + 0.01))).toBeLessThanOrEqual(0.04)
+  expect(Math.abs(speed(75, 12, 21.99) - speed(75, 12, 22.01))).toBeLessThanOrEqual(0.02)
 })

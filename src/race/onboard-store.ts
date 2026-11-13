@@ -10,6 +10,7 @@ export interface OnboardPlanSnapshot {
   id: string
   generatedAt: number
   source: 'onboard'
+  observationBasis?: 'latest' | 'five_minute_average' | 'forecast'
   packId: string | null
   packRevision: number
   packSha256: string

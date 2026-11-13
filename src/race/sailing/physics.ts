@@ -216,23 +216,38 @@ export function hullSpeedForVessel(vessel: VesselPerformance): [number, string] 
   return [5, 'default hull speed']
 }
 
-export function estimateBoatSpeedKnots(options: { vessel: VesselPerformance; pointOfSail: string; forecastTwsKnots: number; forecastGustKnots: number }): [number, string[]] {
+function curve(value: number, points: Array<[number, number]>): number {
+  if (value <= points[0]![0]) return points[0]![1]
+  for (let i = 1; i < points.length; i += 1) {
+    const [x, y] = points[i]!, [previousX, previousY] = points[i - 1]!
+    if (value <= x) return previousY + (y - previousY) * (value - previousX) / (x - previousX)
+  }
+  return points[points.length - 1]![1]
+}
+
+export function estimateBoatSpeedKnots(options: { vessel: VesselPerformance; pointOfSail: string; forecastTwsKnots: number; forecastGustKnots: number; twaDeg?: number | null }): [number, string[]] {
   const [hullSpeed, source] = hullSpeedForVessel(options.vessel)
-  const multiplier = POINT_SPEED_MULTIPLIERS[options.pointOfSail] ?? 0.6
+  const continuous = typeof options.twaDeg === 'number' && Number.isFinite(options.twaDeg)
+  const multiplier = continuous ? curve(Math.min(180, Math.abs(options.twaDeg!)), [[0, 0.6], [45, 0.6], [75, 0.75], [90, 0.85], [112.5, 0.75], [157.5, 0.65], [180, 0.65]]) : POINT_SPEED_MULTIPLIERS[options.pointOfSail] ?? 0.6
   let speed = hullSpeed * multiplier
   const warnings: string[] = []
   if (source === 'default hull speed') warnings.push('Estimated speed uses a default hull speed because vessel performance fields are incomplete.')
   if (options.pointOfSail === 'close-hauled / no-sail zone') warnings.push('Leg is very close to the wind; sailing performance may be poor without tacking.')
   if (options.forecastTwsKnots < 5) {
-    speed *= 0.45
+    if (!continuous) speed *= 0.45
     warnings.push('Light wind may substantially reduce boat speed.')
   } else if (options.forecastTwsKnots < 8) {
-    speed *= 0.7
+    if (!continuous) speed *= 0.7
     warnings.push('Light wind may moderately reduce boat speed.')
   }
   if (options.forecastGustKnots >= Math.max(20, options.forecastTwsKnots + 10)) {
-    speed *= 0.9
+    if (!continuous) speed *= 0.9
     warnings.push('Gust spread is high; estimated speed confidence is reduced.')
+  }
+  if (continuous) {
+    speed *= curve(options.forecastTwsKnots, [[0, 0.45], [5, 0.45], [6.5, 0.7], [8, 1]])
+    const gustThreshold = Math.max(20, options.forecastTwsKnots + 10)
+    speed *= curve(options.forecastGustKnots, [[gustThreshold - 1, 1], [gustThreshold + 1, 0.9]])
   }
   return [pyRound(Math.max(0.1, speed), 2), warnings]
 }
