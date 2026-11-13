@@ -205,10 +205,10 @@ export class OnboardRaceService {
     const course = this.options.course()
     const observations = this.readObservations(this.now())
     const reason = this.lastReason
-    // A read-only onboard preview keeps sail preparation available while the
-    // cloud owns live recalculation. Never persist or publish this as authority.
+    // Refresh displayed guidance on every poll in either upload mode. Durable
+    // snapshot cadence is separate, so this never floods offline storage.
     let preview = null
-    const available = this.authority === 'cloud' ? this.availability(true, true) : null
+    const available = this.availability(true, true)
     if (available?.ok) {
       try {
         const plan = buildOnboardPlan({

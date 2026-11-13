@@ -993,3 +993,14 @@ test('guidance clearly labels latest vessel sample, five-minute average and fore
   state.preview.plan.legs[0].conditions.source = 'forecast'
   assert.equal(racePlanPresentation(state).currentLeg.windBasis, 'Forecast')
 })
+
+
+test('local-only guidance uses fresh displayed estimates and retains onboard authority', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const state = { uploadMode: 'local_only', pack: { available: true, applicable: true }, latestSnapshot: { plan: { legs: [{ awaDeg: 10 }] } }, preview: { observationBasis: 'five_minute_average', plan: { legs: [{ awaDeg: 80, conditions: { source: 'observed' } }] } } }
+  const view = racePlanPresentation(state)
+  assert.equal(view.authority, 'Onboard')
+  assert.equal(view.preview, false)
+  assert.equal(view.currentLeg.awaDeg, 80)
+  assert.equal(view.currentLeg.windBasis, '5-min vessel average')
+})

@@ -46,7 +46,7 @@ export function racePlanPresentation(racePlan) {
   const onboardAuthority = racePlan.calculationAuthority === 'onboard' || racePlan.uploadMode === 'local_only'
   const authority = onboardAuthority ? 'Onboard' : 'Wake Logger'
   const pack = racePlan.pack || {}
-  const preview = !onboardAuthority && racePlan.preview ? racePlan.preview : null
+  const preview = racePlan.preview || null
   const snapshot = preview || racePlan.latestSnapshot || null
   const legs = Array.isArray(snapshot?.plan?.legs) ? snapshot.plan.legs : []
   const packAvailable = pack.available === true
@@ -88,7 +88,7 @@ export function racePlanPresentation(racePlan) {
 
   return {
     courseComplete,
-    preview: !!preview,
+    preview: !!preview && !onboardAuthority,
     uploadMode: racePlan.uploadMode ?? null,
     authority,
     authorityDetail: onboardAuthority ? 'Calculated on this vessel' : preview ? 'Onboard preview; Wake Logger cloud remains authoritative' : 'Calculated by Wake Logger cloud',

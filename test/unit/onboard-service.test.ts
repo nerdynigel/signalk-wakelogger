@@ -307,6 +307,17 @@ describe('onboard observations and calculations', () => {
     service.close()
   })
 
+  it('refreshes displayed guidance in local-only mode without creating another durable snapshot', async () => {
+    const { service, snapshots, observations, clock } = await fixture()
+    const previous = snapshots.latest()!.id
+    clock.value += 1000
+    observations.ingest(delta([{ path: 'environment.wind.directionTrue', value: 130 * Math.PI / 180 }]))
+    const status = service.status() as { preview: { plan: { legs: { conditions: { twdDeg: number } }[] } } }
+    expect(status.preview.plan.legs.every(leg => leg.conditions.twdDeg === 130)).toBe(true)
+    expect(snapshots.latest()!.id).toBe(previous)
+    service.close()
+  })
+
   it('works fully offline from a persisted pack and survives a store restart', async () => {
     const directory = await temporaryDirectory('onboard-offline-')
     const packDirectory = path.join(directory, 'race-packs')
