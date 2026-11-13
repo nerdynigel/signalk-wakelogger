@@ -1,5 +1,10 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased — Race leg instrument boxes
+
+- The current sail plan now sits alongside the live navigation instruments. The duplicate current-leg card is removed.
+- Every future leg shows its recommended sail plan with TWA, TWS, AWA and AWS in matching instrument boxes. Wind-angle arrows show port/starboard direction. Removed average/source/confidence prose from these cards for a clearer display.
+
 ## Unreleased — Simpler live sail guidance
 
 - Live race legs show the recommended sail match and estimated AWA/AWS without sail-range or sail-limit warning text. Reefing recommendations and smoothing remain part of the guidance.

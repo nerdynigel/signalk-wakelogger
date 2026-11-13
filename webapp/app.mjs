@@ -1,5 +1,5 @@
 import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
-import { WIND_ARROW_PATH } from './wind-readout.mjs'
+import { WIND_ARROW_PATH, windAngleText } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
 import { guidanceBearings } from './sailing-guidance.mjs'
@@ -355,26 +355,28 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map((item) => {
-    const row = document.createElement('div')
-    row.className = 'race-live-nav-item'
-    row.dataset.reading = item.id
-    row.dataset.available = String(item.available)
-    const label = document.createElement('span')
-    label.className = 'label'
-    label.textContent = item.label
-    const value = document.createElement('span')
-    value.className = 'value'
-    value.textContent = item.formatted
-    const values = document.createElement('span')
-    values.className = 'wind-value-row'
-    values.append(value)
-    const arrow = windIndicator(item)
-    if (arrow) values.append(arrow)
-    row.dataset.windBasis = item.basis || ''
-    row.append(label, values)
-    return row
-  }))
+  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map(raceInstrumentBox))
+}
+
+function raceInstrumentBox(item) {
+  const row = document.createElement('div')
+  row.className = 'race-live-nav-item'
+  row.dataset.reading = item.id
+  row.dataset.available = String(item.available)
+  const label = document.createElement('span')
+  label.className = 'label'
+  label.textContent = item.label
+  const value = document.createElement('span')
+  value.className = 'value'
+  value.textContent = item.formatted
+  const values = document.createElement('span')
+  values.className = 'wind-value-row'
+  values.append(value)
+  const arrow = windIndicator(item)
+  if (arrow) values.append(arrow)
+  row.dataset.windBasis = item.basis || ''
+  row.append(label, values)
+  return row
 }
 
 function renderVesselGuides(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
@@ -732,6 +734,11 @@ function renderRacePlan() {
   const legs = legGuidanceStabilizer.update(context, snapshot?.plan?.legs || [], Date.now())
   const stabilized = snapshot ? { ...racePlan, [racePlan.preview ? 'preview' : 'latestSnapshot']: { ...snapshot, plan: { ...snapshot.plan, legs } } } : racePlan
   const view = racePlanPresentation(stabilized)
+  const sailBox = $('race-current-sail')
+  const current = view.currentLeg
+  sailBox.dataset.available = String(Boolean(current?.summary))
+  sailBox.querySelector('.value').textContent = current?.summary ? `${current.summary}${current.pendingSailChange ? ' · Sail change pending' : ''}` : '—'
+
   const authority = $('race-authority')
   authority.textContent = `Race plan authority: ${view.authority}`
   authority.dataset.authority = view.authority === 'Onboard' ? 'onboard' : 'cloud'
@@ -756,13 +763,6 @@ function renderRacePlan() {
   if (view.preview) pieces.push('Onboard preview · cloud remains authoritative')
   if (view.courseComplete) pieces.push('Course complete')
   heading.textContent = pieces.join(' · ')
-  if (view.currentLeg) {
-    const current = document.createElement('div')
-    current.className = 'race-plan-current'
-    current.dataset.leg = 'current'
-    current.append(racePlanLeg(view.currentLeg, 'Current leg'))
-    list.append(current)
-  }
   if (view.currentLeg && !view.followingLeg) {
     const finish = document.createElement('p')
     finish.className = 'muted'
@@ -795,19 +795,25 @@ function racePlanLeg(leg, eyebrow) {
   } else {
     const parts = []
     if (leg.summary) parts.push(leg.summary)
-    if (leg.wind) parts.push(leg.wind)
-    if (leg.pointOfSail) parts.push(leg.pointOfSail)
-    if (leg.usedObserved) parts.push('observed')
     if (leg.pendingSailChange) parts.push('Sail change pending')
-    if (leg.confidence) parts.push(`${leg.confidence} confidence`)
     detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
   }
   fragment.append(detail)
-  const apparent = document.createElement('span')
-  const awa = leg.awaDeg === null ? '—' : `${Math.round(leg.awaDeg)}°`
-  const aws = leg.awsKnots === null ? '—' : `${leg.awsKnots.toFixed(1)} kn`
-  apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws} · ${leg.windBasis}`
-  fragment.append(apparent)
+  const windGrid = document.createElement('div')
+  windGrid.className = 'race-live-nav race-leg-wind'
+  windGrid.setAttribute('aria-label', 'Estimated leg wind')
+  const signed = angle => Number.isFinite(angle) ? (leg.windSide === 'port' ? -Math.abs(angle) : Math.abs(angle)) : null
+  const readings = [
+    { id: 'twa', label: 'TWA', value: signed(leg.twaDeg), angle: true },
+    { id: 'tws', label: 'TWS', value: leg.twsKnots },
+    { id: 'awa', label: 'AWA', value: signed(leg.awaDeg), angle: true },
+    { id: 'aws', label: 'AWS', value: leg.awsKnots }
+  ]
+  windGrid.append(...readings.map(item => raceInstrumentBox({ ...item,
+    available: Number.isFinite(item.value),
+    formatted: item.angle ? windAngleText(item.value) : Number.isFinite(item.value) ? `${item.value.toFixed(1)} kn` : '—'
+  })))
+  fragment.append(windGrid)
   return fragment
 }
 
