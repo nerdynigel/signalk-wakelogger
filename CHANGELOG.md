@@ -1,46 +1,14 @@
 # What's new in Wake Logger for Signal K
 
-## Unreleased — Roll instrument
+## [0.2.0-beta.15] - 2026-11-13
 
-- Added signed roll in degrees to the vessel Instruments view. The plugin reads the vessel attitude sensor; Wake Logger displays the fresh measured attitude already received in telemetry. Missing or stale readings are shown as unavailable.
+- Show the recommended sail plan and estimated AWA/AWS across every remaining leg. Keep the current sail plan beside the live instruments and show TWD/TWS on the next leg.
+- Use the latest fresh vessel wind at startup, then a rolling five-minute average when available; fall back to forecast when usable vessel wind is unavailable.
+- Steady live AWA/AWS displays with smoothing and display deadbands, and hold routine sail changes for 30 seconds. Stronger reefing recommendations apply immediately.
+- Simplify leg cards to the recommended sail match and wind boxes, without sail-limit warning text or repeated wind-source prose.
+- Add signed roll in degrees to Instruments and fix clipped desktop tabs, including Charts.
 
-## Unreleased — Race leg instrument boxes
-
-- The current sail plan now sits alongside the live navigation instruments. The duplicate current-leg card is removed.
-- The next leg shows TWD, TWS, AWA and AWS in matching instrument boxes; later legs show AWA/AWS alongside their recommended sail plan. The next leg has a compass wind-direction arrow; apparent-wind arrows show port/starboard direction. Removed average/source/confidence prose from these cards for a clearer display.
-
-## Unreleased — Simpler live sail guidance
-
-- Live race legs show the recommended sail match and estimated AWA/AWS without sail-range or sail-limit warning text. Reefing recommendations and smoothing remain part of the guidance.
-
-## Unreleased — Steadier live sail guidance
-
-- Live estimated AWA/AWS now ease changes over 15 seconds and ignore display changes smaller than 1° / 0.2 kn. Vessel wind still uses the latest fresh sample until a full five-minute averaging window is available.
-- A different preferred sail must remain preferred for 30 seconds before the live display changes. Stronger reefing, crew-incompatible sails and sail wind-limit warnings take effect immediately. A pending change is labelled. Display history resets on a new course, trip, wind source or tack, or after a stale gap.
-- Fallback boat-speed estimates now vary continuously with wind angle and strength, removing jumps at point-of-sail boundaries.
-- Fixed clipped desktop tabs in the standalone plugin, including Charts. Update the plugin and refresh its page to load the change.
-
-Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
-
-## Unreleased — Vessel-wind guidance for every remaining race leg
-
-- All remaining legs now update sail recommendations and estimated AWA/AWS from the selected vessel wind, using each leg's own course and boat-speed estimate. Latest fresh wind is used at startup; the rolling five-minute average smooths estimates once available. Each leg falls back to its own forecast when vessel wind is unavailable. Completed legs keep their history.
-
-## Unreleased — Vessel wind available immediately after starting a trip
-
-- Current/next-leg guidance uses the latest fresh vessel wind sample immediately. After five minutes of history it uses the rolling five-minute average; forecast is used only without fresh usable wind. A short startup window no longer forces forecast or averages a partial window.
-- The standalone plugin labels estimates as Latest vessel sample, 5-min vessel average or Forecast. New trip recordings clear the preceding trip's onboard wind history.
-
-## Unreleased — Use vessel wind for next-leg sail preparation
-
-- Current and next-leg sail recommendations and estimated AWA/AWS now use the same validated rolling five-minute average of vessel wind. Missing, stale or insufficient instrument observations fall back to each leg's forecast. Later legs retain their forecast wind.
-- Fresh observed wind remains usable for these two legs when forecast coverage is unavailable; unavailable forecast currents and waves are withheld.
-
-## Unreleased — Sail preparation for current and following legs
-
-- The Race panel shows the recommended sail plan and estimated apparent wind angle (AWA) and speed (AWS) for the current leg and the leg after the next mark. Sail summaries retain reefing instructions.
-- The standalone Signal K app labels the two legs clearly and shows unavailable estimates as —. With a previously synced, applicable Race Pack and fresh position, guidance works without internet. Automatic tracking offers an onboard preview while Wake Logger remains authoritative; historical calculations remain labelled.
-- Upgrade the Wake Logger Signal K plugin to the release containing this change. Before departure, turn Live tracking on to sync the selected Race Plan and confirm Race Pack readiness. The website change is available after the matching website update.
+Update the plugin, restart Signal K if prompted and reload the onboard app. Sync the selected Race Pack before departure for offline guidance. Read the [full release notes](docs/releases/0.2.0-beta.15.md) for upgrade steps and the live-versus-planning wind distinction.
 
 ## [0.2.0-beta.14] - 2026-11-01
 
