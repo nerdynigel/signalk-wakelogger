@@ -282,6 +282,18 @@ describe('onboard observations and calculations', () => {
     service.close()
   })
 
+  it('uses fresh five-minute wind after forecast expiry, but rejects expired fallback data', async () => {
+    const { service, snapshots, observations, clock } = await fixture({ pack: makeFixturePack({ validUntil: '2026-09-17T04:00:00Z' }) })
+    clock.value += 3 * 24 * 60 * 60_000
+    primeObservations(observations, clock, 30, clock.value)
+    await service.refresh(true)
+    expect(snapshots.latest()!.plan.legs.slice(0, 2).every(leg => leg.conditions.source === 'observed')).toBe(true)
+    expect(snapshots.latest()!.plan.legs[1]!.plan).not.toBeNull()
+    clock.value += 6 * 60_000
+    expect(service.availability(true)).toMatchObject({ ok: false, reason: 'pack_expired' })
+    service.close()
+  })
+
   it('works fully offline from a persisted pack and survives a store restart', async () => {
     const directory = await temporaryDirectory('onboard-offline-')
     const packDirectory = path.join(directory, 'race-packs')
