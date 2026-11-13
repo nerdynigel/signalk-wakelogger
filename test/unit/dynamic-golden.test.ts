@@ -8,7 +8,7 @@ import { computeDynamicPlan } from '../../src/race/dynamic'
 // api/tests/fixtures/race_pack/dynamic_golden.json. The cloud test suite asserts
 // the same SHA and runs the same scenario through its Python engine.
 export const DYNAMIC_GOLDEN_FIXTURE_SHA256 = '7c6ad12a67dd3f06d59448961c53dfbb45ac1f2abed6809b057830f363b436ad'
-export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = '9fa4f341b4c81bca7c9f5ba1780044ddcb38b2b96eec0746c6a264dd48d09dd0'
+export const DYNAMIC_GOLDEN_EXPECTED_SHA256 = '808619d5dbaa4dc1273205fca51665ca5775563db7315b461b19e79a70eada76'
 
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures')
 const fixture = JSON.parse(readFileSync(path.join(FIXTURE_DIR, 'dynamic_golden.json'), 'utf8'))
@@ -68,19 +68,22 @@ describe('shared dynamic golden scenario', () => {
     expect(plan.legs[1]!.fromVesselPosition).toBe(false)
   })
 
-  it('uses observed wind on the active leg and forecast on future legs', () => {
+  it('uses five-minute observed wind on current and following legs, forecast thereafter', () => {
     const plan = computeDynamicPlan(fixture)
     expect(plan.legs[0]!.conditions.source).toBe('observed')
     expect(plan.legs[0]!.conditions.twsKnots).toBeCloseTo(13.4, 5)
     expect(plan.legs[0]!.conditions.currentVelocityKn).not.toBeNull()
-    expect(plan.legs.slice(1).every((leg) => leg.conditions.source === 'forecast')).toBe(true)
+    expect(plan.legs[1]!.conditions.source).toBe('observed')
+    expect(plan.legs[1]!.conditions.twsKnots).toBe(plan.legs[0]!.conditions.twsKnots)
+    expect(plan.legs[1]!.conditions.twdDeg).toBe(plan.legs[0]!.conditions.twdDeg)
+    expect(plan.legs.slice(2).every((leg) => leg.conditions.source === 'forecast')).toBe(true)
   })
 
   it('delays a future leg onto a different forecast sample than the original schedule', () => {
     const plan = computeDynamicPlan(fixture)
     const third = plan.legs.find((leg) => leg.sequence === 3)!
     expect(third.selectedForecastSampleTime).toBe('2026-06-14T03:00:00Z')
-    expect(third.conditions.twsKnots).toBe(14)
+    expect(third.conditions.twsKnots).toBe(fixture.observed.twsKnots)
 
     // The original all-marks schedule computed from the race start (no actual
     // progress, no observations) lands on a different hourly sample, proving
@@ -107,4 +110,20 @@ describe('shared dynamic golden scenario', () => {
     expect(sampleDirections.some((direction: number) => direction > 350)).toBe(true)
     expect(sampleDirections.some((direction: number) => direction < 10)).toBe(true)
   })
+  it('uses observed wind for next-leg sails and apparent estimates, falling back only without observations', () => {
+    const observed = computeDynamicPlan(fixture).legs[1]!
+    const forecast = computeDynamicPlan({ ...fixture, observed: null }).legs[1]!
+    expect(forecast.conditions.source).toBe('forecast')
+    expect(observed.awaDeg).not.toBe(forecast.awaDeg)
+    expect(observed.awsKnots).not.toBe(forecast.awsKnots)
+    expect(observed.plan).not.toEqual(forecast.plan)
+    const noForecast = computeDynamicPlan({ ...fixture, forecast: { legs: [] } })
+    expect(noForecast.legs.slice(0, 2).every(l => l.conditions.source === 'observed')).toBe(true)
+    expect(noForecast.legs[1]!.awaDeg).not.toBeNull()
+    expect(noForecast.legs[1]!.plan).not.toBeNull()
+    const unavailable = computeDynamicPlan({ ...fixture, observed: null, forecast: { legs: [] } })
+    expect(unavailable.legs[1]!.awaDeg).toBeNull()
+    expect(unavailable.legs[1]!.plan).toBeNull()
+  })
+
 })

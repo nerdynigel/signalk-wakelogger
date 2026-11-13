@@ -2,6 +2,11 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased — Use vessel wind for next-leg sail preparation
+
+- Current and next-leg sail recommendations and estimated AWA/AWS now use the same validated rolling five-minute average of vessel wind. Missing, stale or insufficient instrument observations fall back to each leg's forecast. Later legs retain their forecast wind.
+- Fresh observed wind remains usable for these two legs when forecast coverage is unavailable; unavailable forecast currents and waves are withheld.
+
 ## Unreleased — Sail preparation for current and following legs
 
 - The Race panel shows the recommended sail plan and estimated apparent wind angle (AWA) and speed (AWS) for the current leg and the leg after the next mark. Sail summaries retain reefing instructions.

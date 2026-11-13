@@ -200,11 +200,11 @@ export function selectSampleForEta(samples: PackForecastSample[], targetAt: numb
 }
 
 function conditionsAt(series: PackLegForecast | undefined, targetAt: number, useObserved: boolean, observed: DynamicObservedWind | null): DynamicPlanConditions {
-  const sample = series ? selectSampleForEta(series.samples, targetAt) : null
-  if (!sample) return outOfCoverageConditions()
-  const delta = Math.abs(Date.parse(sample.time) - targetAt)
-  if (!Number.isFinite(delta) || delta > MAX_FORECAST_EXTRAPOLATION_MS) return outOfCoverageConditions()
-  return useObserved && observed ? observedConditions(observed, sample) : forecastConditions(sample)
+  let sample = series ? selectSampleForEta(series.samples, targetAt) : null
+  const delta = sample ? Math.abs(Date.parse(sample.time) - targetAt) : Infinity
+  if (!Number.isFinite(delta) || delta > MAX_FORECAST_EXTRAPOLATION_MS) sample = null
+  if (useObserved && observed) return observedConditions(observed, sample)
+  return sample ? forecastConditions(sample) : outOfCoverageConditions()
 }
 
 function twaFor(conditions: DynamicPlanConditions, bearing: number): number | null {
@@ -271,7 +271,9 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
       : { name: markFrom.name, latitude: markFrom.latitude, longitude: markFrom.longitude }
     const distance = distanceNm(from.latitude, from.longitude, to.latitude, to.longitude)
     const bearing = bearingDegrees(from.latitude, from.longitude, to.latitude, to.longitude)
-    const useObserved = index === firstIndex && input.observed !== null
+    // Prepare the imminent rounding from the same validated five-minute
+    // wind window as the current leg; later legs retain their ETA forecast.
+    const useObserved = index <= firstIndex + 1 && input.observed !== null
 
     // Bounded midpoint refinement. Start from the conditions at the leg start,
     // re-select at each provisional midpoint and stop as soon as the selected

@@ -44,8 +44,10 @@ mirror):
    `MIN_ESTIMATED_SOG_KNOTS = 0.5`. SOG drives duration and ETA; TWA is not
    adjusted for current.
 5. **Observed current leg.** Once the five-minute observation window is ready
-   the active leg uses observed wind but retains the forecast current/wave at
-   the calculated time. Future legs are always forecast-driven.
+   the active and immediately following legs use its averaged wind, retaining
+   forecast current/wave only when covered at the calculated time. Later legs
+   remain forecast-driven. Missing/stale observations fall back to forecast.
+   Observed wind does not require valid forecast coverage.
 6. **Coverage / out of range.** If the nearest sample for a leg is more than
    `maxForecastExtrapolationMs` (6 h) from the calculated time, that leg is
    reported `out_of_range` with no wind and no recommendation.

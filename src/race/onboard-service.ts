@@ -170,9 +170,9 @@ export class OnboardRaceService {
     // closed rather than silently calculating the course forwards.
     if (course.reverse) return { ok: false, reason: 'reverse_course_unsupported' }
     if (!racePackAppliesToCourse(pack, course)) return { ok: false, reason: 'pack_not_applicable' }
-    if (packValidityAt(pack, this.now()) === 'expired') return { ok: false, reason: 'pack_expired' }
     if (!this.options.racing()) return { ok: false, reason: 'not_racing' }
     const observations = this.options.observations.observations(this.now())
+    if (packValidityAt(pack, this.now()) === 'expired' && !observations.readiness.ready) return { ok: false, reason: 'pack_expired' }
     // An active-race calculation requires a real current position; the planner
     // never fabricates one.
     if (!observations.position) return { ok: false, reason: 'no_current_position' }

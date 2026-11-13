@@ -227,12 +227,12 @@ describe('onboard observations and calculations', () => {
     service.close()
   })
 
-  it('uses the local observation window for the current leg and a forecast for later legs', async () => {
+  it('uses the five-minute observation window for both current and following legs', async () => {
     const { service, snapshots } = await fixture()
     const plan = snapshots.latest()!.plan
     expect(plan.legs[0]!.conditions.source).toBe('observed')
     expect(plan.legs[0]!.conditions.twsKnots).toBeCloseTo(14, 0)
-    expect(plan.legs[1]!.conditions.source).toBe('forecast')
+    expect(plan.legs[1]!.conditions.source).toBe('observed')
     service.close()
   })
 
@@ -270,8 +270,15 @@ describe('onboard observations and calculations', () => {
     const observed = snapshots.latest()!
     expect(observed.plan.legs[0]!.conditions.source).toBe('observed')
     expect(observed.plan.legs[0]!.conditions.twsKnots).toBeCloseTo(14, 0)
-    expect(observed.plan.legs[1]!.conditions.source).toBe('forecast')
+    expect(observed.plan.legs[1]!.conditions.source).toBe('observed')
     expect(observed.warning).toBeNull()
+    // Wind ages out while fresh GPS remains: both estimates return to forecast.
+    clock.value += 6 * 60_000
+    observations.ingest({ updates: [{ timestamp: new Date(clock.value).toISOString(), values: [
+      { path: 'navigation.position', value: { latitude: -27.395, longitude: 153.18 } }
+    ] }] } as never)
+    await service.refresh(true)
+    expect(snapshots.latest()!.plan.legs.slice(0, 2).every(leg => leg.conditions.source === 'forecast')).toBe(true)
     service.close()
   })
 
