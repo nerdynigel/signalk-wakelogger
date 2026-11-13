@@ -401,7 +401,8 @@ const freshInstruments = () => {
       speedOverGround: { value: 3, timestamp: now },
       courseOverGroundTrue: { value: 1.1, timestamp: now },
       headingTrue: { value: 1, timestamp: now },
-      speedThroughWater: { value: 2.8, timestamp: now }
+      speedThroughWater: { value: 2.8, timestamp: now },
+      attitude: { value: { roll: -Math.PI / 18 }, timestamp: now }
     }
   }
 }
@@ -414,6 +415,7 @@ test('standalone instruments are the default with no course and need no Race Pac
   await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
   await expect(page.locator('#instruments-grid')).toContainText('TW')
   await expect(page.locator('#instruments-grid')).toContainText('Depth')
+  await expect(page.locator('#instruments-grid [data-reading=roll]')).toContainText('-10.0 °')
   await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
   // Viewing instruments must not activate a course, advance a mark or change upload mode.
   expect(writes).toEqual([])

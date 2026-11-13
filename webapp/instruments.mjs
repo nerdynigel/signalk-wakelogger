@@ -106,6 +106,11 @@ export function instrumentReadings({ navigation = {}, environment = {}, now = Da
   const headingSource = headingTrue ? { entry: headingTrue, reference: 'true' } : headingMagnetic ? { entry: headingMagnetic, reference: 'magnetic' } : null
   readings.push(direct({ id: 'heading', label: 'Heading', group: 'Vessel', entry: headingSource?.entry ?? null, transform: (v) => normalizeDegrees(v * RADIANS_TO_DEGREES), unit: headingSource ? `° ${headingSource.reference}` : '°', reference: headingSource?.reference ?? null, decimals: 0, now, staleSeconds }))
 
+  const attitude = entry('navigation.attitude')
+  readings.push(direct({ id: 'roll', label: 'Roll', group: 'Vessel',
+    entry: attitude ? { value: attitude.value?.roll, timestamp: attitude.timestamp } : null,
+    transform: value => value * RADIANS_TO_DEGREES, unit: '°', reference: 'vessel', now, staleSeconds }))
+
   const depthCandidates = [['belowTransducer', 'below transducer'], ['belowKeel', 'below keel'], ['belowSurface', 'below surface']]
   let depth = null
   for (const [key, reference] of depthCandidates) {

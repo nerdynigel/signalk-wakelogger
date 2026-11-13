@@ -1,5 +1,9 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased — Roll instrument
+
+- Added signed roll in degrees to the vessel Instruments view. The plugin reads the vessel attitude sensor; Wake Logger displays the fresh measured attitude already received in telemetry. Missing or stale readings are shown as unavailable.
+
 ## Unreleased — Race leg instrument boxes
 
 - The current sail plan now sits alongside the live navigation instruments. The duplicate current-leg card is removed.

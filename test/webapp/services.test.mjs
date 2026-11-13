@@ -1004,3 +1004,16 @@ test('local-only guidance uses fresh displayed estimates and retains onboard aut
   assert.equal(view.currentLeg.awaDeg, 80)
   assert.equal(view.currentLeg.windBasis, '5-min vessel average')
 })
+
+
+test('roll converts signed attitude radians to degrees and respects its own timestamp', () => {
+  const now = Date.now()
+  const read = (roll, at = now) => instrumentReadings({ now, navigation: { attitude: { value: { roll }, timestamp: at } } }).readings.find(r => r.id === 'roll')
+  assert.equal(formatReading(read(-Math.PI / 18)), '-10.0 °')
+  assert.equal(formatReading(read(0)), '0.0 °')
+  assert.equal(read(Math.PI / 18).available, true)
+  assert.equal(read(null).available, false)
+  assert.equal(read(NaN).available, false)
+  assert.equal(read(0.1, now - 31000).freshness, 'stale')
+  assert.equal(read(0.1, now + 60000).available, false)
+})
