@@ -1,5 +1,5 @@
 import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
-import { WIND_ARROW_PATH, windAngleText } from './wind-readout.mjs'
+import { WIND_ARROW_PATH, windAngleText, windDirectionText } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
 import { guidanceBearings } from './sailing-guidance.mjs'
@@ -773,12 +773,12 @@ function renderRacePlan() {
     const row = document.createElement('div')
     row.className = index === 0 ? 'race-plan-current' : 'race-plan-leg'
     row.dataset.leg = 'remaining'
-    row.append(racePlanLeg(leg, index === 0 ? 'After next mark' : undefined))
+    row.append(racePlanLeg(leg, index === 0 ? 'After next mark' : undefined, index === 0))
     list.append(row)
   }
 }
 
-function racePlanLeg(leg, eyebrow) {
+function racePlanLeg(leg, eyebrow, showTrueWind = false) {
   const fragment = document.createDocumentFragment()
   if (eyebrow) {
     const label = document.createElement('span')
@@ -804,14 +804,16 @@ function racePlanLeg(leg, eyebrow) {
   windGrid.setAttribute('aria-label', 'Estimated leg wind')
   const signed = angle => Number.isFinite(angle) ? (leg.windSide === 'port' ? -Math.abs(angle) : Math.abs(angle)) : null
   const readings = [
-    { id: 'twa', label: 'TWA', value: signed(leg.twaDeg), angle: true },
-    { id: 'tws', label: 'TWS', value: leg.twsKnots },
+    ...(showTrueWind ? [
+      { id: 'twd', label: 'TWD', value: leg.twdDeg, direction: true },
+      { id: 'tws', label: 'TWS', value: leg.twsKnots }
+    ] : []),
     { id: 'awa', label: 'AWA', value: signed(leg.awaDeg), angle: true },
     { id: 'aws', label: 'AWS', value: leg.awsKnots }
   ]
   windGrid.append(...readings.map(item => raceInstrumentBox({ ...item,
     available: Number.isFinite(item.value),
-    formatted: item.angle ? windAngleText(item.value) : Number.isFinite(item.value) ? `${item.value.toFixed(1)} kn` : '—'
+    formatted: item.direction ? windDirectionText(item.value) : item.angle ? windAngleText(item.value) : Number.isFinite(item.value) ? `${item.value.toFixed(1)} kn` : '—'
   })))
   fragment.append(windGrid)
   return fragment

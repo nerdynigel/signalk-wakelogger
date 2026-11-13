@@ -3,7 +3,7 @@
 ## Unreleased — Race leg instrument boxes
 
 - The current sail plan now sits alongside the live navigation instruments. The duplicate current-leg card is removed.
-- Every future leg shows its recommended sail plan with TWA, TWS, AWA and AWS in matching instrument boxes. Wind-angle arrows show port/starboard direction. Removed average/source/confidence prose from these cards for a clearer display.
+- The next leg shows TWD, TWS, AWA and AWS in matching instrument boxes; later legs show AWA/AWS alongside their recommended sail plan. The next leg has a compass wind-direction arrow; apparent-wind arrows show port/starboard direction. Removed average/source/confidence prose from these cards for a clearer display.
 
 ## Unreleased — Simpler live sail guidance
 

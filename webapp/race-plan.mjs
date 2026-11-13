@@ -22,7 +22,7 @@ function formatLeg(leg, index, observationBasis = null) {
     name: [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ') || `Leg ${leg.sequence ?? index + 1}`,
     awaDeg: !outOfRange && Number.isFinite(leg.awaDeg) ? leg.awaDeg : null,
     awsKnots: !outOfRange && Number.isFinite(leg.awsKnots) ? leg.awsKnots : null,
-    twaDeg: !outOfRange && Number.isFinite(leg.twaDeg) ? leg.twaDeg : null,
+    twdDeg: !outOfRange && Number.isFinite(leg.conditions?.twdDeg) ? leg.conditions.twdDeg : null,
     twsKnots: !outOfRange && Number.isFinite(leg.conditions?.twsKnots) ? leg.conditions.twsKnots : null,
     windSide: leg.windSide ?? null,
     sequence: leg.sequence ?? null,
