@@ -808,12 +808,6 @@ function racePlanLeg(leg, eyebrow) {
   const aws = leg.awsKnots === null ? '—' : `${leg.awsKnots.toFixed(1)} kn`
   apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws} · ${leg.windBasis}`
   fragment.append(apparent)
-  if (leg.immediateWarnings?.length) {
-    const warning = document.createElement('span')
-    warning.className = 'race-warning'
-    warning.textContent = leg.immediateWarnings.join(' · ')
-    fragment.append(warning)
-  }
   return fragment
 }
 

@@ -1484,17 +1484,20 @@ test('all desktop panel tabs fit within the rail, including Charts', async ({ pa
 })
 
 
-test('sail changes wait while wind-limit warnings and stronger reefing are immediate', async ({ page }) => {
+test('sail guidance omits limit warnings while keeping sail hold and immediate reefing', async ({ page }) => {
   const racePlan = structuredClone(onboardRacePlan)
   await mockBoat(page, { racePlan })
   await page.goto('/signalk-wakelogger/')
   const next = page.locator('[data-leg=remaining]').first()
   await expect(next).toContainText('Full main + A2 kite')
   racePlan.latestSnapshot.plan.legs[1].plan.summary = 'Main + alternate sail'
-  racePlan.latestSnapshot.plan.legs[1].plan.warnings = ['Apparent wind speed exceeds sail limit.']
+  racePlan.latestSnapshot.plan.legs[1].plan.warnings = ['Apparent wind speed exceeds sail limit.', 'AWA is above the sail range.', 'AWS is above the recorded range, inside planning tolerance.']
   await expect(next).toContainText('Sail change pending')
   await expect(next).toContainText('Full main + A2 kite')
-  await expect(next).toContainText('Apparent wind speed exceeds sail limit.')
+  await expect(next).not.toContainText('sail limit')
+  await expect(next).not.toContainText('sail range')
+  await expect(next).not.toContainText('planning tolerance')
+  await expect(next).toContainText('Estimated AWA / AWS:')
   racePlan.latestSnapshot.plan.legs[1].plan.mainsail_configuration = 'reef_1'
   racePlan.latestSnapshot.plan.legs[1].plan.summary = 'Reef 1 main + alternate sail'
   await expect(next).toContainText('Reef 1 main + alternate sail')

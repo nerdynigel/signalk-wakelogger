@@ -1,5 +1,9 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased — Simpler live sail guidance
+
+- Live race legs show the recommended sail match and estimated AWA/AWS without sail-range or sail-limit warning text. Reefing recommendations and smoothing remain part of the guidance.
+
 ## Unreleased — Steadier live sail guidance
 
 - Live estimated AWA/AWS now ease changes over 15 seconds and ignore display changes smaller than 1° / 0.2 kn. Vessel wind still uses the latest fresh sample until a full five-minute averaging window is available.
