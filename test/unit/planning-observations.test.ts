@@ -13,10 +13,10 @@ describe('planning wind selection', () => {
     expect(p.averages.sampleCount).toBe(1)
   })
   it('switches at five minutes and excludes older readings from the average', () => {
-    const samples = [sample(0, 100), sample(100, 10, 350), sample(290, 30, 10), sample(301, 20, 0)]
+    const samples = [sample(0, 100), sample(100, 10, 350), sample(290, 30, 10), sample(301, 50, 0)]
     const p = selectPlanningObservations(samples, at + 301_000)!
     expect(p.basis).toBe('five_minute_average')
-    expect(p.averages.twsKnots).toBe(20)
+    expect(p.averages.twsKnots).toBe(30)
     expect(p.averages.twdDeg).toBe(0)
   })
   it('rejects stale, future and unusable wind', () => {

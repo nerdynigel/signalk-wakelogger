@@ -2,6 +2,10 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased — Vessel-wind guidance for every remaining race leg
+
+- All remaining legs now update sail recommendations and estimated AWA/AWS from the selected vessel wind, using each leg's own course and boat-speed estimate. Latest fresh wind is used at startup; the rolling five-minute average smooths estimates once available. Each leg falls back to its own forecast when vessel wind is unavailable. Completed legs keep their history.
+
 ## Unreleased — Vessel wind available immediately after starting a trip
 
 - Current/next-leg guidance uses the latest fresh vessel wind sample immediately. After five minutes of history it uses the rolling five-minute average; forecast is used only without fresh usable wind. A short startup window no longer forces forecast or averages a partial window.

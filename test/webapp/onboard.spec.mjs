@@ -1442,3 +1442,22 @@ test('automatic mode displays a fresh onboard preview without internet', async (
   await expect(page.locator('#race-plan-list')).not.toContainText('historical')
   expect(external).toEqual([])
 })
+
+
+test('shows and refreshes apparent wind on every remaining leg', async ({ page }) => {
+  const racePlan = structuredClone(onboardRacePlan)
+  racePlan.latestSnapshot.observationBasis = 'five_minute_average'
+  racePlan.latestSnapshot.plan.legs.forEach(leg => { leg.conditions.source = 'observed' })
+  racePlan.latestSnapshot.plan.legs.push({ sequence: 3, to: { name: 'Mud Island' }, awaDeg: 95, awsKnots: 12.1,
+    conditions: { source: 'observed', twsKnots: 14, twdDeg: 130 }, plan: { summary: 'Full main + A2 kite' } })
+  await mockBoat(page, { racePlan })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('[data-leg=remaining]')).toHaveCount(2)
+  const later = page.locator('[data-leg=remaining]').last()
+  await expect(later).toContainText('Mud Island')
+  await expect(later).toContainText('95° / 12.1 kn')
+  await expect(later).toContainText('5-min vessel average')
+  racePlan.latestSnapshot.plan.legs[2].awaDeg = 101
+  racePlan.latestSnapshot.plan.legs[2].awsKnots = 13.2
+  await expect(later).toContainText('101° / 13.2 kn')
+})

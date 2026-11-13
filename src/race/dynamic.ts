@@ -272,9 +272,9 @@ export function computeDynamicPlan(input: DynamicPlanInput): DynamicPlan {
       : { name: markFrom.name, latitude: markFrom.latitude, longitude: markFrom.longitude }
     const distance = distanceNm(from.latitude, from.longitude, to.latitude, to.longitude)
     const bearing = bearingDegrees(from.latitude, from.longitude, to.latitude, to.longitude)
-    // Prepare the imminent rounding from the same validated five-minute
-    // wind window as the current leg; later legs retain their ETA forecast.
-    const useObserved = index <= firstIndex + 1 && observed !== null
+    // Project the same selected vessel wind onto every remaining leg.
+    // Each leg retains its own bearing, speed and forecast current/waves.
+    const useObserved = observed !== null
 
     // Bounded midpoint refinement. Start from the conditions at the leg start,
     // re-select at each provisional midpoint and stop as soon as the selected
