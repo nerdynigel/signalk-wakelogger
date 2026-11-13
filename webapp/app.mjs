@@ -1,3 +1,4 @@
+import { LiveVesselMotion, outsideFollowArea } from './live-vessel-motion.mjs'
 import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
 import { WIND_ARROW_PATH, windAngleText, windDirectionText } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
@@ -30,7 +31,10 @@ const laylineLayer = L.layerGroup().addTo(map)
 const fallbackGuidance = new GuidanceService()
 const guideRays = new Map(), laylineRays = new Map()
 let maneuverMarker = null, serverGuidance = null, guidanceEndpoint = false, guidanceEnabled = true, steeringData = {}
-let vesselMarker = null, guideViewportInitialized = false
+let vesselMarker = null, vesselIconKind = null, guideViewportInitialized = false
+const vesselMotion = new LiveVesselMotion()
+let vesselFrame = 0, forwardFrame = false
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, finishingTrip = false, trackingRequest = 0
@@ -84,10 +88,11 @@ function publishViewport() {
 }
 
 function fitCourse() {
+  map.stop()
   const points = progress?.points || []
   fittingViewport = true
   if (points.length) map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 55], maxZoom: 15, animate: false })
-  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], 13)
+  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], 13, { animate: false })
   fittingViewport = false
   publishViewport()
 }
@@ -95,10 +100,11 @@ function fitCourse() {
 // Fit the whole available sailed track (the real departure through the latest
 // recorded position), independent of when this browser connected.
 function fitTrack() {
+  map.stop()
   const bounds = trackBounds(track)
   fittingViewport = true
   if (bounds) map.fitBounds([[bounds.south, bounds.west], [bounds.north, bounds.east]], { padding: [35, 55], maxZoom: 15, animate: false })
-  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(13, map.getZoom()))
+  else if (progress?.position) map.setView([progress.position.latitude, progress.position.longitude], Math.max(13, map.getZoom()), { animate: false })
   fittingViewport = false
   publishViewport()
 }
@@ -207,14 +213,8 @@ function renderCourse() {
       .bindTooltip(safeText(point.name || label)).addTo(routeLayer)
   })
   $('map').dataset.coursePointCount = String(progress.points.length)
-  vesselLayer.clearLayers()
-  vesselMarker = null
   if (progress.position) {
     const point = [progress.position.latitude, progress.position.longitude]
-    const icon = progress.direction === null
-      ? L.divIcon({ className: 'mark', html: '●', iconSize: [20, 20], iconAnchor: [10, 10] })
-      : L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${progress.direction}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
-    vesselMarker = L.marker(point, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
     if (trackBootstrapped) {
       // Never append a live fix from a new recording onto the previous
       // recording still on screen; refresh the archive identity first.
@@ -230,7 +230,7 @@ function renderCourse() {
   }
   renderVesselGuides()
   publishTrack()
-  $('centre-vessel').disabled = !progress.position
+  $('centre-vessel').disabled = !vesselMotion.target
   // A course change re-frames the course only before any explicit viewport
   // choice, or when the viewer deliberately chose Fit course; an independently
   // selected track view is preserved.
@@ -448,43 +448,106 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
   element.dataset.trueWindFrom = guides.trueWindFrom === null ? '' : String(guides.trueWindFrom)
   element.dataset.guideOrigin = ''
   element.setAttribute('aria-label', guides.heading === null ? 'Interactive course map' : `Interactive course map · Heading ${Math.round(guides.heading)}° true${guides.maneuverBearing === null ? '' : ` · Estimated ${oppositeSide} ${guides.kind} ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`}`)
-  if (guides.heading === null) { for (const ray of guideRays.values()) ray.remove(); guideRays.clear(); return }
-  const location = L.latLng(guides.position.latitude, guides.position.longitude)
-  const icon = L.divIcon({ className: 'vessel-icon', html: `<span style="transform:rotate(${guides.heading}deg)"></span>`, iconSize: [20, 28], iconAnchor: [10, 14] })
-  if (vesselMarker) vesselMarker.setLatLng(location).setIcon(icon)
-  else vesselMarker = L.marker(location, { icon }).bindTooltip('Vessel · true heading').addTo(vesselLayer)
-  const pixel = map.latLngToContainerPoint(location)
-  const metresPerPixel = map.distance(location, map.containerPointToLatLng([pixel.x + 1, pixel.y]))
-  const origin = projectBearing(guides.position, guides.heading, metresPerPixel * 14)
-  const distance = Math.min(50000, metresPerPixel * Math.max(map.getSize().x, map.getSize().y) * 2)
-  const start = [origin.latitude, origin.longitude]
-  element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
-  const activeRays = new Set()
-  const draw = (bearing, options, label) => {
-    const end = projectBearing(origin, bearing, distance)
-    const longitude = end.longitude + Math.round((origin.longitude - end.longitude) / 360) * 360
-    const key = options.className
-    activeRays.add(key)
-    let ray = guideRays.get(key)
-    if (ray) ray.setLatLngs([start, [end.latitude, longitude]]).bindTooltip(label)
-    else { ray = L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
-    const path = ray.getElement()
-    path?.setAttribute('data-bearing-deg', String(bearing))
-    path?.setAttribute('data-origin-lat', String(start[0])); path?.setAttribute('data-origin-lon', String(start[1]))
+  cancelAnimationFrame(vesselFrame)
+  if (!validPosition || signalKAvailable === false) {
+    vesselMotion.reset()
+    $('centre-vessel').disabled = true
+    vesselMarker?.remove(); vesselMarker = null; vesselIconKind = null
+    for (const ray of guideRays.values()) ray.remove()
+    guideRays.clear()
+    element.dataset.displayVesselLat = ''; element.dataset.displayVesselLon = ''
+    return
   }
-  draw(guides.heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
-  if (guidanceEnabled && Number.isFinite(model.waterCourseDeg)) draw(model.waterCourseDeg, { color: '#0891b2', weight: 2, opacity: 0.95, dashArray: '5 5', className: 'water-course-guide' }, `Course through water (leeway) · ${Math.round(model.waterCourseDeg)}° true`)
-  if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`)
-  if (model.courseToSteerDeg !== null && guidanceEnabled) draw(model.courseToSteerDeg, { color: '#7c3aed', weight: 1.5, dashArray: '2 5', className: 'required-heading-guide' }, `Steer ${Math.round(model.courseToSteerDeg)}° true`)
-  for (const [key, ray] of guideRays) if (!activeRays.has(key)) { ray.remove(); guideRays.delete(key) }
-  // With no course/history there was no initial fit, leaving the vessel at
-  // world zoom. Frame one fresh fix while preserving later viewport intent.
-  if (!guideViewportInitialized && viewportMode === 'auto' && !trackUserControlled && !track.length && !progress?.points?.length) {
-    guideViewportInitialized = true
-    map.setView(location, 13, { animate: false })
-    publishViewport()
+  const fresh = id => readings.find(r => r.id === id && r.freshness === 'fresh')?.value
+  const accepted = vesselMotion.update(trackingStatus?.trackingSessionId ?? trackRecordingId ?? 'local', {
+    ...coordinate, headingDeg: guides.heading, capturedAt: new Date(position.timestamp).toISOString(),
+    courseDeg: fresh('cog'), speedKn: fresh('sog'),
+  }, now, reducedMotion.matches)
+  $('centre-vessel').disabled = !vesselMotion.target
+  if (accepted && viewportMode === 'follow') followVessel()
+  const paint = () => {
+    const pose = vesselMotion.sample(Date.now())
+    if (!pose) return
+    const heading = guides.heading === null ? null : pose.headingDeg ?? guides.heading
+    const location = L.latLng(pose.latitude, pose.longitude)
+    const kind = heading === null ? 'dot' : 'heading'
+    if (!vesselMarker || vesselIconKind !== kind) {
+      const icon = kind === 'dot'
+        ? L.divIcon({ className: 'mark', html: '●', iconSize: [20, 20], iconAnchor: [10, 10] })
+        : L.divIcon({ className: 'vessel-icon', html: '<span></span>', iconSize: [20, 28], iconAnchor: [10, 14] })
+      if (vesselMarker) vesselMarker.setIcon(icon)
+      else vesselMarker = L.marker(location, { icon }).bindTooltip('Vessel').addTo(vesselLayer)
+      vesselIconKind = kind
+    }
+    vesselMarker.setLatLng(location)
+    if (kind === 'heading') vesselMarker.getElement()?.querySelector('span')?.style.setProperty('transform', `rotate(${heading}deg)`)
+    element.dataset.displayVesselLat = String(pose.latitude)
+    element.dataset.displayVesselLon = String(pose.longitude)
+    element.dataset.displayVesselHeading = heading === null ? '' : String(heading)
+    if (heading === null) {
+      for (const ray of guideRays.values()) ray.remove()
+      guideRays.clear()
+      if (!document.hidden && vesselMotion.moving(Date.now())) vesselFrame = requestAnimationFrame(paint)
+      return
+    }
+    const pixel = map.latLngToContainerPoint(location)
+    const metresPerPixel = map.distance(location, map.containerPointToLatLng([pixel.x + 1, pixel.y]))
+    const origin = projectBearing(pose, heading, metresPerPixel * 14)
+    const distance = Math.min(50000, metresPerPixel * Math.max(map.getSize().x, map.getSize().y) * 2)
+    const start = [origin.latitude, origin.longitude]
+    element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
+    const activeRays = new Set()
+    const draw = (bearing, options, label) => {
+      const end = projectBearing(origin, bearing, distance)
+      const longitude = end.longitude + Math.round((origin.longitude - end.longitude) / 360) * 360
+      const key = options.className
+      activeRays.add(key)
+      let ray = guideRays.get(key)
+      if (ray) ray.setLatLngs([start, [end.latitude, longitude]]).bindTooltip(label)
+      else { ray = L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
+      const path = ray.getElement()
+      path?.setAttribute('data-bearing-deg', String(bearing))
+      path?.setAttribute('data-origin-lat', String(start[0])); path?.setAttribute('data-origin-lon', String(start[1]))
+    }
+    draw(heading, { color: '#102c3b', weight: 2, opacity: 0.75, className: 'vessel-heading-guide' }, `Heading ${Math.round(guides.heading)}° true`)
+    if (guidanceEnabled && Number.isFinite(model.waterCourseDeg)) draw(model.waterCourseDeg, { color: '#0891b2', weight: 2, opacity: 0.95, dashArray: '5 5', className: 'water-course-guide' }, `Course through water (leeway) · ${Math.round(model.waterCourseDeg)}° true`)
+    if (guides.maneuverBearing !== null) draw(guides.maneuverBearing, { color: '#db7718', weight: 2, opacity: 0.85, dashArray: '8 6', className: `opposite-${guides.kind}-guide` }, `Estimated ${oppositeSide} ${guides.kind} · ${Math.round(guides.maneuverBearing)}° true · ${model.corrected ? 'current/leeway adjusted ground track' : 'mirrored sailing angle'}`)
+    if (model.courseToSteerDeg !== null && guidanceEnabled) draw(model.courseToSteerDeg, { color: '#7c3aed', weight: 1.5, dashArray: '2 5', className: 'required-heading-guide' }, `Steer ${Math.round(model.courseToSteerDeg)}° true`)
+    for (const [key, ray] of guideRays) if (!activeRays.has(key)) { ray.remove(); guideRays.delete(key) }
+    // With no course/history there was no initial fit, leaving the vessel at
+    // world zoom. Frame one fresh fix while preserving later viewport intent.
+    if (!guideViewportInitialized && viewportMode === 'auto' && !trackUserControlled && !track.length && !progress?.points?.length) {
+      guideViewportInitialized = true
+      map.setView(location, 13, { animate: false })
+      publishViewport()
+    }
+    if (!document.hidden && vesselMotion.moving(Date.now())) vesselFrame = requestAnimationFrame(paint)
   }
+  paint()
 
+}
+
+// Follow only after the viewer chooses Centre vessel. Course/track fits and
+// manual navigation retain their existing viewport intent.
+function followVessel(immediate = false) {
+  const pose = vesselMotion.followPose()
+  if (!pose) return
+  if (immediate) {
+    map.stop()
+    map.setView([pose.latitude, pose.longitude], Math.max(12, map.getZoom()), { animate: false })
+    publishViewport()
+    return
+  }
+  const size = map.getSize(), point = map.latLngToContainerPoint([pose.latitude, pose.longitude])
+  if (Number.isFinite(pose.speedKn)) forwardFrame = pose.speedKn >= (forwardFrame ? 1.7 : 2.3)
+  else forwardFrame = false
+  const angle = (pose.headingDeg ?? 0) * Math.PI / 180
+  const offset = pose.ready && forwardFrame && Number.isFinite(pose.headingDeg) ? Math.min(size.x, size.y) * 0.18 : 0
+  const desired = L.point(size.x / 2 - Math.sin(angle) * offset, size.y / 2 + Math.cos(angle) * offset)
+  const delta = point.subtract(desired)
+  if (!pose.ready && !outsideFollowArea(point, desired, size.x, size.y) || delta.distanceTo(L.point(0, 0)) < 3) return
+  const centre = map.latLngToContainerPoint(map.getCenter()).add(delta.multiplyBy(0.35))
+  map.panTo(map.containerPointToLatLng(centre), { animate: !reducedMotion.matches, duration: 1.2, easeLinearity: 1 })
 }
 
 function windSnapshot(view) {
@@ -937,12 +1000,17 @@ $('progression-dismiss').onclick = async () => {
 }
 $('fit-course').onclick = () => { viewportMode = 'course'; fitCourse() }
 $('fit-track').onclick = () => { viewportMode = 'track'; fitTrack() }
-$('centre-vessel').onclick = () => { if (progress?.position) { viewportMode = 'follow'; map.setView([progress.position.latitude, progress.position.longitude], Math.max(12, map.getZoom())) } }
+$('centre-vessel').onclick = () => { if (vesselMotion.target) { viewportMode = 'follow'; followVessel(true) } }
 // A deliberate pan/zoom takes viewport control; programmatic fits and resizes
 // do not (they have no originalEvent and/or run under fittingViewport).
 map.on('zoomend resize', () => renderVesselGuides())
-map.on('dragstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
-map.on('zoomstart', (event) => { if (!fittingViewport && event?.originalEvent) { trackUserControlled = true; viewportMode = 'manual' } })
+map.on('moveend', publishViewport)
+map.on('dragstart', () => { if (!fittingViewport) { trackUserControlled = true; viewportMode = 'manual'; map.stop(); publishViewport() } })
+const manualZoom = () => { trackUserControlled = true; viewportMode = 'manual'; publishViewport() }
+$('map').addEventListener('wheel', manualZoom, { passive: true })
+$('map').addEventListener('click', event => { if (event.target.closest('.leaflet-control-zoom a')) manualZoom() })
+$('map').addEventListener('dblclick', manualZoom)
+map.on('boxzoomstart', manualZoom)
 $('activate-course').onclick = () => {
   // Explicit activation is the only path that may replace an unowned/malformed
   // resource at the Wake Logger target id, so confirm the exact resource first.
@@ -1155,7 +1223,7 @@ document.addEventListener('fullscreenchange', () => {
 })
 // A backgrounded mobile browser can suspend timers; on resume, re-request the
 // whole-trip geometry so a gap while suspended cannot leave the map short.
-document.addEventListener('visibilitychange', () => { if (!document.hidden) trackResumeRequested = true })
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { trackResumeRequested = true; refreshInstruments() } else cancelAnimationFrame(vesselFrame) })
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !document.fullscreenElement) setFullscreen(false)
 })
@@ -1165,5 +1233,5 @@ await Promise.all([poll(), refreshInstruments(), refreshTracking()])
 setInterval(() => { if (!document.hidden) { poll(); refreshTracking() } }, 3000)
 // Instruments refresh on their own cadence so a hanging course/pack request
 // cannot delay live readings or their freshness.
-setInterval(() => { if (!document.hidden) refreshInstruments() }, 2000)
+setInterval(() => { if (!document.hidden) refreshInstruments() }, 1000)
 window.addEventListener('online', () => { poll(); refreshInstruments(); refreshTracking() })

@@ -1559,3 +1559,55 @@ test('fresh plugin guidance stays visible across polling cycles and expires on s
   await expect(page.locator('.waypoint-port-layline')).toHaveCount(0)
   expect(writes).toEqual([])
 })
+
+
+test('plugin interpolates movement without replacing the boat and follows only on request', async ({ page }) => {
+  let latitude = -27.41, at = Date.now()
+  const measurement = value => ({ value, timestamp: new Date(at).toISOString() })
+  await mockBoat(page, {
+    course: false,
+    navigationOverride: () => ({ position: measurement({ latitude, longitude: 153.18 }),
+      headingTrue: measurement(330 * Math.PI / 180), speedOverGround: measurement(3), courseOverGroundTrue: measurement(330 * Math.PI / 180) }),
+    guidance: () => new GuidanceEngine().update({ at: Date.now(), heading: { value: 330, at: Date.now() }, wind: { east: 0, north: 12, at: Date.now() } }),
+  })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map')
+  await expect(page.locator('.vessel-icon')).toHaveCount(1)
+  await page.evaluate(() => { window.originalBoat = document.querySelector('.vessel-icon') })
+  const initialCenter = await map.getAttribute('data-viewport-center')
+  await page.evaluate(() => {
+    window.movementSamples = []
+    const observer = new MutationObserver(() => window.movementSamples.push(Number(document.querySelector('#map').dataset.displayVesselLat)))
+    observer.observe(document.querySelector('#map'), { attributes: true, attributeFilter: ['data-display-vessel-lat'] })
+  })
+  latitude += 0.00015; at = Date.now()
+  await expect.poll(async () => Number(await map.getAttribute('data-display-vessel-lat'))).toBeCloseTo(latitude, 7)
+  expect(await page.evaluate(() => window.movementSamples.some(lat => lat > -27.41 && lat < -27.40985))).toBe(true)
+  expect(await map.getAttribute('data-viewport-center')).toBe(initialCenter)
+  await page.locator('#centre-vessel').click()
+  const followCenter = await map.getAttribute('data-viewport-center')
+  latitude += 0.00015; at = Date.now()
+  await expect(map).not.toHaveAttribute('data-viewport-center', followCenter)
+  await expect(map).toHaveAttribute('data-viewport-mode', 'follow')
+  expect(await page.evaluate(() => window.originalBoat === document.querySelector('.vessel-icon'))).toBe(true)
+  await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
+  // A course refresh must not reset the marker to its raw position or recreate it.
+  await page.waitForTimeout(3200)
+  expect(await page.evaluate(() => window.originalBoat === document.querySelector('.vessel-icon'))).toBe(true)
+  latitude = -10; at = Date.now()
+  await page.waitForTimeout(1800)
+  expect(Number(await map.getAttribute('data-display-vessel-lat'))).toBeCloseTo(-27.4097, 7)
+  await page.locator('#fit-course').click()
+  const held = await map.getAttribute('data-viewport-center')
+  latitude = -27.4096; at = Date.now()
+  await expect.poll(async () => Number(await map.getAttribute('data-display-vessel-lat'))).toBeCloseTo(latitude, 7)
+  expect(await map.getAttribute('data-viewport-center')).toBe(held)
+  await expect(map).toHaveAttribute('data-viewport-mode', 'course')
+  await page.locator('#centre-vessel').click()
+  const box = await map.boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2 + 30, { steps: 8 })
+  await page.mouse.up()
+  await expect(map).toHaveAttribute('data-viewport-mode', 'manual')
+})

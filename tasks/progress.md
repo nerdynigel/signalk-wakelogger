@@ -1,0 +1,1 @@
+Plugin smoothing complete on fix/smooth-onboard-tracking and installed in the local Signal K test environment. 75 focused unit tests and seven browser scenarios passed; lint/typecheck/build passed. Live replay probe verified 321 distinct displayed positions over ten seconds, stable marker and no browser errors.

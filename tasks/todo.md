@@ -54,3 +54,14 @@ Release review: candidate beta.10 contains the race-navigation resilience change
 Website production deployment and trip 78/79 repair remain outside this publication. Production access remains read-only.
 
 Release validation update: local package check passed, and GitHub Node 20/22, broker and packaged Signal K Docker checks passed on 3450022. Signal K integration exposed a fixture replacing GPS fixes before durable sampling; the scenario now observes each archived sample before advancing. The local browser suite exposed an existing dialog.dismiss promise outliving its test; all dialog choices are now awaited. Final CI must pass these updates before merging/publishing. npm passkey sign-in completed; no version or tag has been published yet.
+
+
+## Smooth onboard tracking (13 November 2026)
+
+- [x] Identify raw marker replacement and missing follow movement.
+- [x] Reuse the website display motion model; preserve recorded positions.
+- [x] Keep boat and guide origins together; ease explicit vessel follow after three fixes.
+- [x] Verify interpolation, marker continuity, GPS rejection, viewport intent and guidance expiry in browser.
+- [x] Deploy static assets to the Signal K test environment and verify installed files.
+
+Review: 75 focused unit tests, seven distinct browser scenarios, lint, typecheck and build passed. Installed assets match the local build. Live replay check: 387 frames, 321 distinct interpolated positions, stable marker identity, follow mode and no browser errors. No server restart, default-branch merge or npm publication.
