@@ -1525,3 +1525,37 @@ test('sail guidance omits limit warnings while keeping sail hold and immediate r
   await expect(next).toContainText('Reef 1 main + alternate sail')
   await expect(next).not.toContainText('Sail change pending')
 })
+
+test('fresh plugin guidance stays visible across polling cycles and expires on source age', async ({ page }) => {
+  let expire = false
+  const points = [{ name: 'Start', latitude: -27.42, longitude: 153.18 },
+    { name: 'Northern mark', latitude: -27.39, longitude: 153.18 }, { name: 'Finish', latitude: -27.37, longitude: 153.18 }]
+  const measurement = value => ({ value, timestamp: new Date().toISOString() })
+  const { writes } = await mockBoat(page, {
+    courseState: () => {
+      const course = { ...desired, action: 'activate', start: points[0], marks: [points[1]], finish: points[2], activeWaypointIndex: 1 }
+      return { desired: course, cachedCourse: course, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: 1 } } } }
+    },
+    navigationOverride: () => ({ position: measurement({ latitude: -27.41, longitude: 153.18 }), headingTrue: measurement(330 * Math.PI / 180) }),
+    guidance: () => {
+      const at = Date.now() - (expire ? 31000 : 0)
+      return new GuidanceEngine().update({ at, heading: { value: 330, at }, wind: { east: 0, north: 12, at } })
+    }
+  })
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#map')).toHaveAttribute('data-layline-status', 'ready')
+  const missing = await page.evaluate(() => new Promise(resolve => {
+    let dropped = 0; const start = performance.now()
+    const frame = () => {
+      if (!['.vessel-heading-guide', '.opposite-tack-guide', '.waypoint-port-layline', '.waypoint-starboard-layline'].every(selector => document.querySelector(selector))) dropped++
+      if (performance.now() - start < 7500) requestAnimationFrame(frame)
+      else resolve(dropped)
+    }
+    requestAnimationFrame(frame)
+  }))
+  expect(missing).toBe(0)
+  expire = true
+  await expect(page.locator('#map')).toHaveAttribute('data-heading-guide-bearing', '')
+  await expect(page.locator('.waypoint-port-layline')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
