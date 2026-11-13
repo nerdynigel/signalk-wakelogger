@@ -42,7 +42,7 @@ test('reef increases and warnings bypass sail holding immediately', () => {
   assert.equal(shown.plan.mainsail_configuration, 'reef_1')
   assert.deepEqual(shown.guidanceStability.warnings, ['Apparent wind speed exceeds sail limit.'])
 })
-test('unsafe or unavailable held sails bypass the hold', () => {
+test('unsafe held sails bypass the hold', () => {
   const s = new LegGuidanceStabilizer()
   update(s, leg(), 0)
   const raw = { ...leg(30, 20, plan(2)), candidateSails: [{ sail_id: 10 }, { sail_id: 1, warnings: ['Apparent wind speed exceeds sail limit.'] }, { sail_id: 2 }] }
@@ -85,4 +85,12 @@ test('the first available recommendation is immediate', () => {
   const s = new LegGuidanceStabilizer()
   update(s, leg(20, 10, null), 0)
   assert.equal(update(s, leg(), 1000).plan.summary, 'Main + sail 1')
+})
+
+test('a held sail falling outside the top five candidates still uses the hold', () => {
+  const s = new LegGuidanceStabilizer()
+  update(s, leg(), 0)
+  const shown = update(s, { ...leg(30, 20, plan(2)), candidateSails: [{ sail_id: 2 }] }, 1000)
+  assert.equal(shown.plan.summary, 'Main + sail 1')
+  assert.equal(shown.guidanceStability.pendingSailChange, true)
 })

@@ -46,8 +46,9 @@ export class LegGuidanceStabilizer {
       const heldIds = new Set(roles.map(role => state.plan?.[role]?.sail_id).filter(id => id != null))
       const heldCandidates = Array.isArray(candidates) ? candidates.filter(candidate => heldIds.has(candidate.sail_id)) : []
       const heldWarnings = heldCandidates.flatMap(candidate => critical(candidate.warnings))
-      const unavailable = Array.isArray(candidates) && [...heldIds].some(id => !candidates.some(candidate => candidate.sail_id === id && candidate.crew_compatible !== false))
-      const urgent = !plan || !state.plan || rank(plan) > rank(state.plan) || unavailable || heldWarnings.length > 0
+      // Candidate lists contain only the top five; absence does not mean unavailable.
+      const crewIncompatible = heldCandidates.some(candidate => candidate.crew_compatible === false)
+      const urgent = !plan || !state.plan || rank(plan) > rank(state.plan) || crewIncompatible || heldWarnings.length > 0
       if (urgent || identity(plan) === identity(state.plan)) {
         state.plan = structuredClone(plan)
         state.pending = null
