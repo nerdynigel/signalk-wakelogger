@@ -4,7 +4,7 @@ import { WIND_ARROW_PATH, windAngleText, windDirectionText } from './wind-readou
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
 import { guidanceBearings } from './sailing-guidance.mjs'
-import { vesselGuideBearings, projectBearing, bearingBetween } from './vessel-guides.mjs'
+import { vesselGuideBearings, bearingBetween } from './vessel-guides.mjs'
 import { waypointLaylines, laylineCoordinates } from './waypoint-laylines.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
 import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
@@ -492,19 +492,23 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
     }
     const pixel = map.latLngToContainerPoint(location)
     const metresPerPixel = map.distance(location, map.containerPointToLatLng([pixel.x + 1, pixel.y]))
-    const origin = projectBearing(pose, heading, metresPerPixel * 14)
-    const distance = Math.min(50000, metresPerPixel * Math.max(map.getSize().x, map.getSize().y) * 2)
-    const start = [origin.latitude, origin.longitude]
-    element.dataset.guideOrigin = `${origin.latitude},${origin.longitude}`
+    // Use the marker's rounded layer position and its actual 14 px bow offset.
+    // Boat and rays then translate as one piece, including during camera pans.
+    const angle = heading * Math.PI / 180
+    const bow = map.latLngToLayerPoint(location).add(L.point(Math.sin(angle) * 14, -Math.cos(angle) * 14))
+    const origin = map.layerPointToLatLng(bow)
+    const distancePx = Math.min(50000 / metresPerPixel, Math.max(map.getSize().x, map.getSize().y) * 2)
+    const start = [origin.lat, origin.lng]
+    element.dataset.guideOrigin = `${origin.lat},${origin.lng}`
     const activeRays = new Set()
     const draw = (bearing, options, label) => {
-      const end = projectBearing(origin, bearing, distance)
-      const longitude = end.longitude + Math.round((origin.longitude - end.longitude) / 360) * 360
+      const radians = bearing * Math.PI / 180
+      const end = map.layerPointToLatLng(bow.add(L.point(Math.sin(radians) * distancePx, -Math.cos(radians) * distancePx)))
       const key = options.className
       activeRays.add(key)
       let ray = guideRays.get(key)
-      if (ray) ray.setLatLngs([start, [end.latitude, longitude]]).bindTooltip(label)
-      else { ray = L.polyline([start, [end.latitude, longitude]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
+      if (ray) ray.setLatLngs([start, [end.lat, end.lng]]).bindTooltip(label)
+      else { ray = L.polyline([start, [end.lat, end.lng]], options).bindTooltip(label).addTo(guideLayer); guideRays.set(key, ray) }
       const path = ray.getElement()
       path?.setAttribute('data-bearing-deg', String(bearing))
       path?.setAttribute('data-origin-lat', String(start[0])); path?.setAttribute('data-origin-lon', String(start[1]))
@@ -1191,6 +1195,7 @@ function resizeMap() {
   fittingViewport = true
   requestAnimationFrame(() => {
     map.invalidateSize({ animate: false })
+    if (viewportMode === 'follow') followVessel(true)
     fittingViewport = false
     publishViewport()
   })

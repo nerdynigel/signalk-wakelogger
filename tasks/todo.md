@@ -65,3 +65,6 @@ Release validation update: local package check passed, and GitHub Node 20/22, br
 - [x] Deploy static assets to the Signal K test environment and verify installed files.
 
 Review: 75 focused unit tests, seven distinct browser scenarios, lint, typecheck and build passed. Installed assets match the local build. Live replay check: 387 frames, 321 distinct interpolated positions, stable marker identity, follow mode and no browser errors. No server restart, default-branch merge or npm publication.
+
+- [x] Keep heading and tack rays attached to the exact arrow tip through movement/pans; live maximum gap 0.64 px.
+- [x] Preserve vessel visibility when resizing the follow view to mobile.

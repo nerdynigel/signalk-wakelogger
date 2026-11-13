@@ -1577,6 +1577,18 @@ test('plugin interpolates movement without replacing the boat and follows only o
   const initialCenter = await map.getAttribute('data-viewport-center')
   await page.evaluate(() => {
     window.movementSamples = []
+    window.bowGaps = []
+    const frame = () => {
+      const boat = document.querySelector('.vessel-icon'), map = document.querySelector('#map')
+      const rect = boat.getBoundingClientRect(), heading = Number(map.dataset.displayVesselHeading) * Math.PI / 180
+      const tip = { x: rect.x + 10 + 14 * Math.sin(heading), y: rect.y + 14 - 14 * Math.cos(heading) }
+      for (const ray of document.querySelectorAll('.vessel-heading-guide,.opposite-tack-guide')) {
+        const start = ray.getPointAtLength(0), screen = new DOMPoint(start.x, start.y).matrixTransform(ray.getScreenCTM())
+        window.bowGaps.push(Math.hypot(screen.x - tip.x, screen.y - tip.y))
+      }
+      requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
     const observer = new MutationObserver(() => window.movementSamples.push(Number(document.querySelector('#map').dataset.displayVesselLat)))
     observer.observe(document.querySelector('#map'), { attributes: true, attributeFilter: ['data-display-vessel-lat'] })
   })
@@ -1604,6 +1616,12 @@ test('plugin interpolates movement without replacing the boat and follows only o
   expect(await map.getAttribute('data-viewport-center')).toBe(held)
   await expect(map).toHaveAttribute('data-viewport-mode', 'course')
   await page.locator('#centre-vessel').click()
+  expect(await page.evaluate(() => Math.max(...window.bowGaps))).toBeLessThan(1.5)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(() => page.locator('.vessel-icon').evaluate(icon => {
+    const boat = icon.getBoundingClientRect(), map = document.querySelector('#map').getBoundingClientRect()
+    return boat.x >= map.x && boat.right <= map.right && boat.y >= map.y && boat.bottom <= map.bottom
+  })).toBe(true)
   const box = await map.boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()

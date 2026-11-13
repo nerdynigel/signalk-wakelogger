@@ -1,1 +1,2 @@
 Plugin smoothing complete on fix/smooth-onboard-tracking and installed in the local Signal K test environment. 75 focused unit tests and seven browser scenarios passed; lint/typecheck/build passed. Live replay probe verified 321 distinct displayed positions over ten seconds, stable marker and no browser errors.
+Follow-up deployed: heading/tack origins now share the marker’s exact pixel anchor. Live maximum bow gap is 0.64 px (previously 7.39 px). Motion/attachment, guidance expiry and resize checks passed.
