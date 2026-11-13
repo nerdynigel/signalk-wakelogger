@@ -315,3 +315,14 @@ Transport shutdown separates the two decisions:
 published first. The real-broker E2E proves a brand-new observer still reads
 `local_only` after the plugin is gone, and that an ungraceful automatic close
 still publishes the retained `offline` Will.
+
+### Planning wind at startup
+
+Current and immediately following legs use the latest valid vessel wind sample
+while less than five minutes of wind history is available. Once five minutes
+has elapsed since the first qualifying wind reading, use the average of valid
+samples in the trailing 300-second window. Samples older than that window do
+not enter the average. TWD uses a circular mean. The newest wind sample must
+remain within the existing 30-second freshness bound; otherwise use forecast.
+The older full-window readiness metrics remain diagnostic and do not block
+startup guidance. Restarting a trip resets its onboard history anchor.

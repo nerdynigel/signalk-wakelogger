@@ -1,5 +1,6 @@
 import {
   aggregateObservationSamples,
+  selectPlanningObservations,
   circularMean,
   OBSERVATION_MAX_AGE_SECONDS,
   OBSERVATION_MIN_SAMPLES,
@@ -27,10 +28,13 @@ export const circularAverage = circularMean
 // diverge.
 export class RollingAverages {
   private samples: SailingAverageSample[] = []
+  private firstWindSample: SailingAverageSample | null = null
+  private latestWindSample: SailingAverageSample | null = null
   constructor(private readonly windowMs: number = DEFAULT_WINDOW_MS) {}
 
   add(sample: SailingAverageSample): void {
     if (!Number.isFinite(sample.at)) return
+    this.observe(sample)
     this.samples.push(sample)
     this.prune(sample.at)
   }
@@ -40,6 +44,24 @@ export class RollingAverages {
     if (!this.samples.length) return null
     return aggregateObservationSamples(this.samples, now, this.windowMs)
   }
+
+  observe(sample: SailingAverageSample): void {
+    if (aggregateObservationSamples([sample], sample.at, this.windowMs).qualifyingSampleCount > 0) {
+      this.firstWindSample ??= sample
+      this.latestWindSample = sample
+    }
+  }
+
+  planningValue(now: number): ReturnType<typeof selectPlanningObservations> {
+    if (this.firstWindSample && now - this.firstWindSample.at < this.windowMs && this.latestWindSample) {
+      return selectPlanningObservations(this.firstWindSample === this.latestWindSample ? [this.latestWindSample] : [this.firstWindSample, this.latestWindSample], now, this.windowMs)
+    }
+    this.prune(now)
+    const samples = this.firstWindSample && !this.samples.includes(this.firstWindSample) ? [this.firstWindSample, ...this.samples] : this.samples
+    return selectPlanningObservations(samples, now, this.windowMs)
+  }
+
+  reset(): void { this.samples = []; this.firstWindSample = null; this.latestWindSample = null }
 
   private prune(now: number): void {
     const cutoff = now - this.windowMs

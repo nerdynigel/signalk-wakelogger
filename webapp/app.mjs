@@ -799,7 +799,7 @@ function racePlanLeg(leg, eyebrow) {
   const apparent = document.createElement('span')
   const awa = leg.awaDeg === null ? '—' : `${Math.round(leg.awaDeg)}°`
   const aws = leg.awsKnots === null ? '—' : `${leg.awsKnots.toFixed(1)} kn`
-  apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws}`
+  apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws} · ${leg.windBasis}`
   fragment.append(apparent)
   return fragment
 }

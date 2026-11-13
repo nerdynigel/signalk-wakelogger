@@ -64,10 +64,12 @@ export class OnboardRaceService {
   private lastPlan: OnboardPlan | null = null
   private lastWarning: string | null = null
   private closed = false
+  private observationSession: string | null
   private readonly now: () => number
   private readonly cadenceMs: number
 
   constructor(private readonly options: OnboardRaceServiceOptions) {
+    this.observationSession = options.trackingSessionId?.() ?? null
     this.now = options.now ?? Date.now
     this.cadenceMs = options.cadenceMs ?? DEFAULT_CADENCE_MS
   }
@@ -104,16 +106,16 @@ export class OnboardRaceService {
     const pack = availability.pack
     const course = availability.course
     const now = this.now()
-    const observations = this.options.observations.observations(now)
+    const observations = this.readObservations(now)
     const packApplied = this.options.packs.applied()
     let plan: OnboardPlan
     try {
       plan = buildOnboardPlan({
         pack,
         activeIndex: course.activeIndex,
-        // Only a complete, fresh observation window may drive the current leg;
-        // otherwise the planner falls back to that leg's downloaded forecast.
-        averages: observations.readiness.ready ? observations.averages : null,
+        // Start from the latest fresh sample, then use the trailing five-minute
+        // average once the collector has that history.
+        averages: observations.planning?.averages ?? null,
         position: observations.position ? { latitude: observations.position.latitude, longitude: observations.position.longitude } : null,
         now,
         vessel: vesselPerformanceFromPack(pack) ?? this.options.vessel?.() ?? null
@@ -128,6 +130,7 @@ export class OnboardRaceService {
       id: `${packApplied?.packId ?? 'pack'}:${pack.revision}:${now}`,
       generatedAt: now,
       source: 'onboard',
+      observationBasis: observations.planning?.basis ?? 'forecast',
       packId: packApplied?.packId ?? pack.packId ?? null,
       packRevision: pack.revision,
       packSha256: packApplied?.sha256 ?? '',
@@ -171,8 +174,8 @@ export class OnboardRaceService {
     if (course.reverse) return { ok: false, reason: 'reverse_course_unsupported' }
     if (!racePackAppliesToCourse(pack, course)) return { ok: false, reason: 'pack_not_applicable' }
     if (!this.options.racing()) return { ok: false, reason: 'not_racing' }
-    const observations = this.options.observations.observations(this.now())
-    if (packValidityAt(pack, this.now()) === 'expired' && !observations.readiness.ready) return { ok: false, reason: 'pack_expired' }
+    const observations = this.readObservations(this.now())
+    if (packValidityAt(pack, this.now()) === 'expired' && !observations.planning) return { ok: false, reason: 'pack_expired' }
     // An active-race calculation requires a real current position; the planner
     // never fabricates one.
     if (!observations.position) return { ok: false, reason: 'no_current_position' }
@@ -180,9 +183,18 @@ export class OnboardRaceService {
     // disappear because observations are not ready yet. A pack with no usable
     // forecast still needs a complete observation window.
     const hasForecast = pack.forecast.legs.some((leg) => leg.samples.length > 0)
-    if (!observations.readiness.ready && !hasForecast) return { ok: false, reason: 'insufficient_observations' }
+    if (!observations.planning && !hasForecast) return { ok: false, reason: 'insufficient_observations' }
     if (!force && this.lastCalculationAt !== null && this.now() - this.lastCalculationAt < this.cadenceMs) return { ok: false, reason: 'recent_calculation' }
     return { ok: true, pack, course }
+  }
+
+  private readObservations(now: number) {
+    const session = this.options.trackingSessionId?.() ?? null
+    if (session !== this.observationSession) {
+      this.options.observations.resetWindow()
+      this.observationSession = session
+    }
+    return this.options.observations.observations(now)
   }
 
   currentPlan(): OnboardPlan | null { return this.lastPlan ?? null }
@@ -191,7 +203,7 @@ export class OnboardRaceService {
     const pack = this.options.packs.current()
     const applied = this.options.packs.applied()
     const course = this.options.course()
-    const observations = this.options.observations.observations(this.now())
+    const observations = this.readObservations(this.now())
     const reason = this.lastReason
     // A read-only onboard preview keeps sail preparation available while the
     // cloud owns live recalculation. Never persist or publish this as authority.
@@ -201,12 +213,12 @@ export class OnboardRaceService {
       try {
         const plan = buildOnboardPlan({
           pack: available.pack, activeIndex: available.course.activeIndex,
-          averages: observations.readiness.ready ? observations.averages : null,
+          averages: observations.planning?.averages ?? null,
           position: observations.position,
           now: this.now(),
           vessel: vesselPerformanceFromPack(available.pack) ?? this.options.vessel?.() ?? null
         })
-        preview = { generatedAt: this.now(), plan, warning: plan.warnings[0] ?? null, forecastCoverage: plan.forecastCoverage }
+        preview = { generatedAt: this.now(), observationBasis: observations.planning?.basis ?? 'forecast', plan, warning: plan.warnings[0] ?? null, forecastCoverage: plan.forecastCoverage }
       } catch { /* Incomplete data leaves the historical snapshot explicitly labelled. */ }
     }
     return {
@@ -219,7 +231,8 @@ export class OnboardRaceService {
       warning: this.lastWarning,
       forecastCoverage: this.lastPlan?.forecastCoverage ?? null,
       warnings: this.lastPlan?.warnings ?? [],
-      observationsReady: observations.readiness.ready,
+      observationsReady: observations.planning !== null,
+      observationBasis: observations.planning?.basis ?? 'forecast',
       observationReadiness: observations.readiness,
       cadenceSeconds: Math.round(this.cadenceMs / 1000),
       pack: applied ? {

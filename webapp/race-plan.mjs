@@ -13,7 +13,7 @@ function wind(conditions) {
   return `${Number(conditions.twsKnots).toFixed(1)} kn from ${Math.round(conditions.twdDeg)}°`
 }
 
-function formatLeg(leg, index) {
+function formatLeg(leg, index, observationBasis = null) {
   if (!leg) return null
   const outOfRange = leg.conditions?.forecastCoverage === 'out_of_range'
   return {
@@ -25,6 +25,7 @@ function formatLeg(leg, index) {
     distanceNm: typeof leg.distanceNm === 'number' ? leg.distanceNm : null,
     pointOfSail: leg.pointOfSail ?? null,
     wind: wind(leg.conditions),
+    windBasis: leg.conditions?.source === 'observed' ? observationBasis === 'latest' ? 'Latest vessel sample' : observationBasis === 'five_minute_average' ? '5-min vessel average' : 'Vessel wind' : 'Forecast',
     usedObserved: leg.conditions?.source === 'observed',
     summary: outOfRange ? null : leg.plan?.summary ?? null,
     confidence: outOfRange ? null : leg.plan?.confidence ?? null,
@@ -56,8 +57,8 @@ export function racePlanPresentation(racePlan) {
   const courseComplete = racePlan.courseComplete === true
   const snapshotMatchesLeg = !snapshot?.tracking || racePlan.activeIndex == null || snapshot.tracking.activeIndex === racePlan.activeIndex
   const usable = packAvailable && packApplicable && !courseComplete && snapshotMatchesLeg
-  const currentLeg = usable ? formatLeg(legs[0], 0) : null
-  const remainingLegs = usable ? legs.map((leg, index) => formatLeg(leg, index)).filter(Boolean) : []
+  const currentLeg = usable ? formatLeg(legs[0], 0, snapshot?.observationBasis) : null
+  const remainingLegs = usable ? legs.map((leg, index) => formatLeg(leg, index, snapshot?.observationBasis)).filter(Boolean) : []
   const revision = pack.revision ?? null
   const identity = pack.courseName ? ` · ${pack.courseName}` : pack.racePlanId != null ? ` · plan ${pack.racePlanId}` : ''
   const date = pack.startTime && Number.isFinite(Date.parse(pack.startTime)) ? ` · ${new Date(pack.startTime).toLocaleDateString()}` : ''

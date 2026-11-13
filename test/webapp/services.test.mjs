@@ -982,3 +982,14 @@ test('cloud preview is current while mismatched and completed onboard legs are s
   state.activeIndex = 2
   assert.equal(racePlanPresentation(state).currentLeg, null)
 })
+
+
+test('guidance clearly labels latest vessel sample, five-minute average and forecast', async () => {
+  const { racePlanPresentation } = await import('../../webapp/race-plan.mjs')
+  const state = { uploadMode: 'automatic', pack: { available: true, applicable: true }, preview: { observationBasis: 'latest', plan: { legs: [{ conditions: { source: 'observed' } }] } } }
+  assert.equal(racePlanPresentation(state).currentLeg.windBasis, 'Latest vessel sample')
+  state.preview.observationBasis = 'five_minute_average'
+  assert.equal(racePlanPresentation(state).currentLeg.windBasis, '5-min vessel average')
+  state.preview.plan.legs[0].conditions.source = 'forecast'
+  assert.equal(racePlanPresentation(state).currentLeg.windBasis, 'Forecast')
+})

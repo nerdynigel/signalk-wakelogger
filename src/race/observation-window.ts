@@ -253,3 +253,15 @@ export function aggregateRawObservationWindow(samples: SailingAverageSample[], n
   }
   return { averages, position, readiness: observationReadiness(averages, position) }
 }
+
+/** Startup uses the newest fresh reading, never an average of a short window. */
+export function selectPlanningObservations(samples: SailingAverageSample[], now: number, windowMs = OBSERVATION_WINDOW_MS): { averages: SailingAverages; basis: 'latest' | 'five_minute_average' } | null {
+  const wind = samples.filter(sample => Number.isFinite(sample.at) && sample.at <= now && aggregateObservationSamples([sample], sample.at, windowMs).qualifyingSampleCount > 0).sort((a, b) => a.at - b.at)
+  const latest = wind[wind.length - 1]
+  if (!latest || now - latest.at > OBSERVATION_MAX_AGE_SECONDS * 1000) return null
+  const mature = now - wind[0]!.at >= windowMs
+  const averages = aggregateObservationSamples(mature ? samples : [latest], now, windowMs)
+  if (averages.twsKnots === null || averages.twdDeg === null) return null
+  averages.twdDeg = normalizeDegrees(averages.twdDeg)
+  return { averages, basis: mature ? 'five_minute_average' : 'latest' }
+}

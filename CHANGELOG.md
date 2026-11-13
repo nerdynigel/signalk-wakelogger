@@ -2,6 +2,11 @@
 
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
+## Unreleased — Vessel wind available immediately after starting a trip
+
+- Current/next-leg guidance uses the latest fresh vessel wind sample immediately. After five minutes of history it uses the rolling five-minute average; forecast is used only without fresh usable wind. A short startup window no longer forces forecast or averages a partial window.
+- The standalone plugin labels estimates as Latest vessel sample, 5-min vessel average or Forecast. New trip recordings clear the preceding trip's onboard wind history.
+
 ## Unreleased — Use vessel wind for next-leg sail preparation
 
 - Current and next-leg sail recommendations and estimated AWA/AWS now use the same validated rolling five-minute average of vessel wind. Missing, stale or insufficient instrument observations fall back to each leg's forecast. Later legs retain their forecast wind.

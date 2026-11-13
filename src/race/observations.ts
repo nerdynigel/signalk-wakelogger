@@ -20,9 +20,8 @@ const STALE_MS = 30_000
 const MIN_SAMPLE_INTERVAL_MS = 5_000
 const MAX_SAMPLES_PER_DELTA = 32
 
-// Shared with the cloud ingestion path: a current leg is only planned from
-// observations once the rolling window covers a genuine five-minute interval,
-// not merely a burst of samples.
+// Full-window quality metrics remain available for diagnostics. Planning uses
+// the latest fresh sample during startup, then the trailing five-minute average.
 export { OBSERVATION_WINDOW_SECONDS, OBSERVATION_MIN_SPAN_SECONDS, OBSERVATION_MIN_SAMPLES, OBSERVATION_MAX_AGE_SECONDS, observationReadiness }
 export type { ObservationReadiness, SailingAverageSample, SailingAverages }
 
@@ -63,6 +62,7 @@ export interface SailingObservations {
   position: VesselObservation | null
   lastUpdateAt: number | null
   readiness: ObservationReadiness
+  planning: { averages: SailingAverages; basis: 'latest' | 'five_minute_average' } | null
 }
 
 export interface DerivedTrueWind {
@@ -171,8 +171,10 @@ export class ObservationCollector {
   observations(now = this.now()): SailingObservations {
     const averages = this.rolling.value(now) ?? emptyAverages(Math.round(this.windowMs / 1000))
     const position = this.position(now)
-    return { averages, position, lastUpdateAt: this.lastUpdateAt, readiness: observationReadiness(averages, position) }
+    return { averages, position, lastUpdateAt: this.lastUpdateAt, readiness: observationReadiness(averages, position), planning: position ? this.rolling.planningValue(now) : null }
   }
+
+  resetWindow(): void { this.rolling.reset(); this.lastSampleAt = 0 }
 
   position(now = this.now()): VesselObservation | null {
     const position = this.get<PositionValue>('navigation.position', now)
@@ -181,8 +183,6 @@ export class ObservationCollector {
   }
 
   private capture(at: number): void {
-    if (at - this.lastSampleAt < MIN_SAMPLE_INTERVAL_MS && this.rolling.value(at)) return
-    this.lastSampleAt = at
     const sample: SailingAverageSample = {
       at,
       headingDeg: this.angle('navigation.headingTrue') ?? this.angle('navigation.headingMagnetic'),
@@ -199,6 +199,11 @@ export class ObservationCollector {
       latitude: this.get<PositionValue>('navigation.position', at)?.value.latitude ?? null,
       longitude: this.get<PositionValue>('navigation.position', at)?.value.longitude ?? null
     }
+    if (at - this.lastSampleAt < MIN_SAMPLE_INTERVAL_MS && this.rolling.value(at)) {
+      this.rolling.observe(sample)
+      return
+    }
+    this.lastSampleAt = at
     this.rolling.add(sample)
   }
 

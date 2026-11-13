@@ -48,7 +48,7 @@ function observedWindDelta(): never {
   ])
 }
 
-async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number; reverse?: boolean; position?: boolean } = {}) {
+async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 'local_only'; racing?: boolean; cadenceMs?: number; reverse?: boolean; position?: boolean; session?: { id: string } } = {}) {
   const directory = await temporaryDirectory('onboard-service-')
   const clock = { value: NOW }
   const observations = new ObservationCollector(5 * 60 * 1000, () => clock.value)
@@ -63,7 +63,7 @@ async function fixture(options: { pack?: FixturePack; authority?: 'automatic' | 
     observations,
     course: () => ({ courseId: 'race-42', racePlanId: 42, courseDefinitionDigest: FIXTURE_COURSE_DIGEST, activeIndex: 1, totalPoints: 3, reverse: options.reverse ?? false }),
     racing: () => options.racing ?? true,
-    trackingSessionId: () => 'sess-1',
+    trackingSessionId: () => options.session?.id ?? 'sess-1',
     now: () => clock.value,
     cadenceMs: options.cadenceMs
   })
@@ -291,6 +291,19 @@ describe('onboard observations and calculations', () => {
     expect(snapshots.latest()!.plan.legs[1]!.plan).not.toBeNull()
     clock.value += 6 * 60_000
     expect(service.availability(true)).toMatchObject({ ok: false, reason: 'pack_expired' })
+    service.close()
+  })
+
+  it('clears the previous trip window and immediately uses a fresh sample in the new trip', async () => {
+    const session = { id: 'first' }
+    const { service, observations, clock } = await fixture({ authority: 'automatic', session })
+    session.id = 'second'
+    expect(service.status()).toMatchObject({ observationsReady: false, observationBasis: 'forecast' })
+    clock.value += 1000
+    observations.ingest(observedWindDelta())
+    expect(service.status()).toMatchObject({ observationsReady: true, observationBasis: 'latest' })
+    const status = service.status() as { preview: { plan: { legs: Array<{ conditions: { source: string } }> } } }
+    expect(status.preview.plan.legs[1]!.conditions.source).toBe('observed')
     service.close()
   })
 
