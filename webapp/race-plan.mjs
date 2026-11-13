@@ -18,6 +18,8 @@ function formatLeg(leg, index, observationBasis = null) {
   const outOfRange = leg.conditions?.forecastCoverage === 'out_of_range'
   return {
     index,
+    pendingSailChange: leg.guidanceStability?.pendingSailChange === true,
+    immediateWarnings: leg.guidanceStability?.warnings || [],
     name: [leg.from?.name, leg.to?.name].filter(Boolean).join(' → ') || `Leg ${leg.sequence ?? index + 1}`,
     awaDeg: !outOfRange && Number.isFinite(leg.awaDeg) ? leg.awaDeg : null,
     awsKnots: !outOfRange && Number.isFinite(leg.awsKnots) ? leg.awsKnots : null,

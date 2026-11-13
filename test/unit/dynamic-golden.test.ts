@@ -146,3 +146,11 @@ describe('shared dynamic golden scenario', () => {
   })
 
 })
+
+it('fallback speed is continuous across sailing-angle and light-wind boundaries', async () => {
+  const { estimateBoatSpeedKnots, classifyPointOfSail } = await import('../../src/race/sailing/physics')
+  const speed = (angle: number, tws = 12, gust = 16) => estimateBoatSpeedKnots({ vessel: { hull_speed_knots: 8 }, pointOfSail: classifyPointOfSail(angle), forecastTwsKnots: tws, forecastGustKnots: gust, twaDeg: angle })[0]
+  for (const angle of [60, 90, 135]) expect(Math.abs(speed(angle - 0.01) - speed(angle + 0.01))).toBeLessThanOrEqual(0.02)
+  for (const wind of [5, 8]) expect(Math.abs(speed(75, wind - 0.01) - speed(75, wind + 0.01))).toBeLessThanOrEqual(0.04)
+  expect(Math.abs(speed(75, 12, 21.99) - speed(75, 12, 22.01))).toBeLessThanOrEqual(0.02)
+})

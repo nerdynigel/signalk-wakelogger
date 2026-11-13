@@ -234,7 +234,7 @@ function legSpeed(
   if (pointOfSail === null || conditions.twsKnots === null) return { speed: null, polarSpeed: null, warnings: [] }
   const tws = conditions.twsKnots
   const gust = conditions.gustKnots ?? tws
-  const [estimated, speedWarnings] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust })
+  const [estimated, speedWarnings] = estimateBoatSpeedKnots({ vessel, pointOfSail, forecastTwsKnots: tws, forecastGustKnots: gust, twaDeg: twaFor(conditions, bearing) })
   const [polar] = polarSpeedForLeg(polarSummary, { twaDeg: twaFor(conditions, bearing) ?? 0, forecastTwsKnots: tws, windSide: windSideFor(conditions, bearing) })
   // Fallback order: usable polar, then vessel-specific performance, then the
   // documented generic hull-speed fallback (which carries a warning).

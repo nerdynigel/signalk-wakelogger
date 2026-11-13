@@ -1,5 +1,12 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased — Steadier live sail guidance
+
+- Live estimated AWA/AWS now ease changes over 15 seconds and ignore display changes smaller than 1° / 0.2 kn. Vessel wind still uses the latest fresh sample until a full five-minute averaging window is available.
+- A different preferred sail must remain preferred for 30 seconds before the live display changes. Stronger reefing, unavailable sails and sail wind-limit warnings take effect immediately. A pending change is labelled. Display history resets on a new course, trip, wind source or tack, or after a stale gap.
+- Fallback boat-speed estimates now vary continuously with wind angle and strength, removing jumps at point-of-sail boundaries.
+- Fixed clipped desktop tabs in the standalone plugin, including Charts. Update the plugin and refresh its page to load the change.
+
 Updates for boat owners and crew: what's new, what's improved, and anything you need to do.
 
 ## Unreleased — Vessel-wind guidance for every remaining race leg

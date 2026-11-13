@@ -1459,5 +1459,44 @@ test('shows and refreshes apparent wind on every remaining leg', async ({ page }
   await expect(later).toContainText('5-min vessel average')
   racePlan.latestSnapshot.plan.legs[2].awaDeg = 101
   racePlan.latestSnapshot.plan.legs[2].awsKnots = 13.2
-  await expect(later).toContainText('101° / 13.2 kn')
+  await expect(later).not.toContainText('95° / 12.1 kn')
+  await expect(later).not.toContainText('101° / 13.2 kn')
+})
+
+
+test('all desktop panel tabs fit within the rail, including Charts', async ({ page }, testInfo) => {
+  await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  await page.evaluate(() => document.fonts.ready)
+  for (const width of [1280, 1024, 800]) {
+    await page.setViewportSize({ width, height: 900 })
+    const rail = await page.locator('.instrument-rail').boundingBox()
+    for (const tab of await page.locator('.rail-tabs button').all()) {
+      const box = await tab.boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(rail.x - 1)
+      expect(box.x + box.width).toBeLessThanOrEqual(rail.x + rail.width + 1)
+      expect(await tab.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    }
+    await page.locator('#charts-tab').click()
+    await expect(page.locator('#charts-panel')).toBeVisible()
+  }
+  await page.screenshot({ path: testInfo.outputPath('desktop-charts-tabs.png'), animations: 'disabled' })
+})
+
+
+test('sail changes wait while wind-limit warnings and stronger reefing are immediate', async ({ page }) => {
+  const racePlan = structuredClone(onboardRacePlan)
+  await mockBoat(page, { racePlan })
+  await page.goto('/signalk-wakelogger/')
+  const next = page.locator('[data-leg=remaining]').first()
+  await expect(next).toContainText('Full main + A2 kite')
+  racePlan.latestSnapshot.plan.legs[1].plan.summary = 'Main + alternate sail'
+  racePlan.latestSnapshot.plan.legs[1].plan.warnings = ['Apparent wind speed exceeds sail limit.']
+  await expect(next).toContainText('Sail change pending')
+  await expect(next).toContainText('Full main + A2 kite')
+  await expect(next).toContainText('Apparent wind speed exceeds sail limit.')
+  racePlan.latestSnapshot.plan.legs[1].plan.mainsail_configuration = 'reef_1'
+  racePlan.latestSnapshot.plan.legs[1].plan.summary = 'Reef 1 main + alternate sail'
+  await expect(next).toContainText('Reef 1 main + alternate sail')
+  await expect(next).not.toContainText('Sail change pending')
 })

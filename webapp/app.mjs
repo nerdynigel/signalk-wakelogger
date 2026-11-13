@@ -1,3 +1,4 @@
+import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
 import { WIND_ARROW_PATH } from './wind-readout.mjs'
 import { SignalKClient, CourseProgressionService, RaceProgressionService } from './api-client.mjs'
 import { GuidanceService } from './guidance-service.mjs'
@@ -46,6 +47,7 @@ if (!clientId) {
 let navigationControl = false
 let navigationControlGeneration = null
 try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
+const legGuidanceStabilizer = new LegGuidanceStabilizer()
 let racePlan = null, offlineReadiness = null
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
@@ -725,7 +727,11 @@ function renderRacePlan() {
   renderRaceLiveNav()
   const list = $('race-plan-list')
   if (!list) return
-  const view = racePlanPresentation(racePlan)
+  const snapshot = racePlan?.preview || racePlan?.latestSnapshot
+  const context = JSON.stringify([trackingStatus?.trackingSessionId, racePlan?.pack?.courseId, racePlan?.pack?.courseDefinitionDigest, racePlan?.activeIndex])
+  const legs = legGuidanceStabilizer.update(context, snapshot?.plan?.legs || [], Date.now())
+  const stabilized = snapshot ? { ...racePlan, [racePlan.preview ? 'preview' : 'latestSnapshot']: { ...snapshot, plan: { ...snapshot.plan, legs } } } : racePlan
+  const view = racePlanPresentation(stabilized)
   const authority = $('race-authority')
   authority.textContent = `Race plan authority: ${view.authority}`
   authority.dataset.authority = view.authority === 'Onboard' ? 'onboard' : 'cloud'
@@ -792,6 +798,7 @@ function racePlanLeg(leg, eyebrow) {
     if (leg.wind) parts.push(leg.wind)
     if (leg.pointOfSail) parts.push(leg.pointOfSail)
     if (leg.usedObserved) parts.push('observed')
+    if (leg.pendingSailChange) parts.push('Sail change pending')
     if (leg.confidence) parts.push(`${leg.confidence} confidence`)
     detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
   }
@@ -801,6 +808,12 @@ function racePlanLeg(leg, eyebrow) {
   const aws = leg.awsKnots === null ? '—' : `${leg.awsKnots.toFixed(1)} kn`
   apparent.textContent = `Estimated AWA / AWS: ${awa} / ${aws} · ${leg.windBasis}`
   fragment.append(apparent)
+  if (leg.immediateWarnings?.length) {
+    const warning = document.createElement('span')
+    warning.className = 'race-warning'
+    warning.textContent = leg.immediateWarnings.join(' · ')
+    fragment.append(warning)
+  }
   return fragment
 }
 
