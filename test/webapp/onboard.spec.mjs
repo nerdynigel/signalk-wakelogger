@@ -1715,15 +1715,17 @@ for (const width of [1280, 800, 390]) test(`concise instrument labels and stable
   for (const selector of ['#race-readiness', '#race-authority', '#race-plan-warning', '.race-plan-heading']) await expect(page.locator(selector)).toHaveCount(0)
   const rows = page.locator('#race-live-nav .race-live-nav-item')
   await expect(rows).toHaveCount(9)
-  const heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
+  const rowHeights = () => page.evaluate(() => [...document.querySelectorAll('#race-live-nav .race-live-nav-item')].map(row => row.getBoundingClientRect().height))
+  const heights = await rowHeights()
+  expect(heights).toEqual(Array(9).fill(32))
   large = true
   await expect(page.locator('#race-live-nav [data-reading=sog] .value')).toContainText('48.6')
-  expect(await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))).toEqual(heights)
-  expect(await rows.evaluateAll(rows => rows.every(row => row.scrollWidth <= row.clientWidth))).toBe(true)
+  expect(await rowHeights()).toEqual(heights)
+  expect(await page.evaluate(() => [...document.querySelectorAll('#race-live-nav .race-live-nav-item')].every(row => row.scrollWidth <= row.clientWidth))).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`concise-race-${width}.png`) })
   missing = true
   await expect(page.locator('#race-live-nav [data-reading=aws] .value')).toHaveText('—')
-  expect(await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))).toEqual(heights)
+  expect(await rowHeights()).toEqual(heights)
 })
 
 
