@@ -351,7 +351,7 @@ test('live navigation strip always shows wind, speed, heading and VMG', async ()
   // Missing data is reported honestly, never fabricated.
   const bare = liveNavigationStrip(instrumentReadings({ now, environment: {} }))
   assert.equal(bare.find((item) => item.id === 'tws').available, false)
-  assert.match(bare.find((item) => item.id === 'tws').formatted, /Unavailable/)
+  assert.match(bare.find((item) => item.id === 'tws').formatted, /—/)
 })
 
 test('instruments present RFC 3339 local measurements with references and units', () => {
@@ -415,7 +415,7 @@ test('instruments never fabricate wind; missing, invalid and future timestamps a
   assert.equal(b.tws.value, null)
   assert.equal(b.tws.freshness, 'missing')
   assert.equal(b.sog.value, null)
-  assert.match(formatReading(b.tws), /Unavailable/)
+  assert.match(formatReading(b.tws), /—/)
 
   // Apparent wind alone, with no boat reference, cannot be turned into true wind.
   const apparentOnly = instrumentReadings({ now, environment: { wind: { speedApparent: { value: 10, timestamp: ts() }, angleApparent: { value: 0.5, timestamp: ts() } } } })
@@ -811,7 +811,7 @@ test('VMG projects independent ground and water vectors, with direct angles and 
   const water = resolve({ speedThroughWater: entry(2) }, { angleTrueWater: entry(-Math.PI / 3) })
   assert.ok(Math.abs(value(water, 'vmg-wind-water').value - 1.9438444924406) < 1e-9)
   assert.equal(value(water, 'vmg-wind-ground').available, false)
-  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG to wind')
+  assert.equal(liveNavigationStrip(water).at(-1).label, 'VMG')
   const ground = resolve({ speedOverGround: entry(2), courseOverGroundTrue: entry(Math.PI / 2), headingTrue: entry(0) }, { angleTrueGround: entry(Math.PI / 3) })
   assert.ok(Math.abs(value(ground, 'vmg-wind-ground').value - 2 * 1.9438444924406 * Math.cos(Math.PI / 6)) < 1e-9)
   for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI, 2 * Math.PI]) {

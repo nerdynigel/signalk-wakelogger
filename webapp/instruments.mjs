@@ -297,12 +297,18 @@ export function instrumentDisplayReadings(view, snapshot = null, now = Date.now(
   const heading = guidanceWind(snapshot, now)?.headingDeg
   const aliases = {
     heading: r => published && heading !== null ? { ...r, source: 'guidance', timestamp: snapshot.headingAt, ageSeconds: Math.max(0, Math.round((now - snapshot.headingAt) / 1000)), value: heading, available: true, freshness: 'fresh', reference: 'true', unit: '° true' } : r,
-    aws: r => ({ ...r, label: 'AW' }), awa: r => ({ ...r, label: 'AW Angle', angle: true, unit: '°' }),
-    tws: () => ({ ...wind.speed, id: 'tws', label: 'TW' }),
+    aws: r => ({ ...r, label: 'AWS' }), awa: r => ({ ...r, label: 'AWA', angle: true, unit: '°' }),
+    tws: () => ({ ...wind.speed, id: 'tws', label: 'TWS' }),
     twd: () => ({ ...wind.direction, id: 'twd', label: 'TWD', direction: true, unit: '°' }),
-    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), ...(published ? { basis: wind.basis, value: published.vmgKn, available: published.vmgKn !== null, freshness: published.vmgKn === null ? 'missing' : 'fresh', source: 'guidance', timestamp: published.vmgAt, ageSeconds: Number.isFinite(published.vmgAt) ? Math.max(0, Math.round((now - published.vmgAt) / 1000)) : null } : {}), id: 'vmg-wind', label: 'VMG to wind', unit: 'kn' })
+    'vmg-wind-ground': () => ({ ...view.readings.find(r => r.id === `vmg-wind-${wind.basis}`), ...(published ? { basis: wind.basis, value: published.vmgKn, available: published.vmgKn !== null, freshness: published.vmgKn === null ? 'missing' : 'fresh', source: 'guidance', timestamp: published.vmgAt, ageSeconds: Number.isFinite(published.vmgAt) ? Math.max(0, Math.round((now - published.vmgAt) / 1000)) : null } : {}), id: 'vmg-wind', label: 'VMG', unit: 'kn' })
   }
-  return view.readings.filter(r => r.id !== 'twa-ground' && r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => aliases[r.id] ? aliases[r.id](r) : r)
+  const labels = { position: 'POS', sog: 'SOG', cog: 'COG', stw: 'STW', heading: 'HDG', roll: 'ROLL', aws: 'AWS', awa: 'AWA', tws: 'TWS', twd: 'TWD', 'vmg-wind': 'VMG' }
+  return view.readings.filter(r => r.id !== 'twa-ground' && r.id !== 'twa-water' && r.id !== 'vmg-wind-water').map(r => {
+    const reading = aliases[r.id] ? aliases[r.id](r) : r
+    const unit = reading.unit === '° true' ? '°T' : reading.unit === '° magnetic' ? '°M' : reading.unit
+    const label = reading.id === 'depth' ? ({ 'below transducer': 'DBT', 'below keel': 'DBK', 'below surface': 'DBS' }[reading.reference] || 'DPT') : labels[reading.id] || reading.label
+    return { ...reading, label, unit }
+  })
 }
 export function liveNavigationStrip(view, snapshot = null, now = Date.now()) {
   if (!view || !Array.isArray(view.readings)) return []
@@ -321,9 +327,7 @@ export function formatReading(reading) {
   if (!reading) return '—'
   if (reading.id === 'position') return reading.value ? reading.formatted : 'Unavailable'
   if (!finite(reading.value)) {
-    if (reading.freshness === 'stale') return 'Stale'
-    if (reading.freshness === 'unknown') return 'Timestamp unknown'
-    return 'Unavailable'
+    return '—'
   }
   if (reading.angle) return windAngleText(reading.value)
   if (reading.direction) return windDirectionText(reading.value)

@@ -1,5 +1,16 @@
 # What's new in Wake Logger for Signal K
 
+## [0.2.0-beta.16] - 2026-11-14
+
+- The boat and map move smoothly between position updates.
+- Heading and tack lines stay attached to the boat arrow.
+- Tack and gybe estimates stay visible through short helm and wave movements. A side change needs ten seconds across the wind.
+- BTW and DTW show the current waypoint's bearing and distance in Instruments and Race.
+- Sailing abbreviations replace long instrument labels. Changing numbers stay on the same rows.
+- Extra headings, status paragraphs and navigation-success banners have been removed.
+
+Update the plugin, restart Signal K if prompted, and reload the onboard app. Your settings and recorded trips are kept. Read the [release notes](docs/releases/0.2.0-beta.16.md) for the matching website changes.
+
 ## [0.2.0-beta.15] - 2026-11-13
 
 - Show the recommended sail plan and estimated AWA/AWS across every remaining leg. Keep the current sail plan beside the live instruments and show TWD/TWS on the next leg.

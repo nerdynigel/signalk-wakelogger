@@ -54,3 +54,44 @@ Release review: candidate beta.10 contains the race-navigation resilience change
 Website production deployment and trip 78/79 repair remain outside this publication. Production access remains read-only.
 
 Release validation update: local package check passed, and GitHub Node 20/22, broker and packaged Signal K Docker checks passed on 3450022. Signal K integration exposed a fixture replacing GPS fixes before durable sampling; the scenario now observes each archived sample before advancing. The local browser suite exposed an existing dialog.dismiss promise outliving its test; all dialog choices are now awaited. Final CI must pass these updates before merging/publishing. npm passkey sign-in completed; no version or tag has been published yet.
+
+
+## Smooth onboard tracking (13 November 2026)
+
+- [x] Identify raw marker replacement and missing follow movement.
+- [x] Reuse the website display motion model; preserve recorded positions.
+- [x] Keep boat and guide origins together; ease explicit vessel follow after three fixes.
+- [x] Verify interpolation, marker continuity, GPS rejection, viewport intent and guidance expiry in browser.
+- [x] Deploy static assets to the Signal K test environment and verify installed files.
+
+Review: 75 focused unit tests, seven distinct browser scenarios, lint, typecheck and build passed. Installed assets match the local build. Live replay check: 387 frames, 321 distinct interpolated positions, stable marker identity, follow mode and no browser errors. No server restart, default-branch merge or npm publication.
+
+- [x] Keep heading and tack rays attached to the exact arrow tip through movement/pans; live maximum gap 0.64 px.
+- [x] Preserve vessel visibility when resizing the follow view to mobile.
+
+
+## Confirm tacks and gybes after a sustained crossing (14 November 2026)
+
+- [x] Find turn/motion suppression and single-reading side flips.
+- [x] Keep a learned maneuver angle through transient motion; confirm sides using ten seconds of fresh observations.
+- [x] Verify tack/gybe crossings, cancellations, duplicate polls, gaps, loss and reset behavior.
+- [x] Preserve the additive estimate in cloud telemetry and synchronize browser copies.
+- [x] Deploy to test and verify live overlays.
+
+- [x] Show active-waypoint BTW/DTW in Instruments and Race, with fresh GPS and current target geometry.
+- [x] Verify mark changes and GPS expiry; install updated static assets without a second server restart.
+
+Review: 364 plugin tests passed (one opt-in test skipped), lint/typecheck/build passed, browser motion/freshness/crossing and waypoint checks passed. The real replay reported no missing heading/tack across 101 samples after the core update. Installed script/core hashes match the local build. Moreton Bay replay restored to running after the necessary server restart. No npm publication or default-branch merge.
+
+
+## Remove instrument clutter and stabilize rows (14 November 2026)
+
+- [x] Remove Instruments heading/subtext and top-right routine status output.
+- [x] Remove Race readiness/authority/pack explanations and verbose ETA prose.
+- [x] Apply standard sailing abbreviations and fixed non-wrapping data rows.
+- [x] Verify desktop/tablet/mobile with large, small and unavailable values.
+- [x] Install static assets in test and verify the real replay view.
+
+Review: 50 service tests and 14 distinct affected browser scenarios passed, including three viewport widths, value range/availability changes, tracking/Finish controls, recommendations and ETA behavior. Build/lint passed. Installed script, instruments, markup and stylesheet hashes match. Live replay: 394 frames, one unchanged race-row layout, no headings/subtext/status banner/top detail visible, standard labels and no page errors.
+
+- [x] Remove the unrequested navigation-success banner and overlay; verify all tabs remain clickable after real mocked navigation actions and in the installed test UI.

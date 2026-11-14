@@ -1,0 +1,11 @@
+# Tack confirmation and waypoint instruments — 14 November 2026
+
+The guidance engine previously suppressed estimates during its short turn flag or excessive instantaneous motion, while a single side observation changed tack. Preserve an established maneuver estimate through those transients. Confirm a wind-relative side crossing only after ten seconds of advancing heading observations, beyond a three-degree boundary deadband. Returning to the original side, a reading gap, source loss or session reset cancels the pending crossing. Initial acquisition requires usable sailing conditions. Stale heading/wind still expires the geometry.
+
+Learn the sailing angle with a ten-second exponential filter only on the confirmed side outside turn/motion disturbances. Use this estimate for the opposite heading while leaving actual bow heading responsive. Sailing-mode transitions also require a sustained observation. Generated website/plugin modules are identical; the cloud accepts and preserves the additive `maneuverTwaDeg` field in owner and public views.
+
+BTW and DTW now appear in Instruments and the Race live strip; Race's existing detailed distance/bearing labels use the same abbreviations. Derive true bearing and nautical-mile distance from fresh vessel position to the current selected waypoint. No route changes or native course writes are introduced.
+
+Validation: 364 tests passed, one opt-in test skipped; 40 guidance cases include crossings at zero and 180 degrees in both directions, cancellations, duplicate clocks, gaps, session/wind loss and wave/helm excursions. Browser checks prove the visible estimate holds for nine seconds across a crossing and then changes, remains attached to the moving boat, expires by source age, and updates BTW/DTW for mark changes and GPS loss. Lint, typecheck and build passed. Real replay probe after core installation: 101 samples, zero missing heading or tack; latest movement probe: 366 frames, 305 distinct positions, stable marker and no page errors.
+
+Installed into local `signalk-dev` as a test beta.15 package. A server restart loaded the changed calculation core; Moreton Bay replay was restarted through its controls because restart was required. Latest UI assets were installed without another restart. Nothing published to npm or merged to main.

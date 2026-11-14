@@ -8,7 +8,7 @@ const EARTH_RADIUS_M = 6371000
 // Great-circle distance and initial bearing between two WGS84 points. Used only
 // for the read-only fallback, so the next-mark bearing/distance stay visible
 // while native activation is unavailable.
-function greatCircle(from, to) {
+export function greatCircle(from, to) {
   const radians = (degrees) => degrees * Math.PI / 180
   const latitude1 = radians(from.latitude)
   const latitude2 = radians(to.latitude)
