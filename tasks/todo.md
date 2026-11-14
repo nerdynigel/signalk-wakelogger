@@ -93,3 +93,5 @@ Review: 364 plugin tests passed (one opt-in test skipped), lint/typecheck/build 
 - [x] Install static assets in test and verify the real replay view.
 
 Review: 50 service tests and 14 distinct affected browser scenarios passed, including three viewport widths, value range/availability changes, tracking/Finish controls, recommendations and ETA behavior. Build/lint passed. Installed script, instruments, markup and stylesheet hashes match. Live replay: 394 frames, one unchanged race-row layout, no headings/subtext/status banner/top detail visible, standard labels and no page errors.
+
+- [x] Remove the unrequested navigation-success banner and overlay; verify all tabs remain clickable after real mocked navigation actions and in the installed test UI.

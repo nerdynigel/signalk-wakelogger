@@ -756,7 +756,7 @@ async function poll() {
 async function command(action, context = {}) {
   if (busy) return
   busy = true
-  try { await action(); selectedPointDirty = false; notice('Navigation updated.'); await poll() }
+  try { await action(); selectedPointDirty = false; notice(''); await poll() }
   catch (error) { notice(describeNavigationFailure(error, context)); reportDiagnostic(error) }
   finally { busy = false; if (progress) renderCourse() }
 }

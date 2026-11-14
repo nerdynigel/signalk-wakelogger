@@ -1722,3 +1722,20 @@ for (const width of [1280, 800, 390]) test(`concise instrument labels and stable
   await expect(page.locator('#race-live-nav [data-reading=aws] .value')).toHaveText('—')
   expect(await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))).toEqual(heights)
 })
+
+
+for (const width of [1280, 390]) test(`navigation updates never display a banner over tabs at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 })
+  await mockBoat(page)
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#course-tab').click()
+  await page.locator('#advance-point').click()
+  await expect(page.locator('#next-mark')).toHaveText('Race finish')
+  await expect(page.locator('#notice')).toBeHidden()
+  await expect(page.getByText('Navigation updated.', { exact: true })).toHaveCount(0)
+  for (const tab of ['instruments', 'race', 'charts', 'course']) {
+    await page.locator(`#${tab}-tab`).click()
+    await expect(page.locator(`#${tab}-tab`)).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator(`#${tab}-panel`)).toBeVisible()
+  }
+})
