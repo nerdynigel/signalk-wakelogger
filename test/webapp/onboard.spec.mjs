@@ -348,12 +348,12 @@ const onboardRacePlan = {
 test('shows onboard Race Plan authority and recommendations in local-only mode', async ({ page }, testInfo) => {
   const { external } = await mockBoat(page, { racePlan: onboardRacePlan })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.locator('#race-authority')).toHaveText(/Onboard/)
-  await expect(page.locator('#race-authority')).toHaveAttribute('data-pack', 'ready')
+  await expect(page.locator('#race-authority')).toHaveCount(0)
+  await expect(page.locator('#race-plan-list .race-plan-heading')).toHaveCount(0)
   await expect(page.locator('[data-leg=current]')).toHaveCount(0)
   await expect(page.locator('#race-current-sail')).toContainText('Full main + No. 3 jib')
   const nextLeg = page.locator('[data-leg=remaining]')
-  await expect(nextLeg).toContainText('After next mark')
+  await expect(nextLeg).toContainText('Next leg')
   await expect(nextLeg.locator('[data-reading=twd]')).toContainText('060°')
   await expect(nextLeg.locator('[data-reading=twa]')).toHaveCount(0)
   await expect(nextLeg.locator('[data-reading=twd] .wind-angle-arrow')).toHaveAttribute('data-direction-deg', '240')
@@ -377,14 +377,14 @@ test('shows onboard Race Plan authority and recommendations in local-only mode',
 test('labels Wake Logger as authority and marks onboard plans historical in automatic mode', async ({ page }) => {
   await mockBoat(page, { racePlan: { ...onboardRacePlan, uploadMode: 'automatic', calculationAuthority: 'cloud' } })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.locator('#race-authority')).toHaveText(/Wake Logger/)
-  await expect(page.locator('#race-plan-list')).toContainText('historical')
+  await expect(page.locator('#race-authority')).toHaveCount(0)
+  await expect(page.locator('#race-plan-list .race-plan-heading')).toHaveCount(0)
 })
 
 test('warns without a Race Pack but does not block local-only recording', async ({ page }) => {
   const { writes } = await mockBoat(page, { racePlan: { uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: false } } })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.locator('#race-plan-warning')).toContainText('Recording continues')
+  await expect(page.locator('#race-plan-warning')).toHaveCount(0)
   await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeEnabled()
   expect(writes).toEqual([])
 })
@@ -412,11 +412,11 @@ test('standalone instruments are the default with no course and need no Race Pac
   await page.goto('/signalk-wakelogger/')
   await expect(page.locator('#instruments-tab')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('#instruments-panel')).toBeVisible()
-  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('SOG')
   await expect(page.locator('#instruments-grid')).toContainText('TW')
-  await expect(page.locator('#instruments-grid')).toContainText('Depth')
+  await expect(page.locator('#instruments-grid')).toContainText('DBT')
   await expect(page.locator('#instruments-grid [data-reading=roll]')).toContainText('-10.0 °')
-  await expect(page.locator('#signal-k-state')).toContainText('Signal K connected')
+  await expect(page.locator('#signal-k-state')).toHaveCount(0)
   // Viewing instruments must not activate a course, advance a mark or change upload mode.
   expect(writes).toEqual([])
   expect(external).toEqual([])
@@ -427,7 +427,7 @@ test('instruments keep updating when the course API fails', async ({ page }) => 
   await mockBoat(page, { courseError: 409, ...freshInstruments() })
   await page.goto('/signalk-wakelogger/')
   await expect(page.locator('#instruments-panel')).toBeVisible()
-  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('SOG')
   await expect(page.locator('#notice')).toContainText('409')
 })
 
@@ -470,8 +470,8 @@ test('reload and a second client are read-only and resume instruments', async ({
   }
   await first.reload()
   await expect(first.locator('#instruments-panel')).toBeVisible()
-  await expect(first.locator('#instruments-grid')).toContainText('Speed over ground')
-  await expect(second.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(first.locator('#instruments-grid')).toContainText('SOG')
+  await expect(second.locator('#instruments-grid')).toContainText('SOG')
   expect(writes).toEqual([])
   await context.close()
 })
@@ -484,9 +484,9 @@ test('a hanging course request does not freeze the standalone instruments', asyn
   await page.route('**/plugins/signalk-wakelogger/course', () => new Promise(() => {}))
   await page.goto('/signalk-wakelogger/')
   await expect(page.locator('#instruments-panel')).toBeVisible()
-  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('SOG')
   await page.waitForTimeout(6000)
-  await expect(page.locator('#instruments-grid')).toContainText('Speed over ground')
+  await expect(page.locator('#instruments-grid')).toContainText('SOG')
   await expect(page.locator('#instruments-grid .instrument[data-available=true]').first()).toBeVisible()
   expect(external).toEqual([])
 })
@@ -727,7 +727,7 @@ test('a new desired plan supersedes the cached date and displays the foreign act
   await expect.poll(() => writes.length).toBe(1)
   expect(writes[0]).toMatchObject({ method: 'POST', path: '/plugins/signalk-wakelogger/course/activate' })
   await expect(page.locator('#course-name')).not.toContainText('27/09/2026')
-  await expect(page.locator('#race-plan-list')).toContainText('SAGS 04/10/2026 · Course H')
+  await expect(page.locator('#course-name')).toContainText('SAGS 04/10/2026 · Course H')
 })
 
 
@@ -940,8 +940,7 @@ test('a rejected course activation still shows live navigation and an informatio
   await expect(page.locator('#distance')).not.toHaveText('—')
   await expect(page.locator('#bearing')).not.toHaveText('—')
   // The readiness banner is informational and lists exactly what is missing.
-  await expect(page.locator('#race-readiness')).toContainText('Live navigation active from the cached course')
-  await expect(page.locator('#race-readiness')).toContainText('Race Pack')
+  await expect(page.locator('#race-readiness')).toHaveCount(0)
   // Explicit activation is confirmed against the occupying resource and clears it.
   page.on('dialog', (dialog) => dialog.accept())
   await page.locator('#course-tab').click()
@@ -1044,7 +1043,7 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   await expect(grid.locator('[data-reading="twa"]')).toHaveCount(0)
   await expect(grid.locator('[data-reading="tws"]')).toContainText('8.0 kn')
   await expect(grid.locator('[data-reading="twd"]')).toContainText('060°')
-  await expect(grid.locator('[data-reading="heading"]')).toContainText('90 ° true')
+  await expect(grid.locator('[data-reading="heading"]')).toContainText('90 °T')
   await expect(page.locator('#map')).toHaveAttribute('data-sailing-wind-from-deg', '60')
   await expect(grid.locator('[data-reading="vmg-wind"]')).toContainText('3.5 kn')
   await expect(grid).not.toContainText('(ground)')
@@ -1164,7 +1163,7 @@ test('VMG tiles and Race strip survive water-only input, loss and recovery', asy
   await expect(water).toHaveAttribute('data-available', 'true')
   await page.locator('#race-tab').click()
   const strip = page.locator('#race-live-nav [data-reading="vmg-wind"]')
-  await expect(strip).toContainText('VMG to wind')
+  await expect(strip).toContainText('VMG')
   await expect(strip).toContainText('1.9 kn')
   state = 'missing'
   await expect(strip).toHaveAttribute('data-available', 'false')
@@ -1281,7 +1280,7 @@ test('leg-average ETA page suppresses stale samples, recovers, persists on reloa
   const fixture = await mockBoat(page, { navigationOverride:navigation, courseState, racePlan })
   await page.goto('/signalk-wakelogger/')
   await page.getByRole('tab', {name:'Race',exact:true}).click()
-  await expect(page.getByText('Leg-average VMG (ground)',{exact:true})).toBeVisible()
+  await expect(page.locator('#race-panel dl dt').filter({ hasText: /^VMG$/ })).toBeVisible()
   await expect(page.locator('#eta')).not.toHaveText('—')
   await expect(page.locator('#vmg')).not.toHaveText('100.0 kn')
   // Exercise the generated module served by the actual page at the numerical boundary.
@@ -1297,12 +1296,12 @@ test('leg-average ETA page suppresses stale samples, recovers, persists on reloa
   expect(boundary[0].eta).not.toBeNull()
   expect(boundary[1].eta).toBeNull()
   expect(boundary[1].etaReason).toBe('Leg average outside sailing range')
-  mode='stale';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta-reason')).toContainText('Fresh')
-  mode='stationary';await expect(page.locator('#eta-reason')).toContainText('No positive leg progress')
+  mode='stale';await expect(page.locator('#eta')).toHaveText('—');await expect(page.locator('#eta')).toHaveAttribute('title', /Fresh/)
+  mode='stationary';await expect(page.locator('#eta')).toHaveAttribute('title', /No positive leg progress/)
   mode='normal';await expect(page.locator('#eta')).not.toHaveText('—')
   await page.reload();await expect(page.locator('#eta')).not.toHaveText('—')
   native=false;await expect(page.locator('#eta')).not.toHaveText('—')
-  mode='early';await expect(page.locator('#eta-reason')).toContainText('Provisional · leg plan speed');await expect(page.locator('#vmg')).toContainText('(plan)')
+  mode='early';await expect(page.locator('#eta')).toHaveAttribute('title', /Provisional · leg plan speed/);await expect(page.locator('#vmg')).toContainText('(plan)')
   expect(errors).toEqual([])
   expect(fixture.writes).toEqual([])
 })
@@ -1448,7 +1447,7 @@ test('GPS loss preserves fresh standalone wind without reusing a published track
 test('automatic mode displays a fresh onboard preview without internet', async ({ page }) => {
   const { external } = await mockBoat(page, { racePlan: { ...onboardRacePlan, uploadMode: 'automatic', calculationAuthority: 'cloud', preview: onboardRacePlan.latestSnapshot } })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.locator('#race-plan-list')).toContainText('Onboard preview · cloud remains authoritative')
+  await expect(page.locator('#race-plan-list .race-plan-heading')).toHaveCount(0)
   await expect(page.locator('#race-current-sail')).toContainText('Full main + No. 3 jib')
   await expect(page.locator('[data-leg=current]')).toHaveCount(0)
   await expect(page.locator('[data-leg=remaining] [data-reading=awa]')).toContainText('125° P')
@@ -1513,7 +1512,7 @@ test('sail guidance omits limit warnings while keeping sail hold and immediate r
   await expect(next).toContainText('Full main + A2 kite')
   racePlan.latestSnapshot.plan.legs[1].plan.summary = 'Main + alternate sail'
   racePlan.latestSnapshot.plan.legs[1].plan.warnings = ['Apparent wind speed exceeds sail limit.', 'AWA is above the sail range.', 'AWS is above the recorded range, inside planning tolerance.']
-  await expect(next).toContainText('Sail change pending')
+  await expect(next).toHaveAttribute('data-sail-change-pending', 'true')
   await expect(next).toContainText('Full main + A2 kite')
   await expect(next).not.toContainText('sail limit')
   await expect(next).not.toContainText('sail range')
@@ -1681,13 +1680,45 @@ test('BTW and DTW follow the current waypoint in Instruments and Race and expire
   await page.goto('/signalk-wakelogger/')
   await page.locator('#instruments-tab').click()
   const btw = page.locator('#instruments-grid [data-reading=btw]'), dtw = page.locator('#instruments-grid [data-reading=dtw]')
-  await expect(btw).toContainText(/0\s*° true/); await expect(dtw).toContainText('0.60 NM')
+  await expect(btw).toContainText(/0\s*°T/); await expect(dtw).toContainText('0.60 NM')
   index = 2
-  await expect(btw).toContainText(/90\s*° true/); await expect(dtw).toContainText('0.53 NM')
+  await expect(btw).toContainText(/90\s*°T/); await expect(dtw).toContainText('0.53 NM')
   await page.locator('#race-tab').click()
-  await expect(page.locator('#race-live-nav [data-reading=btw]')).toContainText(/90\s*° true/)
+  await expect(page.locator('#race-live-nav [data-reading=btw]')).toContainText(/90\s*°T/)
   await expect(page.locator('#race-live-nav [data-reading=dtw]')).toContainText('0.53 NM')
   stale = true
   await expect(btw).toHaveAttribute('data-available', 'false')
   await expect(page.locator('#race-live-nav [data-reading=dtw]')).toContainText('—')
+})
+
+for (const width of [1280, 800, 390]) test(`concise instrument labels and stable race rows at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
+  let large = false, missing = false
+  const entry = value => ({ value, timestamp: new Date().toISOString() })
+  await mockBoat(page, { racePlan: onboardRacePlan,
+    navigationOverride: () => ({ position: entry({ latitude: -27.4, longitude: 153.17 }), headingTrue: entry(large ? 6.1 : 0.1), speedOverGround: entry(large ? 25 : 0.1) }),
+    environment: () => ({ wind: missing ? {} : { speedApparent: entry(large ? 50 : 0.1), angleApparent: entry(large ? -2.9 : 0.1), speedOverGround: entry(large ? 40 : 0.1), directionTrue: entry(large ? 6.1 : 0.1) } }),
+  })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#instruments-tab').click()
+  await expect(page.getByText('Vessel instruments', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.tracking-detail')).toBeHidden()
+  await expect(page.locator('#cloud-state')).toBeHidden()
+  await expect(page.locator('#signal-k-state')).toHaveCount(0)
+  for (const [id, label] of Object.entries({ aws: 'AWS', awa: 'AWA', tws: 'TWS', twd: 'TWD', sog: 'SOG', heading: 'HDG', cog: 'COG', stw: 'STW', btw: 'BTW', dtw: 'DTW' })) {
+    await expect(page.locator(`#instruments-grid [data-reading="${id}"] .label`)).toHaveText(label)
+  }
+  await page.locator('#race-tab').click()
+  for (const selector of ['#race-readiness', '#race-authority', '#race-plan-warning', '.race-plan-heading']) await expect(page.locator(selector)).toHaveCount(0)
+  const rows = page.locator('#race-live-nav .race-live-nav-item')
+  await expect(rows).toHaveCount(9)
+  const heights = await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
+  large = true
+  await expect(page.locator('#race-live-nav [data-reading=sog] .value')).toContainText('48.6')
+  expect(await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))).toEqual(heights)
+  expect(await rows.evaluateAll(rows => rows.every(row => row.scrollWidth <= row.clientWidth))).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`concise-race-${width}.png`) })
+  missing = true
+  await expect(page.locator('#race-live-nav [data-reading=aws] .value')).toHaveText('—')
+  expect(await rows.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))).toEqual(heights)
 })

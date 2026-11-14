@@ -12,7 +12,7 @@ import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure, confirmTripFinish } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
 import { describeNavigationFailure } from './navigation-errors.mjs'
-import { offlineReadinessPresentation, localOnlyWarning, raceNavigationBanner } from './offline-readiness.mjs'
+import { offlineReadinessPresentation, localOnlyWarning } from './offline-readiness.mjs'
 import { instrumentReadings, instrumentDisplayReadings, formatReading, liveNavigationStrip } from './instruments.mjs'
 import { bootstrapTrack, appendTrackPoint, needsRebootstrap, trackBounds, shouldAutoFitTrack, MAX_DISPLAY_TRACK_POINTS } from './track.mjs'
 
@@ -187,10 +187,8 @@ function renderCourse() {
     selectedPointDirty = false
   }
   if (!selectedPointDirty && progress.index !== null) $('point-index').value = String(progress.index)
-  $('point-number').textContent = progress.index === null ? 'NO ACTIVE COURSE' : progress.index === 0 ? progress.reverse ? 'FINISH' : 'START' : progress.index === progress.points.length - 1 ? progress.reverse ? 'START' : 'FINISH' : `MARK ${progress.index} OF ${Math.max(0, progress.points.length - 2)}`
+  $('point-number').textContent = progress.index === null ? 'NO ACTIVE COURSE' : progress.index === 0 ? progress.reverse ? 'FINISH' : 'START' : progress.index === progress.points.length - 1 ? progress.reverse ? 'START' : 'FINISH' : `WP ${progress.index}/${Math.max(0, progress.points.length - 2)}`
   $('next-mark').textContent = progress.next?.name || 'No next mark'
-  $('next-note').textContent = progress.next?.notes || ''
-  $('previous-mark').textContent = `Previous: ${progress.previous?.name || 'unavailable'}`
   metric('distance', progress.distanceNm, ' NM', 2)
   metric('bearing', progress.bearingDeg, '°', 0)
   metric('vmg', progress.vmgKn, progress.etaProvisional ? ' kn (plan)' : ' kn')
@@ -199,7 +197,6 @@ function renderCourse() {
   const eta = progress.eta ? new Date(progress.eta) : null
   $('eta').textContent = eta && Number.isFinite(eta.getTime()) ? (eta.toDateString() === new Date().toDateString() ? eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : eta.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) : '—'
   $('eta').title = progress.etaReason || ''
-  $('eta-reason').textContent = progress.etaReason || ''
   $('progress-value').textContent = progress.pointPercent === null ? '—' : `${progress.pointPercent}%`
   $('course-progress').value = progress.pointPercent ?? 0
   routeLayer.clearLayers()
@@ -334,7 +331,7 @@ function waypointReadings(view) {
     && !(trackingStatus?.finishedTrip && !trackingStatus?.trackingSessionId)
   const solution = available ? greatCircle(position.value, target) : null
   return [
-    { id: 'btw', label: 'BTW', value: solution?.bearingDeg ?? null, unit: '° true', decimals: 0 },
+    { id: 'btw', label: 'BTW', value: solution?.bearingDeg ?? null, unit: '°T', decimals: 0 },
     { id: 'dtw', label: 'DTW', value: solution ? solution.distanceM / 1852 : null, unit: 'NM', decimals: 2 },
   ].map(reading => ({ ...reading, available: reading.value !== null, freshness: solution ? 'fresh' : 'missing',
     reference: target?.name || null, timestamp: position?.timestamp ?? null }))
@@ -347,25 +344,10 @@ function renderInstruments() {
   renderVesselGuides(view)
   const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
   grid.replaceChildren(...[...waypointReadings(view), ...visible].map(instrumentTile))
-  const state = $('signal-k-state')
-  if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
-  else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
-  else state.textContent = `Signal K connected · ${visible.filter(r => r.available).length}/${visible.length} readings live`
   renderRaceLiveNav(view)
 }
 
-// The Race tab must always show live navigation: true wind, boat speed,
-// heading and VMG, plus a readiness banner that lists exactly what offline
-// preparation is missing. It is informational, never a data gate — the values
-// render regardless of native activation, offline readiness or Race Pack state.
 function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
-  const banner = $('race-readiness')
-  if (banner) {
-    const message = raceNavigationBanner(offlineReadiness)
-    banner.textContent = message || ''
-    banner.hidden = !message
-    banner.dataset.navigationReady = String(offlineReadiness?.navigation?.ready === true)
-  }
   const element = $('race-live-nav')
   if (!element) return
   element.replaceChildren(...[...waypointReadings(view).map(r => ({ ...r, formatted: r.available ? formatReading(r) : '—' })), ...liveNavigationStrip(view, windSnapshot(view), Date.now())].map(raceInstrumentBox))
@@ -609,16 +591,12 @@ function instrumentTile(reading) {
   const value = document.createElement('span')
   value.className = 'value'
   value.textContent = formatReading(reading)
-  const meta = document.createElement('span')
-  meta.className = 'meta'
-  meta.textContent = reading.freshness === 'stale' ? `Stale · ${reading.ageSeconds}s` : reading.freshness === 'unknown' ? 'Timestamp unknown' : ''
   const values = document.createElement('span')
   values.className = 'wind-value-row'
   values.append(value)
   const arrow = windIndicator(reading)
   if (arrow) values.append(arrow)
   tile.append(label, values)
-  if (meta.textContent) tile.append(meta)
   return tile
 }
 
@@ -790,7 +768,7 @@ function renderProgression() {
   if (control) {
     const heldByOther = raceProgression?.control?.active === true && raceProgression.control.clientId !== clientId
     control.setAttribute('aria-pressed', String(navigationControl))
-    control.textContent = navigationControl ? 'Navigation control: this device' : 'Take navigation control'
+    control.textContent = navigationControl ? 'Release control' : 'Take control'
     control.disabled = heldByOther && !navigationControl
     control.title = heldByOther ? 'Another onboard device is controlling navigation' : 'Only the controlling device may accept or advance the course'
   }
@@ -817,43 +795,15 @@ function renderRacePlan() {
   const sailBox = $('race-current-sail')
   const current = view.currentLeg
   sailBox.dataset.available = String(Boolean(current?.summary))
-  sailBox.querySelector('.value').textContent = current?.summary ? `${current.summary}${current.pendingSailChange ? ' · Sail change pending' : ''}` : '—'
+  sailBox.querySelector('.value').textContent = current?.summary || '—'
 
-  const authority = $('race-authority')
-  authority.textContent = `Race plan authority: ${view.authority}`
-  authority.dataset.authority = view.authority === 'Onboard' ? 'onboard' : 'cloud'
-  authority.dataset.pack = view.packAvailable ? 'ready' : 'missing'
-  authority.title = `${view.authorityDetail} · ${view.packStatus}`
-  const warning = $('race-plan-warning')
-  warning.textContent = view.warning || ''
-  warning.hidden = !view.warning
   list.replaceChildren()
-  if (!view.packAvailable) {
-    const empty = document.createElement('p')
-    empty.className = 'muted'
-    empty.textContent = view.packStatus
-    list.append(empty)
-    return
-  }
-  const heading = document.createElement('p')
-  heading.className = 'race-plan-heading'
-  const pieces = [view.packStatus]
-  if (view.lastUpdated) pieces.push(view.historyOnly ? `Last onboard plan ${view.lastUpdated} (historical)` : `Updated ${view.lastUpdated}`)
-  list.append(heading)
-  if (view.preview) pieces.push('Onboard preview · cloud remains authoritative')
-  if (view.courseComplete) pieces.push('Course complete')
-  heading.textContent = pieces.join(' · ')
-  if (view.currentLeg && !view.followingLeg) {
-    const finish = document.createElement('p')
-    finish.className = 'muted'
-    finish.textContent = 'Finish — no following leg'
-    list.append(finish)
-  }
   for (const [index, leg] of view.remainingLegs.slice(1).entries()) {
     const row = document.createElement('div')
     row.className = index === 0 ? 'race-plan-current' : 'race-plan-leg'
     row.dataset.leg = 'remaining'
-    row.append(racePlanLeg(leg, index === 0 ? 'After next mark' : undefined, index === 0))
+    row.dataset.sailChangePending = String(leg.pendingSailChange)
+    row.append(racePlanLeg(leg, index === 0 ? 'Next leg' : undefined, index === 0))
     list.append(row)
   }
 }
@@ -871,12 +821,11 @@ function racePlanLeg(leg, eyebrow, showTrueWind = false) {
   fragment.append(name)
   const detail = document.createElement('span')
   if (leg.outOfRange) {
-    detail.textContent = 'Forecast unavailable for the recalculated time'
+    detail.textContent = '—'
   } else {
     const parts = []
     if (leg.summary) parts.push(leg.summary)
-    if (leg.pendingSailChange) parts.push('Sail change pending')
-    detail.textContent = parts.join(' · ') || 'No deterministic recommendation available'
+    detail.textContent = parts.join(' · ') || '—'
   }
   fragment.append(detail)
   const windGrid = document.createElement('div')

@@ -82,3 +82,14 @@ Review: 75 focused unit tests, seven distinct browser scenarios, lint, typecheck
 - [x] Verify mark changes and GPS expiry; install updated static assets without a second server restart.
 
 Review: 364 plugin tests passed (one opt-in test skipped), lint/typecheck/build passed, browser motion/freshness/crossing and waypoint checks passed. The real replay reported no missing heading/tack across 101 samples after the core update. Installed script/core hashes match the local build. Moreton Bay replay restored to running after the necessary server restart. No npm publication or default-branch merge.
+
+
+## Remove instrument clutter and stabilize rows (14 November 2026)
+
+- [x] Remove Instruments heading/subtext and top-right routine status output.
+- [x] Remove Race readiness/authority/pack explanations and verbose ETA prose.
+- [x] Apply standard sailing abbreviations and fixed non-wrapping data rows.
+- [x] Verify desktop/tablet/mobile with large, small and unavailable values.
+- [x] Install static assets in test and verify the real replay view.
+
+Review: 50 service tests and 14 distinct affected browser scenarios passed, including three viewport widths, value range/availability changes, tracking/Finish controls, recommendations and ETA behavior. Build/lint passed. Installed script, instruments, markup and stylesheet hashes match. Live replay: 394 frames, one unchanged race-row layout, no headings/subtext/status banner/top detail visible, standard labels and no page errors.
