@@ -1,4 +1,4 @@
-// Generated from src/guidance/core.ts; SHA256 574bfdef9640172132e11d4f31cc45accbc2ca7d08c60b25b0caf0c78214034a. Do not edit.
+// Generated from src/guidance/core.ts; SHA256 4b30d9055d9f9ce971c7726dbd8a4191b5d88fd5fa0952142b64737cfe38a5ae. Do not edit.
 /** Canonical sailing guidance. Browser copies are generated, never hand-tuned. */
 export const GUIDANCE_VERSION = 1;
 export const GUIDANCE_ALGORITHM = 'sailing-guidance-v1';
@@ -378,9 +378,9 @@ export function guidanceBearings(s, now, options = {}) {
             return out;
     }
     const side = s.currentTack === 'starboard' ? 1 : -1;
-    const activeHeading = usePolar ? normalizeDegrees(windFrom - side * s.targetTwaDeg) : s.headingDeg;
-    const estimatedAngle = finite(s.maneuverTwaDeg) ? s.maneuverTwaDeg : Math.abs(signedDegrees(windFrom - s.headingDeg));
-    const opposite = normalizeDegrees(windFrom + side * (usePolar ? s.targetTwaDeg : estimatedAngle));
+    const estimatedAngle = usePolar ? s.targetTwaDeg : finite(s.maneuverTwaDeg) ? s.maneuverTwaDeg : Math.abs(signedDegrees(windFrom - s.headingDeg));
+    const activeHeading = usePolar || finite(s.maneuverTwaDeg) ? normalizeDegrees(windFrom - side * estimatedAngle) : s.headingDeg;
+    const opposite = normalizeDegrees(windFrom + side * estimatedAngle);
     const groundCourse = (heading, leeway) => {
         const angle = leewayValid ? leeway ?? 0 : 0;
         if (!correctionValid && !usePolar)

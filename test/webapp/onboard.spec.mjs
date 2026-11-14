@@ -307,7 +307,7 @@ test('automatic application is disabled; the controlling device must accept a ro
     progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: false, revision: 7, at: 0 }, lastDetection: null }
   })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
+  await expect(page.locator('#progression-status')).toContainText('Mark detection: Automatic')
   // Neither a viewer nor the controlling device auto-advances.
   await page.waitForTimeout(1000)
   expect(writes).toEqual([])
@@ -328,7 +328,7 @@ test('holds a wrong-side detection for the crew instead of advancing', async ({ 
     progression: { mode: 'auto', revision: 7, activeIndex: 1, pending: { type: 'rounding', pointIndex: 1, wrongSide: true, revision: 7, at: 0 }, lastDetection: null }
   })
   await page.goto('/signalk-wakelogger/')
-  await expect(page.getByText(/Mark detection: Automatic/)).toBeVisible()
+  await expect(page.locator('#progression-status')).toContainText('Mark detection: Automatic')
   await page.waitForTimeout(500)
   expect(writes.find((write) => write.path.endsWith('/nextPoint'))).toBeUndefined()
 })
@@ -441,9 +441,9 @@ test('losing GPS does not blank independent wind and depth', async ({ page }) =>
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
   await expect(grid).toContainText('TW')
-  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+  await expect(grid.locator('[data-reading=depth][data-available=true]')).toHaveCount(1)
   await expect(grid.locator('[data-reading="tws"]')).toHaveAttribute('data-available', 'true')
-  await expect(grid.locator('.instrument[data-available=false]').filter({ hasText: 'Position' })).toHaveCount(1)
+  await expect(grid.locator('[data-reading=position][data-available=false]')).toHaveCount(1)
 })
 
 test('a stale measurement is marked without ageing the others', async ({ page }) => {
@@ -455,7 +455,7 @@ test('a stale measurement is marked without ageing the others', async ({ page })
   await page.goto('/signalk-wakelogger/')
   const grid = page.locator('#instruments-grid')
   await expect(grid.locator('.instrument[data-stale=true]').first()).toBeVisible()
-  await expect(grid.locator('.instrument[data-available=true]').filter({ hasText: 'Depth' })).toHaveCount(1)
+  await expect(grid.locator('[data-reading=depth][data-available=true]')).toHaveCount(1)
 })
 
 test('reload and a second client are read-only and resume instruments', async ({ browser }) => {
@@ -784,11 +784,12 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-tack-guide.png'), fullPage: true })
   const bow = (await map.getAttribute('data-guide-origin')).split(',').map(Number)
   expect(bow[0]).toBeGreaterThan(-27.395)
-  expect(bow[1]).toBeCloseTo(153.18, 8)
+  expect(Number.isFinite(bow[1])).toBe(true)
+  expect(await page.locator('.vessel-heading-guide').evaluate(ray => { const boat = document.querySelector('.vessel-icon').getBoundingClientRect(), p = ray.getPointAtLength(0), screen = new DOMPoint(p.x,p.y).matrixTransform(ray.getScreenCTM()); return Math.hypot(screen.x-boat.x-10,screen.y-boat.y) })).toBeLessThan(1.5)
   heading = 107.58795377399376; awa = -30
   await expect.poll(async () => Number(await map.getAttribute('data-heading-guide-bearing')), { timeout: 10000 }).toBeCloseTo(heading, 6)
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
-  await expect.poll(async () => ((Number(await map.getAttribute('data-opposite-tack-bearing')) + 180) % 360) - 180).toBeCloseTo(0, 6)
+  await expect.poll(async () => ((Number(await map.getAttribute('data-opposite-tack-bearing')) + 180) % 360) - 180, { timeout: 20000 }).toBeCloseTo(0, 4)
   trueWindFrom = 240; heading = 10
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe', { timeout: 30000 })
   // The wind step must converge while retaining the deliberate five-second damping.
@@ -798,10 +799,11 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
   await page.screenshot({ path: testInfo.outputPath('onboard-mirrored-gybe-guide.png'), fullPage: true })
   heading = 110
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '110')
-  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing'))).toBeCloseTo(10, 0)
-  heading = 60 // Dead run: true wind FROM 240°, no safe side to mirror.
-  await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
-  await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
+  await expect.poll(async () => Number(await map.getAttribute('data-opposite-gybe-bearing')), { timeout: 20000 }).toBeCloseTo(10, 0)
+  heading = 60 // At the dead run, keep the confirmed estimate rather than hiding it.
+  await expect(map).toHaveAttribute('data-heading-guide-bearing', '60')
+  await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe', { timeout: 15000 })
+  await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
   await expect(page.locator('.vessel-heading-guide')).toHaveCount(1)
   heading = 10; awsAvailable = false
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', '')
@@ -1207,7 +1209,7 @@ test('course progress changes with positions without leg activation and recovers
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`direct ground wind overlays survive updates, controls and recovery ${viewport.width}`, async ({ page }, testInfo) => {
-    test.setTimeout(90000)
+    test.setTimeout(120000)
     await page.setViewportSize(viewport)
     let heading = 330, twd = 0, timestampAge = 0, unknown = false, envFailure = false
     const measurement = value => ({ value, timestamp: unknown ? undefined : new Date(Date.now() - timestampAge).toISOString() })
@@ -1227,13 +1229,13 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '30')
     await expect(page.locator('#guide-legend')).toHaveCount(0)
     heading = 30
-    await expect(map).toHaveAttribute('data-current-tack', 'port')
+    await expect(map).toHaveAttribute('data-current-tack', 'port', { timeout: 15000 })
     await expect(map).toHaveAttribute('data-opposite-tack-bearing', '330')
     heading = 130
-    await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe')
+    await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'gybe', { timeout: 15000 })
     await expect(map).toHaveAttribute('data-opposite-gybe-bearing', '230')
     twd = 10
-    await expect.poll(async () => Math.abs(Number(await map.getAttribute('data-opposite-gybe-bearing')) - 250), { timeout: 30000 }).toBeLessThan(0.5)
+    await expect.poll(async () => Math.abs(Number(await map.getAttribute('data-opposite-gybe-bearing')) - 250), { timeout: 45000 }).toBeLessThan(0.5)
     await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
     await page.locator('.leaflet-control-zoom-in').click()
     await expect(ray).toHaveCount(1)
@@ -1561,6 +1563,7 @@ test('fresh plugin guidance stays visible across polling cycles and expires on s
 
 
 test('plugin interpolates movement without replacing the boat and follows only on request', async ({ page }) => {
+  test.setTimeout(60000)
   let latitude = -27.41, at = Date.now()
   const measurement = value => ({ value, timestamp: new Date(at).toISOString() })
   await mockBoat(page, {

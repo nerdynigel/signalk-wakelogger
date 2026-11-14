@@ -255,13 +255,14 @@ describe('sustained wind-relative tack confirmation', () => {
   })
   it('keeps established lines during helm corrections and wave motion with a steady estimated angle', () => {
     const engine = new GuidanceEngine({ headingTauSeconds: 0 }); engine.update(frame())
-    const bearings: number[] = []
+    const bearings: number[] = [], active: number[] = []
     for (let t = 1000; t <= 20000; t += 1000) {
       const s = engine.update({ ...frame(t, t % 2000 ? 340 : 320), heel: reading(50, epoch + t), pitch: reading(35, epoch + t) })!
       const g = guidanceBearings(s, epoch + t)
-      expect(g.kind).toBe('tack'); expect(g.currentTack).toBe('starboard'); bearings.push(g.oppositeCourseDeg!)
+      expect(g.kind).toBe('tack'); expect(g.currentTack).toBe('starboard'); bearings.push(g.oppositeCourseDeg!); active.push(g.currentCourseDeg!)
     }
     expect(Math.max(...bearings) - Math.min(...bearings)).toBeLessThan(0.01)
+    expect(Math.max(...active) - Math.min(...active)).toBeLessThan(0.01)
   })
   it('expires held estimates on wind loss and resets pending crossings for a new session', () => {
     const engine = new GuidanceEngine(); engine.update(frame()); engine.update(frame(1000, 30))

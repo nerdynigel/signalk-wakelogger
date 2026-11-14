@@ -1137,12 +1137,13 @@ function selectPanel(name, focus = false) {
   if (focus) $(`${name}-tab`).focus()
 }
 for (const name of tabNames) {
-  $(`${name}-tab`).onclick = () => selectPanel(name)
+  $(`${name}-tab`).onclick = () => { defaultPanelChosen = true; selectPanel(name) }
   $(`${name}-tab`).onkeydown = event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const current = tabNames.indexOf(name)
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabNames.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : tabNames.length - 1)) % tabNames.length
+    defaultPanelChosen = true
     selectPanel(tabNames[next], true)
   }
 }

@@ -317,9 +317,9 @@ export function guidanceBearings(s: GuidanceSnapshot | null | undefined, now: nu
   const leg = options.legBearingDeg
   if (finite(leg)) { const angle = Math.abs(signedDegrees(leg - windFrom)); if (s.kind === 'tack' ? angle >= 90 : angle <= 90) return out }
   const side = s.currentTack === 'starboard' ? 1 : -1
-  const activeHeading = usePolar ? normalizeDegrees(windFrom - side * s.targetTwaDeg!) : s.headingDeg
-  const estimatedAngle = finite(s.maneuverTwaDeg) ? s.maneuverTwaDeg : Math.abs(signedDegrees(windFrom - s.headingDeg))
-  const opposite = normalizeDegrees(windFrom + side * (usePolar ? s.targetTwaDeg! : estimatedAngle))
+  const estimatedAngle = usePolar ? s.targetTwaDeg! : finite(s.maneuverTwaDeg) ? s.maneuverTwaDeg : Math.abs(signedDegrees(windFrom - s.headingDeg))
+  const activeHeading = usePolar || finite(s.maneuverTwaDeg) ? normalizeDegrees(windFrom - side * estimatedAngle) : s.headingDeg
+  const opposite = normalizeDegrees(windFrom + side * estimatedAngle)
   const groundCourse = (heading: number, leeway: number | null): number | null => {
     const angle = leewayValid ? leeway ?? 0 : 0
     if (!correctionValid && !usePolar) return normalizeDegrees(heading + angle)
