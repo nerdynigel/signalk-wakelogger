@@ -7,7 +7,7 @@ import { guidanceBearings } from './sailing-guidance.mjs'
 import { vesselGuideBearings, bearingBetween } from './vessel-guides.mjs'
 import { waypointLaylines, laylineCoordinates } from './waypoint-laylines.mjs'
 import { ChartSourceService, courseBounds, coversBounds } from './chart-sources.mjs'
-import { coursePoints, raceProgress, selectedCoursePresentation } from './course-progress.mjs'
+import { coursePoints, raceProgress, selectedCoursePresentation, greatCircle } from './course-progress.mjs'
 import { LocalChartVerifier } from './map-preparation.mjs'
 import { trackingPresentation, finishedTripPresentation, finishTripPresentation, finishTripFailure, confirmTripFinish } from './tracking-controls.mjs'
 import { racePlanPresentation } from './race-plan.mjs'
@@ -327,13 +327,26 @@ async function bootstrapTrackFromDurable() {
   }
 }
 
+function waypointReadings(view) {
+  const position = view.readings.find(r => r.id === 'position')
+  const target = progress?.next
+  const available = signalKAvailable !== false && position?.freshness === 'fresh' && position.value && Math.abs(position.value.latitude) <= 90 && Math.abs(position.value.longitude) <= 180 && target
+    && !(trackingStatus?.finishedTrip && !trackingStatus?.trackingSessionId)
+  const solution = available ? greatCircle(position.value, target) : null
+  return [
+    { id: 'btw', label: 'BTW', value: solution?.bearingDeg ?? null, unit: '° true', decimals: 0 },
+    { id: 'dtw', label: 'DTW', value: solution ? solution.distanceM / 1852 : null, unit: 'NM', decimals: 2 },
+  ].map(reading => ({ ...reading, available: reading.value !== null, freshness: solution ? 'fresh' : 'missing',
+    reference: target?.name || null, timestamp: position?.timestamp ?? null }))
+}
+
 function renderInstruments() {
   const grid = $('instruments-grid')
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
   const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
-  grid.replaceChildren(...visible.map(instrumentTile))
+  grid.replaceChildren(...[...waypointReadings(view), ...visible].map(instrumentTile))
   const state = $('signal-k-state')
   if (signalKAvailable === false) state.textContent = 'Signal K unavailable — instrument updates paused'
   else if (environmentUnavailable) state.textContent = 'Signal K connected · environment sensors unavailable'
@@ -355,7 +368,7 @@ function renderRaceLiveNav(view = instrumentReadings({ navigation: navigationDat
   }
   const element = $('race-live-nav')
   if (!element) return
-  element.replaceChildren(...liveNavigationStrip(view, windSnapshot(view), Date.now()).map(raceInstrumentBox))
+  element.replaceChildren(...[...waypointReadings(view).map(r => ({ ...r, formatted: r.available ? formatReading(r) : '—' })), ...liveNavigationStrip(view, windSnapshot(view), Date.now())].map(raceInstrumentBox))
 }
 
 function raceInstrumentBox(item) {

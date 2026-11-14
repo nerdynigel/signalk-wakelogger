@@ -34,8 +34,9 @@ describe('source-clock guidance filtering', () => {
   })
   it('responds to a real turn without averaging opposite tacks', () => {
     const engine = new GuidanceEngine(); engine.update(frame()); const turn = engine.update(frame(1000, 30))!
-    expect(turn.turning).toBe(true); expect(turn.kind).toBeNull(); expect(turn.headingDeg).toBeCloseTo(30)
-    const settled = engine.update(frame(3000, 30))!; expect(settled.kind).toBe('tack'); expect(settled.currentTack).toBe('port')
+    expect(turn.turning).toBe(true); expect(turn.kind).toBe('tack'); expect(turn.currentTack).toBe('starboard'); expect(turn.headingDeg).toBeCloseTo(30)
+    for (let t = 2000; t < 11000; t += 1000) expect(engine.update(frame(t, 30))!.currentTack).toBe('starboard')
+    const settled = engine.update(frame(11000, 30))!; expect(settled.kind).toBe('tack'); expect(settled.currentTack).toBe('port')
   })
   it('uses sustained rate of turn to accelerate heading response', () => {
     const engine = new GuidanceEngine(); engine.update(frame()); let last
@@ -226,4 +227,45 @@ it('drops expired leeway from a polar steering solution while retaining fresh cu
   const s = new GuidanceEngine().update({ ...frame(0, 0, 290), stw: reading(5), leeway: reading(6), current: { east: 2, north: 0, at: epoch } })!
   s.targetTwaDeg = 40; s.targetSpeedKn = 5; s.leewayAt = epoch - 31000
   expect(guidanceBearings(s, epoch, { targetBearingDeg: 0 }).courseToSteerDeg).toBeCloseTo(360 - Math.asin(2 / 5) * 180 / Math.PI)
+})
+
+
+describe('sustained wind-relative tack confirmation', () => {
+  it.each([[330, 30, 'tack', 'starboard', 'port'], [210, 150, 'gybe', 'starboard', 'port'], [30, 330, 'tack', 'port', 'starboard'], [150, 210, 'gybe', 'port', 'starboard']] as const)(
+    'retains %s to %s estimates until ten seconds across the wind', (from, to, kind, before, after) => {
+      const engine = new GuidanceEngine({ headingTauSeconds: 0 })
+      const first = engine.update(frame(0, from))!
+      const opposite = guidanceBearings(first, epoch).oppositeCourseDeg
+      for (let t = 1000; t < 11000; t += 1000) {
+        const s = engine.update(frame(t, to))!, g = guidanceBearings(s, epoch + t)
+        expect(g.kind).toBe(kind); expect(g.currentTack).toBe(before); expect(g.oppositeCourseDeg).toBeCloseTo(opposite!)
+      }
+      expect(engine.update(frame(11000, to))!.currentTack).toBe(after)
+    })
+  it('resets the crossing timer when the boat returns or readings stop advancing', () => {
+    const engine = new GuidanceEngine({ headingTauSeconds: 0 }); engine.update(frame())
+    for (let t = 1000; t <= 6000; t += 1000) engine.update(frame(t, 30))
+    engine.update(frame(7000, 330))
+    for (let t = 8000; t < 18000; t += 1000) expect(engine.update(frame(t, 30))!.currentTack).toBe('starboard')
+    const repeated = frame(17000, 30)
+    expect(engine.update({ ...repeated, at: epoch + 20000 })!.currentTack).toBe('starboard')
+    expect(engine.update(frame(23000, 30))!.currentTack).toBe('starboard')
+    for (let t = 24000; t <= 32000; t += 1000) engine.update(frame(t, 30))
+    expect(engine.update(frame(33000, 30))!.currentTack).toBe('port')
+  })
+  it('keeps established lines during helm corrections and wave motion with a steady estimated angle', () => {
+    const engine = new GuidanceEngine({ headingTauSeconds: 0 }); engine.update(frame())
+    const bearings: number[] = []
+    for (let t = 1000; t <= 20000; t += 1000) {
+      const s = engine.update({ ...frame(t, t % 2000 ? 340 : 320), heel: reading(50, epoch + t), pitch: reading(35, epoch + t) })!
+      const g = guidanceBearings(s, epoch + t)
+      expect(g.kind).toBe('tack'); expect(g.currentTack).toBe('starboard'); bearings.push(g.oppositeCourseDeg!)
+    }
+    expect(Math.max(...bearings) - Math.min(...bearings)).toBeLessThan(0.01)
+  })
+  it('expires held estimates on wind loss and resets pending crossings for a new session', () => {
+    const engine = new GuidanceEngine(); engine.update(frame()); engine.update(frame(1000, 30))
+    expect(guidanceBearings(engine.update({ ...frame(2000, 30), wind: null }), epoch + 2000).kind).toBeNull()
+    expect(engine.update({ ...frame(3000, 30), session: 'new' })!.currentTack).toBe('port')
+  })
 })

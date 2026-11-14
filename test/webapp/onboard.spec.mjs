@@ -1629,3 +1629,65 @@ test('plugin interpolates movement without replacing the boat and follows only o
   await page.mouse.up()
   await expect(map).toHaveAttribute('data-viewport-mode', 'manual')
 })
+
+
+test('established tack lines survive wave and helm motion until a ten-second crossing is confirmed', async ({ page }) => {
+  test.setTimeout(40000)
+  let crossing = false
+  const engine = new GuidanceEngine({ headingTauSeconds: 0 })
+  const started = Date.now()
+  engine.update({ at: started, heading: { value: 330, at: started }, wind: { east: 0, north: 12, at: started } })
+  const heading = () => crossing ? 30 : Math.floor((Date.now() - started) / 1000) % 2 ? 320 : 340
+  const measurement = value => ({ value, timestamp: new Date().toISOString() })
+  await mockBoat(page, { course: false,
+    navigationOverride: () => ({ position: measurement({ latitude: -27.41, longitude: 153.18 }), headingTrue: measurement(heading() * Math.PI / 180) }),
+    guidance: () => {
+      const at = Date.now()
+      return engine.update({ at, heading: { value: heading(), at }, wind: { east: 0, north: 12, at }, heel: { value: 50, at } })
+    },
+  })
+  await page.goto('/signalk-wakelogger/')
+  const map = page.locator('#map'), ray = page.locator('.opposite-tack-guide')
+  await expect(ray).toHaveCount(1)
+  const observe = duration => page.evaluate(duration => new Promise(resolve => {
+    const start = performance.now(), samples = []
+    const frame = () => {
+      const map = document.querySelector('#map'), ray = document.querySelector('.opposite-tack-guide')
+      samples.push({ present: !!ray, side: map.dataset.currentTack, bearing: Number(ray?.dataset.bearingDeg) })
+      if (performance.now() - start < duration) requestAnimationFrame(frame)
+      else resolve(samples)
+    }
+    frame()
+  }), duration)
+  for (const sample of await observe(4500)) {
+    expect(sample.present).toBe(true); expect(sample.side).toBe('starboard'); expect(sample.bearing).toBeCloseTo(30)
+  }
+  crossing = true
+  for (const sample of await observe(9000)) {
+    expect(sample.present).toBe(true); expect(sample.side).toBe('starboard'); expect(sample.bearing).toBeCloseTo(30)
+  }
+  await expect(map).toHaveAttribute('data-current-tack', 'port', { timeout: 5000 })
+  await expect(ray).toHaveAttribute('data-bearing-deg', '330')
+})
+
+test('BTW and DTW follow the current waypoint in Instruments and Race and expire with GPS', async ({ page }) => {
+  let index = 1, stale = false
+  const course = { ...desired, start: { name: 'Start', latitude: -27.4, longitude: 153.17 },
+    marks: [{ name: 'North', latitude: -27.39, longitude: 153.17 }], finish: { name: 'East', latitude: -27.4, longitude: 153.18 } }
+  await mockBoat(page, {
+    courseState: () => ({ desired: course, cachedCourse: course, native: { activeMatchesDesired: true, course: { activeRoute: { pointIndex: index } } } }),
+    navigationOverride: () => ({ position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: new Date(Date.now() - (stale ? 31000 : 0)).toISOString() } }),
+  })
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#instruments-tab').click()
+  const btw = page.locator('#instruments-grid [data-reading=btw]'), dtw = page.locator('#instruments-grid [data-reading=dtw]')
+  await expect(btw).toContainText(/0\s*° true/); await expect(dtw).toContainText('0.60 NM')
+  index = 2
+  await expect(btw).toContainText(/90\s*° true/); await expect(dtw).toContainText('0.53 NM')
+  await page.locator('#race-tab').click()
+  await expect(page.locator('#race-live-nav [data-reading=btw]')).toContainText(/90\s*° true/)
+  await expect(page.locator('#race-live-nav [data-reading=dtw]')).toContainText('0.53 NM')
+  stale = true
+  await expect(btw).toHaveAttribute('data-available', 'false')
+  await expect(page.locator('#race-live-nav [data-reading=dtw]')).toContainText('—')
+})

@@ -1,4 +1,4 @@
-// Generated from src/guidance/core.ts; SHA256 0a3c62355ad3fd66a8932e8b1c3c614c5de04dbd4c86ad6435b0d6bb26d99eb6. Do not edit.
+// Generated from src/guidance/core.ts; SHA256 574bfdef9640172132e11d4f31cc45accbc2ca7d08c60b25b0caf0c78214034a. Do not edit.
 /** Canonical sailing guidance. Browser copies are generated, never hand-tuned. */
 export const GUIDANCE_VERSION = 1;
 export const GUIDANCE_ALGORITHM = 'sailing-guidance-v1';
@@ -51,6 +51,10 @@ export class GuidanceEngine {
     lastAt = -Infinity;
     mode = null;
     side = null;
+    pendingSide = null;
+    pendingMode = null;
+    maneuverAngle = null;
+    angleAt = -Infinity;
     result = null;
     constructor(config = {}) {
         this.config = config;
@@ -69,6 +73,10 @@ export class GuidanceEngine {
         this.mode = null;
         this.side = null;
         this.result = null;
+        this.pendingSide = null;
+        this.pendingMode = null;
+        this.maneuverAngle = null;
+        this.angleAt = -Infinity;
     }
     update(input) {
         const at = input.at, age = this.config.maxAgeMs ?? 30000;
@@ -76,14 +84,14 @@ export class GuidanceEngine {
             return null;
         if (at < this.lastAt)
             return this.result ? structuredClone(this.result) : null;
-        if (this.session !== input.session || this.lastHeading && input.heading && input.heading.at - this.lastHeading.at > 10000)
+        if (this.session !== input.session || this.lastHeading && input.heading && (input.heading.at - this.lastHeading.at > 10000 || input.heading.source !== this.lastHeading.source))
             this.reset();
         this.session = input.session;
         this.lastAt = at;
         const h = input.heading;
         if (!scalar(h, at, age, -3600, 3600)) {
-            this.result = null;
-            this.headingFilter.reset();
+            this.reset();
+            this.lastAt = at;
             return null;
         }
         const previous = this.lastHeading;
@@ -261,17 +269,61 @@ export class GuidanceEngine {
         }
         if (s.sailingWindFromDeg !== null && s.sailingWindFromDeg !== undefined && s.sailingWindSpeedKn !== null && s.sailingWindSpeedKn !== undefined) {
             const twa = signedDegrees(s.sailingWindFromDeg - heading), angle = Math.abs(twa);
-            if (angle >= 20 && angle < 87 || this.mode === 'tack' && angle >= 17 && angle < 93)
-                this.mode = 'tack';
-            else if (angle > 103 && angle < 175 || this.mode === 'gybe' && angle > 97 && angle < 178)
-                this.mode = 'gybe';
+            // Wind-relative side crosses at 0° (tack) or ±180° (gybe). A crossing
+            // must persist for ten seconds of advancing compass observations.
+            const observedTwa = signedDegrees(s.sailingWindFromDeg - h.value);
+            const observedSide = observedTwa > 0 ? 'starboard' : 'port';
+            const awayFromBoundary = Math.abs(observedTwa) >= 3 && Math.abs(observedTwa) <= 177;
+            const candidateMode = angle >= 20 && angle < 87 ? 'tack' : angle > 103 && angle < 175 ? 'gybe' : null;
+            if (!this.mode && candidateMode && !turning && !s.motionUnstable) {
+                this.mode = candidateMode;
+                this.side = observedSide;
+                this.maneuverAngle = angle;
+                this.angleAt = h.at;
+            }
+            if (this.side && awayFromBoundary && observedSide !== this.side) {
+                if (!this.pendingSide || this.pendingSide.side !== observedSide || h.at - this.pendingSide.last > 5000)
+                    this.pendingSide = { side: observedSide, since: h.at, last: h.at };
+                else if (h.at > this.pendingSide.last) {
+                    this.pendingSide.last = h.at;
+                    if (h.at - this.pendingSide.since >= 10000) {
+                        this.side = observedSide;
+                        this.pendingSide = null;
+                    }
+                }
+            }
             else
-                this.mode = null;
-            if (Math.abs(twa) >= 3 && Math.abs(twa) <= 177)
-                this.side = twa > 0 ? 'starboard' : 'port';
-            if (!turning && !s.motionUnstable) {
+                this.pendingSide = null;
+            // Keep established estimates through no-go/dead-downwind and brief
+            // reach/turn excursions. Changing sailing mode also needs a steady run.
+            if (this.mode && candidateMode && candidateMode !== this.mode && !this.pendingSide) {
+                if (!this.pendingMode || this.pendingMode.mode !== candidateMode || h.at - this.pendingMode.last > 5000)
+                    this.pendingMode = { mode: candidateMode, since: h.at, last: h.at };
+                else if (h.at > this.pendingMode.last) {
+                    this.pendingMode.last = h.at;
+                    if (h.at - this.pendingMode.since >= 10000) {
+                        this.mode = candidateMode;
+                        this.maneuverAngle = angle;
+                        this.angleAt = h.at;
+                        this.pendingMode = null;
+                    }
+                }
+            }
+            else
+                this.pendingMode = null;
+            if (this.mode && this.side) {
+                // Learn a steady sailing angle, rather than mirroring every helm/wave
+                // correction. Never learn from the unconfirmed side or a turn.
+                if (!turning && !s.motionUnstable && !this.pendingSide && observedSide === this.side && candidateMode === this.mode && h.at > this.angleAt) {
+                    const alpha = 1 - Math.exp(-(h.at - this.angleAt) / 10000);
+                    this.maneuverAngle = this.maneuverAngle === null ? angle : this.maneuverAngle + alpha * (angle - this.maneuverAngle);
+                    this.angleAt = h.at;
+                }
+                else
+                    this.angleAt = Math.max(this.angleAt, h.at);
                 s.kind = this.mode;
-                s.currentTack = this.mode ? this.side : null;
+                s.currentTack = this.side;
+                s.maneuverTwaDeg = this.maneuverAngle;
             }
             const polar = this.config.polar;
             if (s.kind && polar?.validated === true && polar.points.length) {
@@ -287,6 +339,13 @@ export class GuidanceEngine {
                     s.targetSpeedKn = speed;
                 }
             }
+        }
+        if (s.sailingWindFromDeg === null || s.sailingWindFromDeg === undefined) {
+            this.mode = null;
+            this.side = null;
+            this.pendingSide = null;
+            this.pendingMode = null;
+            this.maneuverAngle = null;
         }
         this.result = s;
         return structuredClone(s);
@@ -310,7 +369,7 @@ export function guidanceBearings(s, now, options = {}) {
     const windFrom = selected ? s.sailingWindFromDeg : currentValid && (correctionValid || usePolar) && finite(s.waterWindFromDeg) ? s.waterWindFromDeg : s.windFromDeg;
     const windSpeed = selected ? s.sailingWindSpeedKn : currentValid && (correctionValid || usePolar) && finite(s.windFromDeg) && finite(s.windSpeedKn) ? Math.hypot(s.windSpeedKn * Math.sin(rad(s.windFromDeg)) + s.currentEastKn, s.windSpeedKn * Math.cos(rad(s.windFromDeg)) + s.currentNorthKn) : s.windSpeedKn;
     const windAt = selected ? s.sailingWindAt : s.windAt, windUntil = selected ? s.sailingWindValidUntil : s.windValidUntil;
-    if (!finite(windFrom) || !finite(windSpeed) || windSpeed <= 0.1 || !finite(windAt) || !finite(windUntil) || now < windAt - 1000 || now > windUntil || !s.kind || !s.currentTack || s.turning)
+    if (!finite(windFrom) || !finite(windSpeed) || windSpeed <= 0.1 || !finite(windAt) || !finite(windUntil) || now < windAt - 1000 || now > windUntil || !s.kind || !s.currentTack)
         return out;
     const leg = options.legBearingDeg;
     if (finite(leg)) {
@@ -320,7 +379,8 @@ export function guidanceBearings(s, now, options = {}) {
     }
     const side = s.currentTack === 'starboard' ? 1 : -1;
     const activeHeading = usePolar ? normalizeDegrees(windFrom - side * s.targetTwaDeg) : s.headingDeg;
-    const opposite = usePolar ? normalizeDegrees(windFrom + side * s.targetTwaDeg) : normalizeDegrees(2 * windFrom - s.headingDeg);
+    const estimatedAngle = finite(s.maneuverTwaDeg) ? s.maneuverTwaDeg : Math.abs(signedDegrees(windFrom - s.headingDeg));
+    const opposite = normalizeDegrees(windFrom + side * (usePolar ? s.targetTwaDeg : estimatedAngle));
     const groundCourse = (heading, leeway) => {
         const angle = leewayValid ? leeway ?? 0 : 0;
         if (!correctionValid && !usePolar)

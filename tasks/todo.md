@@ -68,3 +68,17 @@ Review: 75 focused unit tests, seven distinct browser scenarios, lint, typecheck
 
 - [x] Keep heading and tack rays attached to the exact arrow tip through movement/pans; live maximum gap 0.64 px.
 - [x] Preserve vessel visibility when resizing the follow view to mobile.
+
+
+## Confirm tacks and gybes after a sustained crossing (14 November 2026)
+
+- [x] Find turn/motion suppression and single-reading side flips.
+- [x] Keep a learned maneuver angle through transient motion; confirm sides using ten seconds of fresh observations.
+- [x] Verify tack/gybe crossings, cancellations, duplicate polls, gaps, loss and reset behavior.
+- [x] Preserve the additive estimate in cloud telemetry and synchronize browser copies.
+- [x] Deploy to test and verify live overlays.
+
+- [x] Show active-waypoint BTW/DTW in Instruments and Race, with fresh GPS and current target geometry.
+- [x] Verify mark changes and GPS expiry; install updated static assets without a second server restart.
+
+Review: 364 plugin tests passed (one opt-in test skipped), lint/typecheck/build passed, browser motion/freshness/crossing and waypoint checks passed. The real replay reported no missing heading/tack across 101 samples after the core update. Installed script/core hashes match the local build. Moreton Bay replay restored to running after the necessary server restart. No npm publication or default-branch merge.
