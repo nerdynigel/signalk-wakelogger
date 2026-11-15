@@ -1,5 +1,16 @@
 # What's new in Wake Logger for Signal K
 
+## [0.2.0-beta.17] - 2026-11-15
+
+- Choose Map + data, a full-width Map, or a dedicated Instruments display. Your view choice is remembered in this browser tab.
+- Read heading and wind on a larger compass dial with smooth movement between sensor updates, matching angle labels and clearer pointers.
+- Use more compact phone speed cards, separate true-wind detail rows and smaller next-mark distance and arrival values.
+- Preview upcoming legs with separate Previous / Next controls and forecast timestamps, without advancing the active course.
+- See port and starboard as PT / STB after angle values. Healthy local recording uses a green vessel icon; connection and live-tracking controls open from the status indicator.
+- Updated App Store screenshots show the redesigned desktop and phone displays.
+
+Update the plugin, restart Signal K if prompted, and reload the onboard app. Your pairing, settings and recorded trips are kept. Read the [release notes](docs/releases/0.2.0-beta.17.md) for details.
+
 ## [0.2.0-beta.16] - 2026-11-14
 
 - The boat and map move smoothly between position updates.

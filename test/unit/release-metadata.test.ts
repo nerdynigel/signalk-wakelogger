@@ -34,8 +34,10 @@ describe('release metadata', () => {
   it('leads the App Store gallery with vessel-owner outcomes before technical setup', () => {
     const screenshots = metadata.signalk?.screenshots ?? []
     expect(screenshots.map((screenshot) => path.basename(screenshot))).toEqual([
+      'onboard-instruments.png',
+      'onboard-map-data.png',
+      'onboard-mobile.png',
       'live-tracking.png',
-      'route-review.png',
       'plugin-status.png',
       'plugin-config.png'
     ])

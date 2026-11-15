@@ -7,7 +7,7 @@ export const signedWindAngle = value => finite(value) ? normalize(value + 180) -
 export function windAngleText(value) {
   const angle = signedWindAngle(value)
   if (angle === null) return '—'
-  const side = angle === 0 || Math.abs(angle) === 180 ? '' : angle < 0 ? ' P' : ' S'
+  const side = angle === 0 || Math.abs(angle) === 180 ? '' : angle < 0 ? ' PT' : ' STB'
   return `${Math.round(Math.abs(angle))}°${side}`
 }
 export function windDirectionText(value) {
