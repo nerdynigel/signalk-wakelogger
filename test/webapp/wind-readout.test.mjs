@@ -4,7 +4,7 @@ import {instrumentReadings,instrumentDisplayReadings,liveNavigationStrip} from '
 const at=Date.parse('2026-10-24T00:00:00Z'),e=value=>({value,timestamp:new Date(at).toISOString()});
 test('wind angles use compass heading and keep port/starboard through north wrap',()=>{
  const state={capturedAt:new Date(at).toISOString(),headingDeg:350,headingReference:'true',cogDeg:90,awaDeg:330,twsKn:12,twdDeg:20};
- const a=liveWindReadings(state,at);assert.equal(a.twaDeg,30);assert.equal(a.awaDeg,-30);assert.equal(windAngleText(a.awaDeg),'30° P');assert.equal(windAngleText(a.twaDeg),'30° S');
+ const a=liveWindReadings(state,at);assert.equal(a.twaDeg,30);assert.equal(a.awaDeg,-30);assert.equal(windAngleText(a.awaDeg),'30° PT');assert.equal(windAngleText(a.twaDeg),'30° STB');
  assert.equal(liveWindReadings({...state,cogDeg:180},at).twaDeg,30);
  assert.equal(liveWindReadings({...state,headingReference:'magnetic'},at).twaDeg,null);
  assert.equal(windAngleText(null),'—');assert.equal(windAngleText(180),'180°');
@@ -28,7 +28,7 @@ test('published sailing wind and heading override independent UI calculations an
  const visible=instrumentDisplayReadings(view,snapshot,at),get=id=>visible.find(r=>r.id===id);
  assert.equal(get('twa'),undefined);assert.equal(get('twd').value,60);assert.equal(get('heading').value,10);
  assert.ok(Math.abs(get('tws').value-8)<1e-9);assert.ok(Math.abs(get('vmg-wind').value-4*Math.cos(50*Math.PI/180))<1e-9);
- assert.equal(get('vmg-wind').timestamp,at-5000);assert.equal(get('vmg-wind').ageSeconds,5);assert.equal(get('vmg-wind').basis,'water');assert.equal(get('vmg-wind').label,'VMG to wind');
+ assert.equal(get('vmg-wind').timestamp,at-5000);assert.equal(get('vmg-wind').ageSeconds,5);assert.equal(get('vmg-wind').basis,'water');assert.equal(get('vmg-wind').label,'VMG');
  assert.equal(visible.filter(r=>r.id.startsWith('vmg-wind')).length,1);
  assert.ok(!visible.some(r=>/\((ground|water)\)/.test(r.label)));
  assert.equal(liveNavigationStrip(view,snapshot,at).at(-1).basis,'water');

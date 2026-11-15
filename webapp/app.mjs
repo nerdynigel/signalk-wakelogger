@@ -1,3 +1,4 @@
+import { displayValue, renderDisplay, renderNavigation, statusPresentation, STATUS_ICONS, windMarkerMarkup } from './redesign.mjs'
 import { LiveVesselMotion, outsideFollowArea } from './live-vessel-motion.mjs'
 import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
 import { WIND_ARROW_PATH, windAngleText, windDirectionText } from './wind-readout.mjs'
@@ -31,7 +32,7 @@ const laylineLayer = L.layerGroup().addTo(map)
 const fallbackGuidance = new GuidanceService()
 const guideRays = new Map(), laylineRays = new Map()
 let maneuverMarker = null, serverGuidance = null, guidanceEndpoint = false, guidanceEnabled = true, steeringData = {}
-let vesselMarker = null, vesselIconKind = null, guideViewportInitialized = false
+let vesselMarker = null, vesselIconKind = null, guideViewportInitialized = false, windMarker = null
 const vesselMotion = new LiveVesselMotion()
 let vesselFrame = 0, forwardFrame = false
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -52,7 +53,9 @@ let navigationControl = false
 let navigationControlGeneration = null
 try { navigationControl = sessionStorage.getItem(CONTROL_KEY) === '1' } catch { navigationControl = false }
 const legGuidanceStabilizer = new LegGuidanceStabilizer()
-let racePlan = null, offlineReadiness = null
+let racePlan = null, offlineReadiness = null, previewIndex = 0, previewContext = '', raceDisplayView = null
+let displayPreference = null
+try { const saved = sessionStorage.getItem('wakelogger-display-mode'); if (['map-data', 'map', 'instruments'].includes(saved)) displayPreference = saved } catch { /* optional display preference */ }
 let navigationData = {}, environmentData = {}, signalKAvailable = null, environmentUnavailable = false
 let trackBootstrapped = false, trackLoading = false, trackRecordingId = null, fixesSinceBootstrap = 0, trackNeedsRebootstrap = true, trackResumeRequested = false
 // History is a bounded state machine, not a boolean: a failed read, an
@@ -202,7 +205,7 @@ function renderCourse() {
   routeLayer.clearLayers()
   const coordinates = progress.points.map(p => [p.latitude, p.longitude])
   if (coordinates.length) L.polyline(coordinates, { color: '#006a85', weight: 3 }).addTo(routeLayer)
-  if (progress.index !== null && progress.previous) L.polyline(coordinates.slice(progress.index - 1, progress.index + 1), { color: '#db7718', weight: 6 }).addTo(routeLayer)
+  if (progress.index !== null && progress.previous) L.polyline(coordinates.slice(progress.index - 1, progress.index + 1), { color: '#ff6fd8', weight: 5, className: 'current-leg' }).addTo(routeLayer)
   progress.points.forEach((point, index) => {
     const label = index === 0 ? progress.reverse ? 'F' : 'S' : index === progress.points.length - 1 ? progress.reverse ? 'S' : 'F' : String(index)
     const state = progress.index === index ? ' next' : progress.index !== null && index < progress.index ? ' passed' : ''
@@ -343,7 +346,9 @@ function renderInstruments() {
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
   const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
-  grid.replaceChildren(...[...waypointReadings(view), ...visible].map(instrumentTile))
+  renderDisplay(grid, view, visible, windSnapshot(view), instrumentTile, waypointReadings(view))
+  renderNavigationStrips(view)
+  renderStatus()
   renderRaceLiveNav(view)
 }
 
@@ -363,7 +368,7 @@ function raceInstrumentBox(item) {
   label.textContent = item.label
   const value = document.createElement('span')
   value.className = 'value'
-  value.textContent = item.formatted
+  displayValue(value, item.formatted)
   const values = document.createElement('span')
   values.className = 'wind-value-row'
   values.append(value)
@@ -448,6 +453,7 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
     vesselMotion.reset()
     $('centre-vessel').disabled = true
     vesselMarker?.remove(); vesselMarker = null; vesselIconKind = null
+    windMarker?.remove(); windMarker = null
     for (const ray of guideRays.values()) ray.remove()
     guideRays.clear()
     element.dataset.displayVesselLat = ''; element.dataset.displayVesselLon = ''
@@ -475,6 +481,13 @@ function renderVesselGuides(view = instrumentReadings({ navigation: navigationDa
       vesselIconKind = kind
     }
     vesselMarker.setLatLng(location)
+    const windHtml = windMarkerMarkup(instrumentDisplayReadings(view, snapshot, now), snapshot, now)
+    if (windHtml) {
+      const windIcon = L.divIcon({ className: 'map-wind-marker', html: windHtml, iconSize: [300, 300], iconAnchor: [150, 150] })
+      if (windMarker) { windMarker.setLatLng(location); if (windMarker.options.icon.options.html !== windHtml) windMarker.setIcon(windIcon) }
+      else windMarker = L.marker(location, { icon: windIcon, interactive: false, zIndexOffset: 100 }).addTo(vesselLayer)
+    } else { windMarker?.remove(); windMarker = null }
+
     if (kind === 'heading') vesselMarker.getElement()?.querySelector('span')?.style.setProperty('transform', `rotate(${heading}deg)`)
     element.dataset.displayVesselLat = String(pose.latitude)
     element.dataset.displayVesselLon = String(pose.longitude)
@@ -581,7 +594,8 @@ function instrumentTile(reading) {
   tile.className = 'instrument'
   tile.dataset.reading = reading.id
   tile.dataset.windBasis = reading.basis || ''
-  tile.dataset.available = String(reading.available)
+  const available = reading.id === 'position' ? reading.freshness === 'fresh' && Boolean(reading.value) : reading.available
+  tile.dataset.available = String(available)
   tile.dataset.freshness = reading.freshness
   tile.dataset.stale = String(reading.freshness === 'stale')
   if (reading.freshness === 'stale' && reading.ageSeconds !== null) tile.dataset.age = String(reading.ageSeconds)
@@ -590,13 +604,18 @@ function instrumentTile(reading) {
   label.textContent = reading.label
   const value = document.createElement('span')
   value.className = 'value'
-  value.textContent = formatReading(reading)
+  const formatted = formatReading(available ? reading : { ...reading, value: null })
+  displayValue(value, formatted)
   const values = document.createElement('span')
   values.className = 'wind-value-row'
   values.append(value)
   const arrow = windIndicator(reading)
   if (arrow) values.append(arrow)
-  tile.append(label, values)
+  const meta = document.createElement('span')
+  meta.className = 'meta'
+  meta.textContent = reading.freshness === 'stale' ? `Stale · ${reading.ageSeconds ?? '—'}s` : !available ? 'Unavailable' : `${reading.reference || reading.basis || reading.source || 'Signal K'} · ${reading.ageSeconds ?? 0}s`
+  tile.title = meta.textContent
+  tile.append(label, values, meta)
   return tile
 }
 
@@ -706,7 +725,7 @@ async function poll() {
       progress = raceProgress(status, navigationData, calcResult.value ?? {}, nativeRoute, racePlan)
       $('login').hidden = true
       renderCourse()
-      if (!defaultPanelChosen) { selectPanel(progress.points.length ? 'race' : 'instruments'); defaultPanelChosen = true }
+      if (!defaultPanelChosen) { selectPanel(progress.points.length ? 'race' : 'instruments'); if (!progress.points.length && !displayPreference) selectView('instruments', false); defaultPanelChosen = true }
     } else {
       const error = statusResult.error
       if ([401, 403].includes(error?.status)) $('login').hidden = false
@@ -792,6 +811,8 @@ function renderRacePlan() {
   const legs = legGuidanceStabilizer.update(context, snapshot?.plan?.legs || [], Date.now())
   const stabilized = snapshot ? { ...racePlan, [racePlan.preview ? 'preview' : 'latestSnapshot']: { ...snapshot, plan: { ...snapshot.plan, legs } } } : racePlan
   const view = racePlanPresentation(stabilized)
+  raceDisplayView = view
+  renderNavigationStrips()
   const sailBox = $('race-current-sail')
   const current = view.currentLeg
   sailBox.dataset.available = String(Boolean(current?.summary))
@@ -1060,6 +1081,7 @@ function renderTracking() {
   $('finish-trip').textContent = finish.label
   $('finish-trip-reason').textContent = finish.reason
   $('finished-trip').textContent = finishedTripPresentation(trackingStatus)
+  renderStatus()
   if (trackingStatus) $('cloud-state').textContent = !view.available ? 'Not paired' : !view.enabled ? 'Recording locally' : trackingStatus.connectionState === 'online' ? 'Live connected' : 'Cloud offline'
 }
 async function refreshTracking() {
@@ -1135,6 +1157,7 @@ function selectPanel(name, focus = false) {
     $(`${item}-panel`).hidden = !selected
   }
   if (focus) $(`${name}-tab`).focus()
+  if (document.body.dataset.view === 'instruments' && name !== 'instruments') selectView('map-data')
 }
 for (const name of tabNames) {
   $(`${name}-tab`).onclick = () => { defaultPanelChosen = true; selectPanel(name) }
@@ -1183,7 +1206,7 @@ $('fullscreen').onclick = async () => {
     // Browser fullscreen is not available on every onboard mobile browser.
     // The fixed viewport presentation provides the same controls there.
     setFullscreen(true)
-    if (chartplotter.requestFullscreen) await chartplotter.requestFullscreen().catch(() => {})
+    if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(() => {})
   }
 }
 document.addEventListener('fullscreenchange', () => {
@@ -1196,6 +1219,54 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !document.fullscreenElement) setFullscreen(false)
 })
 
+function renderStatus() {
+  const view = statusPresentation(trackingStatus, signalKAvailable)
+  const set = (id, icon, text, state) => {
+    const button = $(id)
+    button.dataset.state = state
+    button.querySelector('.status-icon').innerHTML = STATUS_ICONS[icon]
+    const label = button.querySelector('.status-text')
+    if (label) label.textContent = text
+    button.setAttribute('aria-label', `${text}. Open connection and recording details`)
+  }
+  set('connection-status', 'signal', view.signalText, view.signalState)
+  set('cloud-status', view.icon, view.cloudText, view.cloudState)
+  const combined = view.signalState === 'red' || view.cloudState === 'red' ? 'red' : view.signalState === 'amber' || view.cloudState === 'amber' ? 'amber' : 'green'
+  set('mobile-status', view.icon, `${view.signalText} · ${view.cloudText}`, combined)
+  for (const [id, icon, text, state] of [['status-connection-detail', 'signal', view.signalText, view.signalState], ['status-cloud-detail', view.icon, view.cloudText, view.cloudState]]) {
+    const element = $(id), symbol = document.createElement('span'), label = document.createElement('span')
+    symbol.className = 'status-icon'; symbol.innerHTML = STATUS_ICONS[icon]; element.dataset.state = state
+    label.textContent = text; element.replaceChildren(symbol, label)
+  }
+  const finish = $('finish-trip'), mobile = $('finish-trip-mobile')
+  mobile.disabled = finish.disabled; mobile.textContent = finish.textContent
+  mobile.setAttribute('aria-busy', finish.getAttribute('aria-busy') || 'false')
+  $('recording-state').textContent = trackingPresentation(trackingStatus).available ? view.local ? 'Logging locally' : trackingStatus?.trackingSessionId ? 'Recording · live' : trackingPresentation(trackingStatus).mode : view.cloudText
+}
+function renderNavigationStrips(view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })) {
+  const context = `${trackingStatus?.trackingSessionId}:${status?.desired?.courseId}:${status?.desired?.revision}:${progress?.index}`
+  if (context !== previewContext) { previewContext = context; previewIndex = 0 }
+  const raceView = raceDisplayView || racePlanPresentation(racePlan)
+  previewIndex = Math.min(previewIndex, Math.max(0, raceView.remainingLegs.length-1))
+  const readings = waypointReadings(view)
+  const navigate = delta => { previewIndex = Math.max(0, Math.min(raceView.remainingLegs.length-1, previewIndex+delta)); renderNavigationStrips() }
+  for (const id of ['instrument-navigation', 'map-navigation']) renderNavigation($(id), { progress, readings, raceView, previewIndex, navigate })
+  const position = view.readings.find(r => r.id === 'position')
+  $('recording-position').textContent = position?.freshness === 'fresh' && position.value ? position.formatted : 'Position unavailable'
+}
+function selectView(name, persist = true) {
+  if (persist) { displayPreference = name; try { sessionStorage.setItem('wakelogger-display-mode', name) } catch { /* optional */ } }
+  document.body.dataset.view = name
+  for (const mode of ['map-data', 'map', 'instruments']) $(`view-${mode}`).setAttribute('aria-pressed', String(mode === name))
+  if (name === 'instruments') selectPanel('instruments')
+  resizeMap()
+}
+selectView(displayPreference || 'map-data', false)
+for (const name of ['map-data', 'map', 'instruments']) $(`view-${name}`).onclick = () => { defaultPanelChosen = true; selectView(name) }
+for (const id of ['connection-status', 'cloud-status', 'mobile-status']) $(id).onclick = () => $('status-window').showModal()
+$('close-status').onclick = () => $('status-window').close()
+$('status-window').addEventListener('click', event => { if (event.target === $('status-window')) { const r = event.target.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) event.target.close() } })
+$('finish-trip-mobile').onclick = () => $('finish-trip').click()
 let pollSequence = 0
 await Promise.all([poll(), refreshInstruments(), refreshTracking()])
 setInterval(() => { if (!document.hidden) { poll(); refreshTracking() } }, 3000)

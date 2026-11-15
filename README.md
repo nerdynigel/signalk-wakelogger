@@ -67,9 +67,21 @@ Your course is also available as a standard Signal K route for other onboard app
 
 Before going offshore, check the onboard app's status. **Offline race ready** means the selected course has been applied, its Signal K route is active (and not reversed), a Race Pack that matches the course is stored with supported rules and a forecast valid now, and onboard sail planning will work with no internet. The app distinguishes a forecast that is merely valid now from one whose declared coverage spans the expected race window, and says so when it cannot confirm the whole window. If anything is missing the app says so; you can still switch Live tracking off for radio silence, but you will see a warning naming what is missing.
 
+## Onboard display modes
+
+![Redesigned onboard instruments](assets/screenshots/onboard-instruments.png)
+
+Choose **Map + data**, **Map** or **Instruments** in the header. Map + data retains the Instruments, Race, Course and Charts panels; Map gives the chart the full available area. The selected display mode stays in this browser tab across reloads.
+
+The Instruments view uses a heading-up compass card: the card rotates with measured heading while the vessel stays bow-up. COG and bearing to the next mark are separate indicators and require a true-heading reference. A missing or stale heading is never replaced by COG. Cyan A and orange T indicate apparent and true wind; the true-wind reference is labelled. The current route leg and next waypoint are magenta.
+
+**Next leg** previews planned wind and sail guidance without advancing the course. **Previous** returns through the legs to the current navigation strip. Historical plans and forecast updates are labelled separately from live instruments.
+
+Select either connection indicator on desktop, or the cloud/vessel icon on a phone, to open recording and connection details and the **Live tracking** switch. Healthy local logging uses a green sailing-vessel icon. Uploading, unavailable and failed states have their own status; individual sensor readings expire independently. **Finish trip** remains available in the header or phone recording bar.
+
 ## Watch your instruments with no course and no internet
 
-Open the **Wake Logger webapp** and choose the **Instruments** tab (the default when no course is selected). It reads directly from your boat's Signal K server and shows position, speed and course over ground, heading (true or magnetic), speed through water, depth (with its stated reference), and apparent and true wind, with units and a clear measured/derived label.
+Open the **Wake Logger webapp** and choose the **Instruments** display (the default when no course is selected and no display preference has been saved). It reads directly from your boat's Signal K server and shows position, speed and course over ground, heading (true or magnetic), speed through water, depth (with its stated reference), and apparent and true wind, with units and a clear measured/derived label.
 
 Instrument readings are independent of the course, Race Pack, recording and cloud connection. Each reading tracks its own freshness, so a stale sensor is marked with its age while the others stay live, and a missing value is shown as unavailable rather than guessed. Wind-relative VMG is labelled separately from VMG to a waypoint (ground- and water-referenced where available). Viewing instruments on another phone or tablet is read-only by default: it will not activate a course, advance a mark, change upload mode or start a recording.
 
