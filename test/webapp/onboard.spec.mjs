@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test'
 import { GuidanceEngine } from '../../webapp/sailing-guidance.mjs'
 
+async function openStatus(page) {
+  if (!await page.locator('#status-window').evaluate(dialog => dialog.open)) await page.locator(await page.locator('#mobile-status').isVisible() ? '#mobile-status' : '#cloud-status').click()
+}
+async function toggleFullscreen(page) {
+  await openStatus(page)
+  await page.locator('#fullscreen').click()
+  await page.locator('#close-status').click()
+}
 const ownedRouteId = '8be48170-2453-4107-a1aa-c2c8bea39901'
 const ownedHref = `/resources/routes/${ownedRouteId}`
 const secret = 'must-never-render-device-credential'
@@ -199,6 +207,7 @@ test('uses discovered local chart tiles without remote assets', async ({ page },
 test('advances native route and sets an explicit zero-based point', async ({ page }) => {
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await expect(page.locator(ui.next)).toBeEnabled()
   await page.locator(ui.next).click()
@@ -213,6 +222,7 @@ test('advances native route and sets an explicit zero-based point', async ({ pag
 test('another native route stays active until explicit activation', async ({ page }) => {
   const { writes } = await mockBoat(page, { conflict: true })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await expect(page.locator(ui.activate)).toBeVisible()
   expect(writes).toEqual([])
@@ -245,7 +255,8 @@ test('live switch confirms both directions without stopping local recording', as
   page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.accept() })
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
-  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await openStatus(page)
+  const toggle = page.locator('#live-tracking')
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await expect(page.locator('#tracking-mode')).toHaveText('Record locally')
   await expect(page.locator('#upload-queue')).toContainText('123 samples saved onboard')
@@ -262,28 +273,20 @@ test('live switch confirms both directions without stopping local recording', as
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
 })
 
-test('fullscreen works on desktop and mobile with tracking controls retained', async ({ page }, testInfo) => {
+test('fullscreen retains view switch and status controls on desktop and mobile', async ({ page }) => {
   await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
-  await page.getByRole('button', { name: 'Enter fullscreen' }).click()
-  await expect(page.locator('#chartplotter')).toHaveClass(/is-fullscreen/)
-  await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('onboard-desktop-fullscreen.png') })
-  await page.getByRole('button', { name: 'Exit fullscreen' }).click()
-  await expect(page.locator('#chartplotter')).not.toHaveClass(/is-fullscreen/)
-  await page.setViewportSize({ width: 390, height: 844 })
-  // Exercise the viewport fallback used by mobile browsers without the API.
-  await page.evaluate(() => { document.getElementById('chartplotter').requestFullscreen = undefined })
-  await expect(page.locator('#chartplotter')).toHaveAttribute('data-screen', 'mobile')
-  await page.getByRole('button', { name: 'Enter fullscreen' }).click()
-  await expect(page.locator('#chartplotter')).toHaveClass(/is-fullscreen/)
-  const dimensions = await page.locator('#chartplotter').boundingBox()
-  expect(dimensions.width).toBe(390)
-  expect(dimensions.height).toBe(844)
-  await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('onboard-mobile-fullscreen.png') })
-  await page.keyboard.press('Escape')
-  await expect(page.locator('#chartplotter')).not.toHaveClass(/is-fullscreen/)
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({width,height:844})
+    await toggleFullscreen(page)
+    await expect(page.locator('#chartplotter')).toHaveClass(/is-fullscreen/)
+    await expect(page.locator('.view-switch')).toBeVisible()
+    await openStatus(page)
+    await expect(page.getByRole('switch',{name:'Live tracking'})).toBeVisible()
+    await page.locator('#close-status').click()
+    await toggleFullscreen(page)
+    await expect(page.locator('#chartplotter')).not.toHaveClass(/is-fullscreen/)
+  }
 })
 
 test('failed mode save reads back the actual safely paused state', async ({ page }) => {
@@ -294,7 +297,8 @@ test('failed mode save reads back the actual safely paused state', async ({ page
     return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true, persistenceError: 'settings_save_failed', queue: { messageCount: 123 } } })
   })
   await page.goto('/signalk-wakelogger/')
-  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await openStatus(page)
+  const toggle = page.locator('#live-tracking')
   await expect(toggle).toBeEnabled()
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
@@ -358,7 +362,7 @@ test('shows onboard Race Plan authority and recommendations in local-only mode',
   await expect(nextLeg.locator('[data-reading=twa]')).toHaveCount(0)
   await expect(nextLeg.locator('[data-reading=twd] .wind-angle-arrow')).toHaveAttribute('data-direction-deg', '240')
   await expect(nextLeg.locator('[data-reading=tws]')).toContainText('14.0 kn')
-  await expect(nextLeg.locator('[data-reading=awa]')).toContainText('125° P')
+  await expect(nextLeg.locator('[data-reading=awa]')).toContainText('125° PT')
   await expect(nextLeg.locator('[data-reading=aws]')).toContainText('11.2 kn')
   await expect(nextLeg.locator('.wind-angle-arrow')).toHaveCount(2)
   await expect(nextLeg.locator('[data-reading=awa] .wind-angle-arrow')).toHaveAttribute('data-direction-deg', '55')
@@ -385,6 +389,7 @@ test('warns without a Race Pack but does not block local-only recording', async 
   const { writes } = await mockBoat(page, { racePlan: { uploadMode: 'local_only', calculationAuthority: 'onboard', pack: { available: false } } })
   await page.goto('/signalk-wakelogger/')
   await expect(page.locator('#race-plan-warning')).toHaveCount(0)
+  await openStatus(page)
   await expect(page.getByRole('switch', { name: 'Live tracking' })).toBeEnabled()
   expect(writes).toEqual([])
 })
@@ -414,8 +419,8 @@ test('standalone instruments are the default with no course and need no Race Pac
   await expect(page.locator('#instruments-panel')).toBeVisible()
   await expect(page.locator('#instruments-grid')).toContainText('SOG')
   await expect(page.locator('#instruments-grid')).toContainText('TW')
-  await expect(page.locator('#instruments-grid')).toContainText('DBT')
-  await expect(page.locator('#instruments-grid [data-reading=roll]')).toContainText('-10.0 °')
+  await expect(page.locator('#instruments-grid')).toContainText('DEPTH')
+  await expect(page.locator('#instruments-grid [data-reading=roll]')).toContainText('10.0 °')
   await expect(page.locator('#signal-k-state')).toHaveCount(0)
   // Viewing instruments must not activate a course, advance a mark or change upload mode.
   expect(writes).toEqual([])
@@ -509,6 +514,7 @@ test('a late-joining onboard browser fits the whole recorded track with no cours
   ]
   const { external } = await mockBoat(page, { track, course: false })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   // The full recorded extent comes from local history, not page-open time.
   await expect(map).toHaveAttribute('data-track-point-count', '3')
@@ -536,6 +542,7 @@ test('an empty initial archive reconciles promptly when durable history appears'
   let rows = []
   const { external } = await mockBoat(page, { track: () => rows, course: false })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-point-count', '0')
   rows = [
@@ -558,10 +565,11 @@ test('fullscreen and resize preserve the track viewport intent', async ({ page }
   ]
   await mockBoat(page, { track, course: false })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-point-count', '3')
   await expect(map).toHaveAttribute('data-viewport-mode', 'track')
-  await page.locator('#fullscreen').click()
+  await toggleFullscreen(page)
   await expect(map).toHaveAttribute('data-viewport-mode', 'track')
   await expect(map).toHaveAttribute('data-track-point-count', '3')
   await expectFittedToTrack(map)
@@ -576,6 +584,7 @@ test('switching recordings replaces the displayed track without mixing A and B',
   const { control } = await mockBoat(page, { track: () => rows, trackId: () => id, course: false })
   control.trackingSessionId = 'A'
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-recording-id', 'A')
   await expect(map).toHaveAttribute('data-track-point-count', '2')
@@ -602,6 +611,7 @@ test('a delayed old /track response cannot restore A after /tracking reports B',
   ]
   const { control } = await mockBoat(page, { track: () => rows, trackId: () => id, course: false })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-recording-id', 'A')
   await expect(map).toHaveAttribute('data-track-south', '-27.1')
@@ -672,6 +682,7 @@ test('a failed archive read stays unresolved and reconciles instead of looking c
   const { control } = await mockBoat(page, { track: () => rows, course: false })
   control.trackFailuresRemaining = 1
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-history-state', 'failed', { timeout: 10_000 })
   await expect(map).toHaveAttribute('data-track-point-count', '0')
@@ -691,6 +702,7 @@ test('a pending recording with no archive points yet is not complete history', a
   const { control } = await mockBoat(page, { track: () => rows, course: false })
   control.emptyRecordingId = 'rec-1'
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-track-history-state', 'pending')
   await expect(map).toHaveAttribute('data-track-point-count', '0')
@@ -712,6 +724,7 @@ test('a new desired plan supersedes the cached date and displays the foreign act
     native: { available: true, activeMatchesDesired: false, conflict: true, course: { activeRoute: { href: '/resources/routes/foreign', name: 'Foreign chart route' } } } }
   const { writes } = await mockBoat(page, { courseState: () => state, readiness: { ready: false, label: 'Offline race not ready', missing: ['Wake Logger course is not active', 'offline charts are not ready', 'vessel observations are not ready'], detail: 'Missing: Wake Logger course is not active; offline charts are not ready; vessel observations are not ready.' }, racePlan: { uploadMode: 'local_only', pack: { available: true, applicable: false, revision: 1886, racePlanId: 19, courseName: 'SAGS 04/10/2026 · Course H', startTime: '2026-10-04T02:44:00Z' } } })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await expect(page.locator('#course-name')).toHaveText(previous.name)
   state = { ...state, desired: today, acknowledgement: { revision: 3, status: 'rejected', errorCode: 'native_route_conflict', activation: 'conflict' } }
@@ -736,6 +749,7 @@ test('a newer Race Pack announces today before course delivery and cannot activa
   const state = { desired: previous, cachedCourse: previous, acknowledgement: { revision: 2, status: 'applied' }, native: { available: true, activeMatchesDesired: true, conflict: false, course: { activeRoute: { href: ownedHref, pointIndex: 1 } } } }
   const { writes } = await mockBoat(page, { courseState: state, racePlan: { pack: { available: true, applicable: false, courseId: 'race-plan-19', racePlanId: 19, courseName: 'Course H', revision: 1886, generatedAt: '2026-10-04T02:27:39Z', startTime: '2026-10-04T02:44:00Z' } } })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await expect(page.locator('#course-name')).toContainText('Course H')
   await expect(page.locator('#course-name')).toContainText('Course delivery pending')
@@ -773,6 +787,7 @@ test('mirrored tack and gybe guides refresh from apparent wind and ground motion
     } })
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
   await expect(map).toHaveAttribute('data-maneuver-guide-kind', 'tack')
@@ -932,6 +947,7 @@ test('a rejected course activation still shows live navigation and an informatio
     }
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   // Live navigation is visible even though activation was rejected.
   await expect(page.locator('#race-live-nav .race-live-nav-item[data-reading="tws"] .value')).toContainText('kn')
@@ -945,6 +961,7 @@ test('a rejected course activation still shows live navigation and an informatio
   await expect(page.locator('#race-readiness')).toHaveCount(0)
   // Explicit activation is confirmed against the occupying resource and clears it.
   page.on('dialog', (dialog) => dialog.accept())
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await page.locator('#activate-course').click()
   await expect.poll(() => writes.length).toBeGreaterThanOrEqual(1)
@@ -956,7 +973,8 @@ test('cancel in either direction and reload never change live tracking', async (
   await page.setViewportSize({ width: 390, height: 844 })
   const { writes } = await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
-  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await openStatus(page)
+  const toggle = page.locator('#live-tracking')
   await expect(toggle).toBeEnabled()
   const chooseDialog = accept => new Promise(resolve => page.once('dialog', async dialog => {
     await (accept ? dialog.accept() : dialog.dismiss())
@@ -975,6 +993,7 @@ test('cancel in either direction and reload never change live tracking', async (
   await page.reload()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   dialogHandled = chooseDialog(false)
+  await openStatus(page)
   await toggle.click()
   await dialogHandled
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
@@ -993,7 +1012,8 @@ test('stale tracking confirmation reads current state without retrying a write',
     return route.fulfill({ json: { uploadMode: 'local_only', paired: true, recording: true } })
   })
   await page.goto('/signalk-wakelogger/')
-  const toggle = page.getByRole('switch', { name: 'Live tracking' })
+  await openStatus(page)
+  const toggle = page.locator('#live-tracking')
   await expect(toggle).toBeEnabled()
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
@@ -1015,7 +1035,8 @@ test('one true wind direction and apparent angle match the chartplotter with wat
   await expect(twd.locator('.wind-angle-arrow')).toHaveCount(1)
   await expect(grid.locator('[data-reading="twa"], [data-reading="twa-ground"], [data-reading="twa-water"]')).toHaveCount(0)
   await expect(grid.locator('[data-reading="tws"]')).toHaveCount(1)
-  await expect(grid.locator('[data-reading="awa"]')).toContainText('30° S')
+  await expect(grid.locator('[data-reading="awa"]')).toContainText('30° STB')
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   const strip = page.locator('#race-live-nav [data-reading="twd"]')
   await expect(strip).toContainText('054°')
@@ -1051,6 +1072,7 @@ for (const width of [390, 1280]) test(`one sailing wind set prefers water and fa
   await expect(grid).not.toContainText('(ground)')
   await expect(grid).not.toContainText('(water)')
   await page.screenshot({ path: testInfo.outputPath(`single-wind-${width}.png`), fullPage: true })
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   const twd = page.locator('#race-live-nav [data-reading="twd"]')
   await expect(twd).toContainText('060°')
@@ -1163,6 +1185,7 @@ test('VMG tiles and Race strip survive water-only input, loss and recovery', asy
   await expect(page.locator('#instruments-grid [data-reading="vmg-wind-ground"], #instruments-grid [data-reading="vmg-wind-water"]')).toHaveCount(0)
   await expect(water).toContainText('1.9 kn')
   await expect(water).toHaveAttribute('data-available', 'true')
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   const strip = page.locator('#race-live-nav [data-reading="vmg-wind"]')
   await expect(strip).toContainText('VMG')
@@ -1200,6 +1223,7 @@ test('course progress changes with positions without leg activation and recovers
   await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
   await page.reload()
   await expect(page.locator('#progress-value')).toHaveText('25%', { timeout: 10000 })
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await page.locator('#advance-point').click()
   await expect(page.locator('#next-mark')).toHaveText('Race finish')
@@ -1221,6 +1245,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     })
     await page.route('**/signalk/v1/api/vessels/self/environment', route => envFailure ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: environment() }))
     await page.goto('/signalk-wakelogger/')
+    await page.locator('#view-map').click()
     const map = page.locator('#map'), ray = page.locator('.vessel-heading-guide'), opposite = page.locator('.opposite-tack-guide')
     await expect(map).toHaveAttribute('data-heading-guide-bearing', '330')
     await expect(map).toHaveAttribute('data-viewport-zoom', '13')
@@ -1239,10 +1264,10 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.locator('.map-panel').screenshot({ path: testInfo.outputPath(`direct-ground-gybe-${viewport.width}.png`) })
     await page.locator('.leaflet-control-zoom-in').click()
     await expect(ray).toHaveCount(1)
-    await page.locator('#fullscreen').click()
+    await toggleFullscreen(page)
     await expect(page.locator('#fullscreen')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('.opposite-gybe-guide')).toHaveCount(1)
-    await page.locator('#fullscreen').click()
+    await toggleFullscreen(page)
     envFailure = true
     await expect(page.locator('.opposite-gybe-guide')).toHaveCount(0)
     await expect(ray).toHaveCount(1)
@@ -1329,6 +1354,7 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
     environment: () => ({ wind: { speedOverGround: measurement(12/1.9438444924406), directionTrue: measurement(wind*Math.PI/180) } }),
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   const port = page.locator('.waypoint-port-layline'), marker = page.locator('.waypoint-maneuver-point')
   await expect(page.locator('#guide-legend')).toHaveCount(0)
@@ -1348,7 +1374,7 @@ for (const width of [1280, 390]) test(`waypoint laylines follow native and cache
   const distance = await map.getAttribute('data-layline-distance-m')
   await page.locator('.leaflet-control-zoom-in').click()
   await expect(map).toHaveAttribute('data-layline-distance-m', distance)
-  await page.locator('#fullscreen').click()
+  await toggleFullscreen(page)
   await expect(port).toHaveAttribute('data-target-lat', '-27.37')
   await page.keyboard.press('Escape')
   await page.reload()
@@ -1395,6 +1421,7 @@ for (const width of [1280, 390]) test(`canonical current guidance keeps measured
   page.on('pageerror', error => errors.push(error.message))
   await mockBoat(page, { guidance })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(map).toHaveAttribute('data-guidance-version', 'sailing-guidance-v1')
   await expect(map).toHaveAttribute('data-heading-guide-bearing', '0')
@@ -1452,7 +1479,7 @@ test('automatic mode displays a fresh onboard preview without internet', async (
   await expect(page.locator('#race-plan-list .race-plan-heading')).toHaveCount(0)
   await expect(page.locator('#race-current-sail')).toContainText('Full main + No. 3 jib')
   await expect(page.locator('[data-leg=current]')).toHaveCount(0)
-  await expect(page.locator('[data-leg=remaining] [data-reading=awa]')).toContainText('125° P')
+  await expect(page.locator('[data-leg=remaining] [data-reading=awa]')).toContainText('125° PT')
   await expect(page.locator('[data-leg=remaining] [data-reading=aws]')).toContainText('11.2 kn')
   await expect(page.locator('#race-plan-list')).not.toContainText('historical')
   expect(external).toEqual([])
@@ -1476,13 +1503,13 @@ test('shows and refreshes apparent wind on every remaining leg', async ({ page }
   await expect(later.locator('[data-reading=twd]')).toHaveCount(0)
   await expect(later.locator('[data-reading=tws]')).toHaveCount(0)
   await expect(later.locator('[data-reading]')).toHaveCount(2)
-  await expect(later.locator('[data-reading=awa]')).toContainText('95° S')
+  await expect(later.locator('[data-reading=awa]')).toContainText('95° STB')
   await expect(later.locator('[data-reading=aws]')).toContainText('12.1 kn')
   await expect(later).not.toContainText('5-min vessel average')
   racePlan.latestSnapshot.plan.legs[2].awaDeg = 101
   racePlan.latestSnapshot.plan.legs[2].awsKnots = 13.2
-  await expect(later.locator('[data-reading=awa]')).not.toContainText('95° S')
-  await expect(later.locator('[data-reading=awa]')).not.toContainText('101° S')
+  await expect(later.locator('[data-reading=awa]')).not.toContainText('95° STB')
+  await expect(later.locator('[data-reading=awa]')).not.toContainText('101° STB')
 })
 
 
@@ -1573,6 +1600,7 @@ test('plugin interpolates movement without replacing the boat and follows only o
     guidance: () => new GuidanceEngine().update({ at: Date.now(), heading: { value: 330, at: Date.now() }, wind: { east: 0, north: 12, at: Date.now() } }),
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map')
   await expect(page.locator('.vessel-icon')).toHaveCount(1)
   await page.evaluate(() => { window.originalBoat = document.querySelector('.vessel-icon') })
@@ -1649,6 +1677,7 @@ test('established tack lines survive wave and helm motion until a ten-second cro
     },
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map').click()
   const map = page.locator('#map'), ray = page.locator('.opposite-tack-guide')
   await expect(ray).toHaveCount(1)
   const observe = duration => page.evaluate(duration => new Promise(resolve => {
@@ -1681,11 +1710,13 @@ test('BTW and DTW follow the current waypoint in Instruments and Race and expire
     navigationOverride: () => ({ position: { value: { latitude: -27.4, longitude: 153.17 }, timestamp: new Date(Date.now() - (stale ? 31000 : 0)).toISOString() } }),
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#instruments-tab').click()
-  const btw = page.locator('#instruments-grid [data-reading=btw]'), dtw = page.locator('#instruments-grid [data-reading=dtw]')
+  const btw = page.locator('#instrument-navigation [data-reading=btw]'), dtw = page.locator('#instrument-navigation [data-reading=dtw]')
   await expect(btw).toContainText(/0\s*°T/); await expect(dtw).toContainText('0.60 NM')
   index = 2
   await expect(btw).toContainText(/90\s*°T/); await expect(dtw).toContainText('0.53 NM')
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   await expect(page.locator('#race-live-nav [data-reading=btw]')).toContainText(/90\s*°T/)
   await expect(page.locator('#race-live-nav [data-reading=dtw]')).toContainText('0.53 NM')
@@ -1703,14 +1734,16 @@ for (const width of [1280, 800, 390]) test(`concise instrument labels and stable
     environment: () => ({ wind: missing ? {} : { speedApparent: entry(large ? 50 : 0.1), angleApparent: entry(large ? -2.9 : 0.1), speedOverGround: entry(large ? 40 : 0.1), directionTrue: entry(large ? 6.1 : 0.1) } }),
   })
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#instruments-tab').click()
   await expect(page.getByText('Vessel instruments', { exact: true })).toHaveCount(0)
   await expect(page.locator('.tracking-detail')).toBeHidden()
   await expect(page.locator('#cloud-state')).toBeHidden()
   await expect(page.locator('#signal-k-state')).toHaveCount(0)
-  for (const [id, label] of Object.entries({ aws: 'AWS', awa: 'AWA', tws: 'TWS', twd: 'TWD', sog: 'SOG', heading: 'HDG', cog: 'COG', stw: 'STW', btw: 'BTW', dtw: 'DTW' })) {
+  for (const [id, label] of Object.entries({ aws: 'APPARENT WIND', awa: 'AWA', tws: 'TRUE WIND · GROUND', twd: 'TWD', sog: 'SPEED OVER GROUND', heading: 'HDG', cog: 'COG', stw: 'SPEED THROUGH WATER' })) {
     await expect(page.locator(`#instruments-grid [data-reading="${id}"] .label`)).toHaveText(label)
   }
+  await page.locator('#view-map-data').click()
   await page.locator('#race-tab').click()
   for (const selector of ['#race-readiness', '#race-authority', '#race-plan-warning', '.race-plan-heading']) await expect(page.locator(selector)).toHaveCount(0)
   const rows = page.locator('#race-live-nav .race-live-nav-item')
@@ -1733,6 +1766,7 @@ for (const width of [1280, 390]) test(`navigation updates never display a banner
   await page.setViewportSize({ width, height: 900 })
   await mockBoat(page)
   await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-map-data').click()
   await page.locator('#course-tab').click()
   await page.locator('#advance-point').click()
   await expect(page.locator('#next-mark')).toHaveText('Race finish')
@@ -1743,4 +1777,203 @@ for (const width of [1280, 390]) test(`navigation updates never display a banner
     await expect(page.locator(`#${tab}-tab`)).toHaveAttribute('aria-selected', 'true')
     await expect(page.locator(`#${tab}-panel`)).toBeVisible()
   }
+})
+
+for (const width of [1440, 390]) test(`redesign display modes, status and read-only preview at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({width,height:width===390?844:960})
+  const errors=[]; page.on('pageerror',error=>errors.push(error.message))
+  const {writes}=await mockBoat(page,{...freshInstruments(),racePlan:onboardRacePlan})
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('#view-map-data')).toHaveAttribute('aria-pressed','true')
+  await page.locator('#view-map-data').click()
+  await page.locator('#instruments-tab').click()
+  await expect(page.locator('.hero-dial')).toHaveCount(1)
+  await page.screenshot({path:testInfo.outputPath(`redesign-map-data-${width}.png`)})
+  await page.locator('#view-map').click()
+  await expect(page.locator('.instrument-rail')).toBeHidden()
+  await expect(page.locator('#map-navigation')).toBeVisible()
+  await expect(page.locator('.map-wind-marker svg')).toBeVisible()
+  await page.screenshot({path:testInfo.outputPath(`redesign-map-${width}.png`)})
+  await page.locator('#view-instruments').click()
+  await expect(page.locator('.map-panel')).toBeHidden()
+  await expect(page.locator('.hero-dial')).toBeVisible()
+  await page.screenshot({path:testInfo.outputPath(`redesign-instruments-${width}.png`)})
+  if (width === 390) { const finish=await page.locator('#finish-trip-mobile').boundingBox(), nav=await page.locator('#instrument-navigation').boundingBox(), footer=await page.locator('.recording-footer').boundingBox(); expect(finish.y+finish.height).toBeLessThanOrEqual(844); expect(nav.y+nav.height).toBeLessThanOrEqual(footer.y+1) }
+  await page.locator('#instrument-navigation').getByRole('button',{name:'Next leg'}).click()
+  await expect(page.locator('#instrument-navigation')).toHaveAttribute('data-preview','true')
+  await expect(page.locator('#instrument-navigation')).toContainText('PLANNED')
+  await page.locator('#instrument-navigation').getByRole('button',{name:'Previous'}).click()
+  await expect(page.locator('#instrument-navigation')).toHaveAttribute('data-preview','false')
+  await page.locator(width===390?'#mobile-status':'#cloud-status').click()
+  await expect(page.locator('#status-window')).toBeVisible()
+  await expect(page.getByRole('switch',{name:'Live tracking'})).toHaveAttribute('aria-checked','false')
+  await expect(page.locator('#status-cloud-detail')).toHaveAttribute('data-state','green')
+  await expect(page.locator('#status-cloud-detail')).toContainText('Logging locally')
+  await page.screenshot({path:testInfo.outputPath(`redesign-status-${width}.png`)})
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#status-window')).toBeHidden()
+  expect(writes).toEqual([]); expect(errors).toEqual([])
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})
+
+test('redesign compass card rotates with heading and withholds stale heading', async ({page}) => {
+  let heading=0,stale=false
+  const entry=value=>({value,timestamp:new Date(Date.now()-(stale?120000:0)).toISOString()})
+  const {writes}=await mockBoat(page,{course:false,navigationOverride:()=>({position:entry({latitude:-27.4,longitude:153.17}),headingTrue:entry(heading*Math.PI/180),courseOverGroundTrue:entry(0)})})
+  await page.route('**/plugins/signalk-wakelogger/guidance', route => route.fulfill({json:{enabled:false}}))
+  await page.goto('/signalk-wakelogger/')
+  const dial=page.locator('.hero-dial'),north=dial.locator('svg text').filter({hasText:/^N$/})
+  await expect(dial).toHaveAttribute('aria-label','Heading 0 degrees true')
+  expect(Number(await north.getAttribute('x'))).toBeCloseTo(300,0)
+  heading=90
+  await expect(dial).toHaveAttribute('aria-label','Heading 90 degrees true')
+  await expect.poll(async () => Number(await north.getAttribute('x'))).toBeCloseTo(65,0)
+  // COG remains zero: the compass must not substitute it for expired heading.
+  stale=true
+  await expect(dial).toHaveAttribute('aria-label','Heading unavailable')
+  await expect(page.locator('.dial-heading strong')).toHaveText('—')
+  expect(writes).toEqual([])
+})
+
+test('dial graphics ease between one-second samples without replacing their SVG', async ({page}) => {
+  let heading=359,awa=10,stale=false
+  const entry=value=>({value,timestamp:new Date(Date.now()-(stale?120000:0)).toISOString()})
+  await mockBoat(page,{course:false,navigationOverride:()=>({position:entry({latitude:-27.4,longitude:153.17}),headingTrue:entry(heading*Math.PI/180),courseOverGroundTrue:entry(30*Math.PI/180)}),environment:()=>({wind:{angleApparent:entry(awa*Math.PI/180),speedApparent:entry(8)}})})
+  await page.route('**/plugins/signalk-wakelogger/guidance',route=>route.fulfill({json:{enabled:false}}))
+  await page.goto('/signalk-wakelogger/')
+  await expect(page.locator('.dial-heading strong')).toHaveText('359°')
+  await expect(page.locator('[data-pointer=awa]')).toHaveAttribute('transform','rotate(10 300 300)')
+  await page.evaluate(()=>{
+    window.dialSvg=document.querySelector('.hero-dial svg');window.dialNeedle=document.querySelector('[data-pointer=awa]');window.dialFrames=[];window.recordDial=true
+    const record=()=>{if(!window.recordDial)return;window.dialFrames.push({angle:Number(/rotate\(([-\d.]+)/.exec(window.dialNeedle.getAttribute('transform'))[1]),heading:Number(document.querySelector('.hero-dial').dataset.displayHeading)});requestAnimationFrame(record)}
+    requestAnimationFrame(record)
+  })
+  heading=1;awa=70
+  await expect(page.locator('.dial-heading strong')).toHaveText('001°')
+  await expect.poll(async()=>Number(/rotate\(([-\d.]+)/.exec(await page.locator('[data-pointer=awa]').getAttribute('transform'))[1])).toBeCloseTo(70,0)
+  const frames=await page.evaluate(()=>{window.recordDial=false;return window.dialFrames})
+  expect(frames.filter(f=>f.angle>10&&f.angle<69).length).toBeGreaterThan(2)
+  expect(frames.every(f=>f.heading>358||f.heading<2)).toBe(true)
+  expect(await page.evaluate(()=>window.dialSvg===document.querySelector('.hero-dial svg')&&window.dialNeedle===document.querySelector('[data-pointer=awa]'))).toBe(true)
+  stale=true
+  await expect(page.locator('.dial-heading strong')).toHaveText('—')
+  await expect(page.locator('[data-pointer=awa]')).toBeHidden()
+  await expect(page.locator('[data-pointer=cog]')).toBeHidden()
+})
+for(const {width,height} of [{width:360,height:640},{width:390,height:844},{width:430,height:932}])test(`phone dial fills width and wind rows never overlap ${width}x${height}`,async({page},testInfo)=>{
+  await page.setViewportSize({width,height})
+  const entry=value=>({value,timestamp:new Date().toISOString()})
+  await mockBoat(page,{navigationOverride:()=>({position:entry({latitude:-28.8,longitude:153.17}),headingTrue:entry(0),speedOverGround:entry(3),speedThroughWater:entry(3)}),environment:()=>({wind:{angleTrueWater:entry(129*Math.PI/180),speedTrue:entry(10),angleApparent:entry(119*Math.PI/180),speedApparent:entry(12)}})})
+  await page.route('**/plugins/signalk-wakelogger/guidance',route=>route.fulfill({json:{enabled:false}}))
+  await page.goto('/signalk-wakelogger/')
+  await page.locator('#view-instruments').click()
+  await expect(page.locator('.tws-card .wind-secondary')).toContainText('129° STB')
+  const graphic=await page.locator('.hero-dial svg').boundingBox()
+  expect(graphic.width).toBeGreaterThanOrEqual(width-34)
+  expect(graphic.height).toBeGreaterThanOrEqual(width-34)
+  const sog=await page.locator('#instruments-grid [data-reading=sog]').boundingBox()
+  expect(sog.height).toBeLessThanOrEqual(82)
+  const contained=await page.locator('.tws-card').evaluate(card=>{
+    const r=card.getBoundingClientRect()
+    return [...card.querySelectorAll('.label,.value,.wind-direction-note')].every(n=>{const b=n.getBoundingClientRect();return b.top>=r.top&&b.bottom<=r.bottom&&b.left>=r.left&&b.right<=r.right})
+  })
+  expect(contained).toBe(true)
+  await page.screenshot({path:testInfo.outputPath(`phone-dial-${width}.png`)})
+  await page.locator('#view-map-data').click()
+  await page.locator('#instruments-tab').click()
+  const next=page.locator('#instrument-navigation')
+  for(const field of ['dtw','ttg','eta']) { const value=next.locator(`.${field} .value`); await expect(value).toHaveCSS('font-size','19px'); expect(await value.evaluate(n=>n.scrollWidth<=n.parentElement.clientWidth)).toBe(true) }
+  await expect(next.locator('.dtw .value')).toContainText('NM')
+  const longValues=await page.evaluate(async()=>{
+    const {renderNavigation}=await import('/signalk-wakelogger/redesign.mjs')
+    const container=document.querySelector('#instrument-navigation')
+    renderNavigation(container,{progress:{next:{name:'Eastern mark'},timeToGo:96540,eta:Date.now()+96540000},readings:[{id:'btw',value:42,available:true,unit:'°T',decimals:0},{id:'dtw',value:84.66,available:true,unit:'NM',decimals:2}],raceView:{remainingLegs:[]},previewIndex:0,navigate(){}})
+    return [...container.querySelectorAll('.navigation-value')].map(n=>({value:n.querySelector('.value').textContent,label:n.querySelector('.label').textContent,fits:n.querySelector('.value').scrollWidth<=n.clientWidth}))
+  })
+  expect(longValues.every(n=>n.fits)).toBe(true)
+  expect(longValues.find(n=>n.label==='TTG · H:M').value).toBe('26:49')
+  expect(longValues.find(n=>n.label==='ETA').value).toMatch(/^\d{2}:\d{2}$/)
+
+  await page.screenshot({path:testInfo.outputPath(`phone-map-data-${width}.png`)})
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})
+
+for(const width of [800,1280])test(`long true wind angle stays inside desktop card ${width}`,async({page},testInfo)=>{
+ await page.setViewportSize({width,height:700})
+ const entry=value=>({value,timestamp:new Date().toISOString()})
+ await mockBoat(page,{course:false,navigationOverride:()=>({headingTrue:entry(0)}),environment:()=>({wind:{angleTrueWater:entry(129*Math.PI/180),speedTrue:entry(10),angleApparent:entry(119*Math.PI/180),speedApparent:entry(12)}})})
+ await page.route('**/plugins/signalk-wakelogger/guidance',route=>route.fulfill({json:{enabled:false}}))
+ await page.goto('/signalk-wakelogger/')
+ await expect(page.locator('.tws-card .wind-secondary')).toContainText('129° STB')
+ const bounds=await page.locator('.tws-card').evaluate(card=>{const r=card.getBoundingClientRect();return {card:{top:r.top,bottom:r.bottom},children:[...card.querySelectorAll('.label,.value,.wind-direction-note')].map(n=>{const b=n.getBoundingClientRect();return {top:b.top,bottom:b.bottom}})}})
+ expect(bounds.children.every(n=>n.top>=bounds.card.top&&n.bottom<=bounds.card.bottom)).toBe(true)
+ const sog=await page.locator('#instruments-grid [data-reading=sog]').boundingBox();expect(sog.height).toBeLessThanOrEqual(140)
+ await page.screenshot({path:testInfo.outputPath(`wind-wrap-${width}.png`)})
+})
+
+test('dial honours reduced motion while readings and graphics still update',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'})
+ let heading=0
+ const entry=value=>({value,timestamp:new Date().toISOString()})
+ await mockBoat(page,{course:false,navigationOverride:()=>({headingTrue:entry(heading*Math.PI/180)})})
+ await page.route('**/plugins/signalk-wakelogger/guidance',route=>route.fulfill({json:{enabled:false}}))
+ await page.goto('/signalk-wakelogger/')
+ await expect(page.locator('.dial-heading strong')).toHaveText('000°')
+ heading=90
+ await expect(page.locator('.dial-heading strong')).toHaveText('090°')
+ await expect(page.locator('.hero-dial')).toHaveAttribute('data-display-heading','90')
+})
+
+for(const width of [360,390,800,1440])test(`leg preview controls have their own row and directional suffixes fit at ${width}px`,async({page},testInfo)=>{
+ await page.setViewportSize({width,height:width<=390?844:960})
+ const race=structuredClone(onboardRacePlan)
+ race.latestSnapshot.generatedAt=Date.now()
+ const {writes}=await mockBoat(page,{...freshInstruments(),racePlan:race})
+ await page.goto('/signalk-wakelogger/')
+ for(const mode of ['instruments','map-data','map']){
+  await page.locator('#view-'+mode).click()
+  if(mode==='map-data')await page.locator('#instruments-tab').click()
+  const card=page.locator(mode==='map'?'#map-navigation':'#instrument-navigation')
+  await card.getByRole('button',{name:'Next leg'}).click()
+  await expect(card).toHaveAttribute('data-preview','true')
+  await expect(card.locator('.preview-source')).toContainText('updated')
+  await expect(card.locator('.leg-actions .navigation-note')).toHaveCount(0)
+  await expect(card.locator('.awa .side-suffix')).toHaveText('PT')
+  await card.locator('.leg-actions').scrollIntoViewIfNeeded()
+  const geometry=await card.evaluate(el=>{
+   const actions=el.querySelector('.leg-actions'),source=el.querySelector('.preview-source')
+   const a=actions.getBoundingClientRect(),s=source.getBoundingClientRect()
+   return {sourceAfterActions:s.top>=a.bottom,buttons:[...actions.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect();return {width:r.width,height:r.height,fits:b.scrollWidth<=b.clientWidth}}),values:[...el.querySelectorAll('.navigation-value')].map(n=>n.querySelector('.value').scrollWidth<=n.clientWidth)}
+  })
+  expect(geometry.sourceAfterActions).toBe(true)
+  expect(geometry.buttons.every(b=>b.width>=78&&b.height>=44&&b.fits)).toBe(true)
+  expect(geometry.values.every(Boolean)).toBe(true)
+  if(width<761){
+   const sizes=await card.locator('.awa .value').evaluate(n=>({value:parseFloat(getComputedStyle(n).fontSize),suffix:parseFloat(getComputedStyle(n.querySelector('.side-suffix')).fontSize)}))
+   expect(sizes.suffix).toBeLessThan(sizes.value)
+  }
+  await page.screenshot({path:testInfo.outputPath(`leg-preview-${mode}-${width}.png`)})
+  await card.getByRole('button',{name:'Previous'}).click()
+  await expect(card).toHaveAttribute('data-preview','false')
+ }
+ await page.locator('#view-instruments').click()
+ await expect(page.locator('.aws-card [data-reading=awa] .side-suffix')).toHaveText('STB')
+ await expect(page.locator('.tws-card .wind-secondary .side-suffix')).toHaveText('STB')
+ await expect(page.locator('[data-reading=roll] .side-suffix')).toHaveText('PT')
+ await expect(page.locator('[data-reading=roll]>.label')).toHaveText('HEEL')
+ const astern=page.locator('.wind-angle-scale text[data-angle="180"]')
+ await expect(astern).toHaveAttribute('fill','#F6FBFF')
+ await expect(astern).toHaveCSS('font-size',width<761?'22px':'20px')
+ const labels=await page.locator('.hero-dial').evaluate(el=>{
+  const style=n=>{const s=getComputedStyle(n);return [s.fontFamily,s.fontSize,s.fontWeight]}
+  const astern=el.querySelector('[data-angle="180"]'),heading=el.querySelector('.dial-heading'),h=getComputedStyle(heading)
+  return {inner:style(astern),outer:[...el.querySelectorAll('[data-bearing]')].map(style),heading:{label:!!heading.querySelector('.label'),border:parseFloat(h.borderTopWidth),background:h.backgroundColor,top:heading.getBoundingClientRect().top-el.getBoundingClientRect().top},line:el.querySelector('.bearing-line').getAttribute('d'),arrow:el.querySelector('.bearing-arrow').getAttribute('d'),samePointer:el.querySelector('.bearing-line').parentNode===el.querySelector('.bearing-arrow').parentNode}
+ })
+ expect(labels.outer.every(s=>JSON.stringify(s)===JSON.stringify(labels.inner))).toBe(true)
+ expect(labels.heading).toEqual({label:false,border:0,background:'rgba(0, 0, 0, 0)',top:0})
+ expect(labels.line).toBe('M300 220V47')
+ expect(labels.arrow.startsWith('M300 47')).toBe(true)
+ expect(labels.samePointer).toBe(true)
+
+ expect(writes).toEqual([])
 })
