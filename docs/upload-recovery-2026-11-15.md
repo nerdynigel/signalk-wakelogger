@@ -16,7 +16,7 @@ Profiles that request 120 samples remain accepted, but actual wire batches are c
 
 RecordingStore.uploadDisposition uses durable recording decisions, not course activation. Recovery requires durable trip-start evidence or sustained movement (120 seconds and 200 metres) to confirm unknown recordings. Proven idle prefixes use an explicit capability-negotiated exclusion marker; unknown history remains waiting rather than silently discarded. Stationary powered-on sampling does not create new queued trip history. The file ACK path now restores its in-memory cursor/exclusion count if metadata persistence fails, so failed fsync/rename cannot hide still-pending data or falsify durable progress. SQLite already keeps this transaction atomic. Protected file/database retention retains unacknowledged recording data and fails capacity reservation rather than erasing it. File segment reclamation and SQLite row deletion follow the durable ACK cursor. Long stationary intervals do not themselves prove loss or permit skipping unknown sequence gaps. Existing recovery, retention and stationary integration tests are included in the suite.
 
-The file backend repeatedly decodes retained segments for statistics and reclamation. The measurement below quantifies this cost, but does not prove the physical Callisto backend or explain its reported 0.71 samples/sec. No speculative storage rewrite is included.
+The file backend repeatedly decodes retained segments for statistics and reclamation. The measurement below quantifies this cost, but does not prove the affected vessel’s storage backend or explain its reported 0.71 samples/sec. No speculative storage rewrite is included.
 
 ## Repeatable measurement
 
