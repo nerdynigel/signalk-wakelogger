@@ -75,9 +75,15 @@ Choose **Map + data**, **Map** or **Instruments** in the header. Map + data reta
 
 The Instruments view uses a heading-up compass card: the card rotates with measured heading while the vessel stays bow-up. COG and bearing to the next mark are separate indicators and require a true-heading reference. A missing or stale heading is never replaced by COG. Cyan A and orange T indicate apparent and true wind; the true-wind reference is labelled. The current route leg and next waypoint are magenta.
 
+Faint arrows across both map views show where the true wind is blowing to. They move gently downwind, with their size and speed following the averaged wind strength. Calm wind shows a small label. Old wind stops moving and becomes faint after ten seconds, then disappears after thirty seconds; reduced-motion settings keep the arrows still.
+
+Choose **Change** beside the Race panel's next mark to open the course-point picker, or tap a mark on either map. Selecting a mark only previews it; **Set point** or **Set as next mark** applies the selection. **Advance point** moves to the point after the currently active one. The Course panel retains these controls and hides the activation section while the selected course is already active.
+
 **Next leg** previews planned wind and sail guidance without advancing the course. **Previous** returns through the legs to the current navigation strip. Historical plans and forecast updates are labelled separately from live instruments.
 
 Select either connection indicator on desktop, or the cloud/vessel icon on a phone, to open recording and connection details and the **Live tracking** switch. Healthy local logging uses a green sailing-vessel icon. Uploading, unavailable and failed states have their own status; individual sensor readings expire independently. **Finish trip** remains available in the header or phone recording bar.
+
+While saved history uploads, the status window shows progress from acknowledged samples and estimates the time remaining once it has observed an upload rate. If the server cannot report a reliable total or rate, the display stays indeterminate instead of guessing a percentage or finish time.
 
 ## Watch your instruments with no course and no internet
 

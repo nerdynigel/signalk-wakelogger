@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Larger AWA/TWA readings and a larger phone TWD readout keep wind speed as the main value. The true-wind heading is simpler and the cloud icon is centred.
+- Faint animated downwind arrows appear across Map and Map + data, with wind-strength styling, stale-data handling and reduced-motion support.
+- Choose the next mark from the Race panel or directly from a map mark. Existing Set point / Advance point controls remain in Course, without a redundant activation section while the course is active.
+- Upload status shows acknowledged-sample progress and an estimated time remaining when the server provides enough information.
 - Recorded trips can start uploading while onboard course synchronisation is unavailable.
 - Upload recovery keeps the original age of retried data, so delayed confirmations do not look like a fast connection.
 - Unreadable route responses no longer count as an empty course target. Existing navigation remains protected.

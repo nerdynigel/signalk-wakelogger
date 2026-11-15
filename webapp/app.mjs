@@ -1,3 +1,6 @@
+import { WindFlowLayer, windFlowReading } from './wind-flow.mjs'
+import { UploadProgress } from './upload-progress.mjs'
+import { MarkPicker, courseSelectionKey } from './mark-picker.mjs'
 import { displayValue, renderDisplay, renderNavigation, statusPresentation, STATUS_ICONS, windMarkerMarkup } from './redesign.mjs'
 import { LiveVesselMotion, outsideFollowArea } from './live-vessel-motion.mjs'
 import { LegGuidanceStabilizer } from './leg-guidance-stability.mjs'
@@ -36,6 +39,11 @@ let vesselMarker = null, vesselIconKind = null, guideViewportInitialized = false
 const vesselMotion = new LiveVesselMotion()
 let vesselFrame = 0, forwardFrame = false
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+const windPane = map.createPane('windFlowPane'); windPane.style.zIndex = '250'; windPane.style.pointerEvents = 'none'
+const windFlow = new WindFlowLayer($('map'), reducedMotion, windPane)
+map.on('move zoom resize', () => windFlow.setOrigin(map.containerPointToLayerPoint([0, 0])))
+const uploadProgress = new UploadProgress()
+let courseMarkers = []
 const trackLine = L.polyline([], { color: '#526671', weight: 2, opacity: 0.65 }).addTo(map)
 let track = [], status = null, progress = null, sources = [], selectedChart = null, tileLayer = null
 let trackingStatus = null, trackingChanging = false, finishingTrip = false, trackingRequest = 0
@@ -178,6 +186,8 @@ function renderCourse() {
   $('activate-course').title = blocker
     ? `Explicit activation will replace the ${blocker.kind.replace(/_/g, ' ')}${blocker.name ? ` “${blocker.name}”` : ` (${blocker.resourceId})`} parked at the Wake Logger route id.`
     : ''
+  $('active-course-section').hidden = progress.matches && !selection.pendingPack && ack?.status !== 'rejected'
+  $('choose-next-mark').disabled = !progress.points.length || busy
   $('activate-course').disabled = busy || !progress.points.length || !status.native?.available || progress.matches
   $('advance-point').disabled = busy || !progress.matches || progress.index === null || progress.index >= progress.points.length - 1
   $('point-index').disabled = busy || !progress.matches
@@ -203,14 +213,19 @@ function renderCourse() {
   $('progress-value').textContent = progress.pointPercent === null ? '—' : `${progress.pointPercent}%`
   $('course-progress').value = progress.pointPercent ?? 0
   routeLayer.clearLayers()
+  courseMarkers = []
   const coordinates = progress.points.map(p => [p.latitude, p.longitude])
   if (coordinates.length) L.polyline(coordinates, { color: '#006a85', weight: 3 }).addTo(routeLayer)
   if (progress.index !== null && progress.previous) L.polyline(coordinates.slice(progress.index - 1, progress.index + 1), { color: '#ff6fd8', weight: 5, className: 'current-leg' }).addTo(routeLayer)
   progress.points.forEach((point, index) => {
     const label = index === 0 ? progress.reverse ? 'F' : 'S' : index === progress.points.length - 1 ? progress.reverse ? 'S' : 'F' : String(index)
-    const state = progress.index === index ? ' next' : progress.index !== null && index < progress.index ? ' passed' : ''
-    L.marker([point.latitude, point.longitude], { icon: L.divIcon({ className: `mark${state}`, html: label, iconSize: [30, 30], iconAnchor: [15, 15] }) })
+    const state = (progress.index === index ? ' next' : progress.index !== null && index < progress.index ? ' passed' : '') + (markPicker.mapIndex === index ? ' selected' : '')
+    const marker = L.marker([point.latitude, point.longitude], { icon: L.divIcon({ className: `mark${state}`, html: label, iconSize: [30, 30], iconAnchor: [15, 15] }) })
       .bindTooltip(safeText(point.name || label)).addTo(routeLayer)
+    marker.getElement()?.setAttribute('aria-label', 'Select mark: ' + (point.name || label))
+    marker.on('click', () => markPicker.selectMap(index))
+    marker.on('keydown', event => { if (event.originalEvent.key === ' ') { event.originalEvent.preventDefault(); markPicker.selectMap(index) } })
+    courseMarkers.push(marker)
   })
   $('map').dataset.coursePointCount = String(progress.points.length)
   if (progress.position) {
@@ -228,6 +243,7 @@ function renderCourse() {
     }
     trackLine.setLatLngs(track)
   }
+  markPicker.render(); positionMarkCard()
   renderVesselGuides()
   publishTrack()
   $('centre-vessel').disabled = !vesselMotion.target
@@ -345,6 +361,7 @@ function renderInstruments() {
   if (!grid) return
   const view = instrumentReadings({ navigation: navigationData, environment: environmentData, now: Date.now() })
   renderVesselGuides(view)
+  windFlow.update(windFlowReading(view, windSnapshot(view)))
   const visible = instrumentDisplayReadings(view, windSnapshot(view), Date.now())
   renderDisplay(grid, view, visible, windSnapshot(view), instrumentTile, waypointReadings(view))
   renderNavigationStrips(view)
@@ -773,10 +790,11 @@ async function poll() {
 }
 
 async function command(action, context = {}) {
-  if (busy) return
+  if (busy) return false
   busy = true
-  try { await action(); selectedPointDirty = false; notice(''); await poll() }
-  catch (error) { notice(describeNavigationFailure(error, context)); reportDiagnostic(error) }
+  if (progress) renderCourse()
+  try { await action(); selectedPointDirty = false; notice(''); await poll(); return true }
+  catch (error) { const message = describeNavigationFailure(error, context); notice(message); context.onError?.(message); reportDiagnostic(error); return false }
   finally { busy = false; if (progress) renderCourse() }
 }
 
@@ -1009,9 +1027,29 @@ $('activate-course').onclick = () => {
   }
   void command(() => progression.activate())
 }
-$('advance-point').onclick = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name })
+const changePoint = index => command(() => progression.setPoint(index, progress.points.length, status.native.course.activeRoute.href), { markName: progress?.points[index]?.name, onError: message => markPicker.reportError(message) })
+const advancePoint = () => command(() => progression.advance(status.native.course.activeRoute.href), { markName: progress?.next?.name, onError: message => markPicker.reportError(message) })
+function positionMarkCard() {
+  const point = progress?.points[markPicker.mapIndex], card = $('map-mark-card')
+  if (!point || card.hidden || window.innerWidth <= 760) { card.style.left = ''; card.style.top = ''; return }
+  const pixel = map.latLngToContainerPoint([point.latitude, point.longitude]), size = map.getSize()
+  card.style.left = Math.max(12, Math.min(size.x - 292, pixel.x + 18)) + 'px'
+  card.style.top = Math.max(76, Math.min(size.y - card.offsetHeight - 12, pixel.y + 18)) + 'px'
+}
+const markPicker = new MarkPicker({
+  dialog: $('mark-picker'), card: $('map-mark-card'),
+  getState: () => ({ key: courseSelectionKey(status, progress), points: progress?.points || [], index: progress?.index ?? null, reverse: progress?.reverse, busy, available: progress?.matches === true }),
+  setPoint: changePoint, advance: advancePoint,
+  onMapSelection: index => courseMarkers.forEach((marker, i) => marker.getElement()?.classList.toggle('selected', i === index)),
+  layout: positionMarkCard,
+  distance: point => { const reading = instrumentReadings({ navigation: navigationData, environment: environmentData }).readings.find(r => r.id === 'position'); if (reading?.freshness !== 'fresh' || !reading.value || !Number.isFinite(reading.value.latitude) || !Number.isFinite(reading.value.longitude) || Math.abs(reading.value.latitude) > 90 || Math.abs(reading.value.longitude) > 180 || signalKAvailable === false) return 'Distance and bearing unavailable'; const solution = greatCircle(reading.value, point); return (solution.distanceM / 1852).toFixed(2) + ' NM · ' + String(Math.round(solution.bearingDeg) % 360).padStart(3, '0') + '° true' }
+})
+$('choose-next-mark').onclick = () => markPicker.open()
+map.on('move resize', positionMarkCard)
+map.on('click', () => markPicker.clearMap())
+$('advance-point').onclick = advancePoint
 $('point-index').onchange = () => { selectedPointDirty = true }
-$('set-point').onclick = () => command(() => progression.setPoint(Number($('point-index').value), progress.points.length, status.native.course.activeRoute.href), { markName: progress?.points[Number($('point-index').value)]?.name })
+$('set-point').onclick = () => changePoint(Number($('point-index').value))
 $('chart-source').onchange = () => { useChart(sources.find(source => source.id === $('chart-source').value) || null); reportMap('unknown') }
 $('chart-margin').onchange = () => { verifier.cancel(); renderChartReadiness(); reportMap('unknown') }
 $('login').onsubmit = async event => {
@@ -1221,6 +1259,10 @@ document.addEventListener('keydown', event => {
 
 function renderStatus() {
   const view = statusPresentation(trackingStatus, signalKAvailable)
+  const uploading = uploadProgress.update(trackingStatus)
+  if (uploading && view.cloudState === 'amber') { view.icon = 'cloudUpload'; view.cloudText = uploading.text + (uploading.etaSeconds === null ? '' : ' · ' + Math.max(1, Math.ceil(uploading.etaSeconds / 60)) + ' min') }
+  $('upload-progress').hidden = !uploading
+  if (uploading) { const bar = $('upload-progress-bar'); if (uploading.percent === null) bar.removeAttribute('value'); else bar.value = uploading.percent; $('upload-progress-detail').textContent = uploading.detail }
   const set = (id, icon, text, state) => {
     const button = $(id)
     button.dataset.state = state
@@ -1256,6 +1298,7 @@ function renderNavigationStrips(view = instrumentReadings({ navigation: navigati
 }
 function selectView(name, persist = true) {
   if (persist) { displayPreference = name; try { sessionStorage.setItem('wakelogger-display-mode', name) } catch { /* optional */ } }
+  windFlow.setVisible(name !== 'instruments')
   document.body.dataset.view = name
   for (const mode of ['map-data', 'map', 'instruments']) $(`view-${mode}`).setAttribute('aria-pressed', String(mode === name))
   if (name === 'instruments') selectPanel('instruments')
