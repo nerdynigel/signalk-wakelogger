@@ -29,19 +29,20 @@ interface TransportOptions {
   now?: () => number
 }
 
-interface InFlightBatch { through: number; sentAt: number }
+interface InFlightBatch { first: number; through: number; sentAt: number; lastSentAt: number; retry?: boolean; retryAfter?: number; selectionMs?: number; brokerAt?: number; publishStartedAt?: number }
 
 export class WakeLoggerTransport {
   private client?: MqttClient
   private stopped = true
+  private lifecycle = 0
   private supportsTripPolicy = false
   private reconnectAttempt = 0
   private reconnectTimer?: NodeJS.Timeout
   private pumpTimer?: NodeJS.Timeout
   private healthTimer?: NodeJS.Timeout
-  private pumpRunning = false
+  private pumpRunning?: MqttClient
   private current?: TelemetrySample
-  private statePublishInFlight = false
+  private statePublishInFlight?: MqttClient
   private statePublishPending = false
   private authenticationFailed = false
   private courseSubscriptionError?: string
@@ -52,10 +53,14 @@ export class WakeLoggerTransport {
   private readonly topics
   private inFlight: InFlightBatch[] = []
   private nextPublishAfter = 0
+  private optionalCoursePending = false
+  private optionalCourseAt = -Infinity
   private lastLivePublishedAt = 0
   private lastLivePublishedSequence = 0
   private lastAcknowledgedAt?: number
   private acknowledgementLatencyMs?: number
+  private uploadTiming?: { selectionMs: number; brokerMs: number | null; receiptMs: number; persistenceMs: number; durableMs: number }
+  uploadTimings(): typeof this.uploadTiming { return this.uploadTiming ? { ...this.uploadTiming } : undefined }
   private publishedBytes = 0
   private lastMode?: NetworkMode
   private backlogMessageCount = 0
@@ -71,13 +76,15 @@ export class WakeLoggerTransport {
   start(): void {
     if (!this.stopped) return
     this.stopped = false
+    const lifecycle = ++this.lifecycle
     this.healthTimer = setInterval(() => {
       this.monitor.tick()
       this.syncMode()
       void this.checkAcknowledgementTimeout()
+      void this.syncOptionalCourse()
     }, 5000)
     void this.outbox.latest().then((sample) => {
-      if (this.stopped) return
+      if (this.stopped || lifecycle !== this.lifecycle) return
       this.current = sample && this.canUpload(sample) ? sample : undefined
       this.connect()
     }).catch((error) => this.options.onState('degraded', sanitizeError(String(error))))
@@ -91,6 +98,7 @@ export class WakeLoggerTransport {
     const publishOffline = options.publishOffline ?? true
     const force = options.force ?? false
     this.stopped = true
+    this.lifecycle += 1
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
     if (this.healthTimer) clearInterval(this.healthTimer)
@@ -118,11 +126,28 @@ export class WakeLoggerTransport {
   }
 
   async publishCourseAcknowledgement(): Promise<void> {
-    if (this.courseSubscriptionError) return
-    const acknowledgement = await this.options.getCourseAcknowledgement?.()
-    if (acknowledgement && this.client?.connected && !this.stopped) {
-      await this.publish(this.client, this.topics.courseAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
+    const client = this.client
+    if (this.courseSubscriptionError || !client?.connected || this.stopped) return
+    const acknowledgement = await bounded(Promise.resolve().then(() => this.options.getCourseAcknowledgement?.()))
+    if (acknowledgement && client === this.client && client.connected && !this.stopped) {
+      await this.publish(client, this.topics.courseAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
     }
+  }
+
+  private async syncOptionalCourse(): Promise<void> {
+    const client = this.client
+    if (this.stopped || !client?.connected || this.optionalCoursePending || this.now() - this.optionalCourseAt < 30_000) return
+    this.optionalCoursePending = true
+    this.optionalCourseAt = this.now()
+    try {
+      await bounded(subscribe(client, [this.topics.course]))
+      if (client !== this.client || this.stopped) return
+      this.courseSubscriptionError = undefined
+      await this.publishCourseAcknowledgement()
+    } catch (error) {
+      // Retry optional sync without degrading or closing telemetry transport.
+      if (client === this.client && !this.stopped) { this.courseSubscriptionError = `Course sync unavailable: ${sanitizeError(String(error))}`; this.options.onState('online', this.courseSubscriptionError) }
+    } finally { this.optionalCoursePending = false }
   }
 
   async publishEvidence(event: object): Promise<boolean> {
@@ -197,9 +222,10 @@ export class WakeLoggerTransport {
     }
     const client = mqtt.connect(url, mqttOptions)
     this.client = client
-    client.on('connect', () => void this.onConnect(client).catch((error) => { this.transportFailure(error); client.end(true) }))
-    client.on('message', (topic, payload) => void this.onMessage(topic, payload).catch((error) => this.transportFailure(error)))
+    client.on('connect', () => void this.onConnect(client).catch((error) => { if (client === this.client && !this.stopped) { this.transportFailure(error); client.end(true) } }))
+    client.on('message', (topic, payload) => { if (client === this.client && !this.stopped) void this.onMessage(topic, payload).catch((error) => { if (client === this.client && !this.stopped) this.transportFailure(error) }) })
     client.on('error', (error) => {
+      if (client !== this.client || this.stopped) return
       const auth = /auth|not authorized|bad user/i.test(error.message)
       this.authenticationFailed = auth
       if (auth) this.monitor.disconnected('authentication_failed')
@@ -220,25 +246,24 @@ export class WakeLoggerTransport {
     if (client !== this.client || this.stopped) return
     this.reconnectAttempt = 0
     this.supportsTripPolicy = false
-    this.inFlight = []
+    this.inFlight.forEach(batch => { batch.retry = true; batch.retryAfter = undefined })
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
-    this.nextPublishAfter = stats.acknowledgedSequence
+    this.inFlight = this.inFlight.filter(batch => batch.through > stats.acknowledgedSequence)
+    this.nextPublishAfter = Math.max(stats.acknowledgedSequence, ...this.inFlight.map(batch => batch.through))
     if (client !== this.client || this.stopped) return
     await subscribe(client, [this.topics.ack, this.topics.profile])
     if (client !== this.client || this.stopped) return
-    // Existing broker roles may predate course permissions. Optional course
-    // sync must not prevent acknowledged telemetry from draining.
+    // Course synchronisation is optional: neither its subscription nor native
+    // provider inspection may hold the durable telemetry pump hostage.
     this.courseSubscriptionError = undefined
-    try { await subscribe(client, [this.topics.course]) }
-    catch (error) { this.courseSubscriptionError = `Course sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}` }
-    if (client !== this.client || this.stopped) return
+    this.optionalCourseAt = -Infinity
     // Race Pack downlink is likewise optional; a broker role that predates the
     // race-pack topics must not stop telemetry from draining. It is subscribed
     // without blocking the acknowledged-telemetry drain.
     this.racePackSubscriptionError = undefined
     void subscribe(client, [this.topics.racePackManifest, `${this.topics.racePackChunkPrefix}+`]).catch((error) => {
-      this.racePackSubscriptionError = `Race pack sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}`
+      if (client === this.client && !this.stopped) this.racePackSubscriptionError = `Race pack sync unavailable: ${sanitizeError(error instanceof Error ? error.message : String(error))}`
     })
     this.monitor.connected()
     this.syncMode()
@@ -247,7 +272,8 @@ export class WakeLoggerTransport {
     await this.publish(client, this.topics.status, JSON.stringify(statusPayload('online', this.effectiveStatusMetrics())), { qos: 1, retain: true })
     this.statePublishPending = this.current !== undefined
     await this.drainCurrentState()
-    await this.publishCourseAcknowledgement()
+    if (client !== this.client || this.stopped) return
+    void this.syncOptionalCourse()
     void this.publishRacePackAcknowledgement()
     this.options.onState('online', this.courseSubscriptionError ?? this.racePackSubscriptionError)
     if (this.pumpTimer) clearInterval(this.pumpTimer)
@@ -256,14 +282,15 @@ export class WakeLoggerTransport {
   }
 
   private async drainCurrentState(): Promise<void> {
-    if (this.statePublishInFlight) return
-    this.statePublishInFlight = true
+    const client = this.client
+    if (!client || this.statePublishInFlight === client) return
+    this.statePublishInFlight = client
     try {
-      while (this.statePublishPending && this.current && this.client?.connected && !this.stopped) {
+      while (client === this.client && this.statePublishPending && this.current && this.client?.connected && !this.stopped) {
         this.statePublishPending = false
         await this.publish(this.client, this.topics.state, JSON.stringify(this.current), { qos: 1, retain: true })
       }
-    } finally { this.statePublishInFlight = false }
+    } finally { if (this.statePublishInFlight === client) this.statePublishInFlight = undefined }
   }
 
   private async publishLiveSample(): Promise<void> {
@@ -278,15 +305,18 @@ export class WakeLoggerTransport {
 
   private async pump(): Promise<void> {
     const client = this.client
-    if (!client?.connected || this.stopped || this.pumpRunning || this.inFlight.length >= 4) return
-    this.pumpRunning = true
+    if (!client?.connected || this.stopped || this.pumpRunning === client || (this.inFlight.length >= 4 && !this.inFlight.some(batch => batch.retry))) return
+    this.pumpRunning = client
     try {
+      const stageStartedAt = this.now()
+      const retry = this.inFlight.find(batch => batch.retry)
       const health = this.monitor.current()
       const byteRate = health.mode === 'CONSTRAINED' ? this.profile.transport.constrainedBacklogBytesPerSecond : this.profile.transport.normalBacklogBytesPerSecond
       const budget = this.refillBacklogBudget(byteRate)
       if (budget < 512) return
-      let samples = await this.outbox.pendingAfter(this.nextPublishAfter, this.profile.transport.batchSize, Math.min(budget, this.profile.transport.maxPayloadBytes - 1024))
-      if (!samples.length) return
+      let samples = await this.outbox.pendingAfter(retry ? retry.retryAfter ?? retry.first - 1 : this.nextPublishAfter, Math.min(60, this.profile.transport.batchSize), Math.min(budget, this.profile.transport.maxPayloadBytes - 1024))
+      if (retry) samples = samples.filter(sample => sample.sequence <= retry.through)
+      if (client !== this.client || this.stopped || !samples.length) return
       const stats = await this.outbox.stats()
       this.backlogMessageCount = stats.messageCount
       if (this.options.uploadDisposition) {
@@ -295,7 +325,7 @@ export class WakeLoggerTransport {
         if (disposition === 'skip') {
           // Older clouds do not understand exclusions. Keep the durable queue
           // intact and wait for a capability ACK; never label idle data lost.
-          if (!this.supportsTripPolicy || this.inFlight.length) return
+          if (!this.supportsTripPolicy || this.inFlight.some(batch => batch !== retry)) return
           const skipped: TelemetrySample[] = []
           for (const sample of samples) {
             if (this.options.uploadDisposition(sample) !== 'skip') break
@@ -303,10 +333,13 @@ export class WakeLoggerTransport {
             skipped.push(sample)
           }
           const through = skipped.at(-1)!.sequence
+          if (client !== this.client || this.stopped) return
+          if (retry) { retry.lastSentAt = this.now(); retry.retryAfter = through; retry.retry = through < retry.through }
+          else this.inFlight.push({ first: skipped[0]!.sequence, through, sentAt: stageStartedAt, lastSentAt: this.now() })
+          this.nextPublishAfter = Math.max(this.nextPublishAfter, through)
           await this.publish(client, this.topics.telemetry, JSON.stringify({ v: 1, deviceId: this.credentials.deviceId,
             nonTripFrom: skipped[0]!.sequence, nonTripThrough: through,
             ...(stats.droppedThrough > stats.acknowledgedSequence ? { droppedThrough: stats.droppedThrough } : {}), samples: [] }), { qos: 1 })
-          this.inFlight.push({ through, sentAt: this.now() }); this.nextPublishAfter = through
           return
         }
         const eligible: TelemetrySample[] = []
@@ -328,21 +361,33 @@ export class WakeLoggerTransport {
       for (const sample of samples) if (sample.evidence) {
         await this.publish(client, this.topics.events, JSON.stringify({ v: 1, deviceId: sample.deviceId, sequence: sample.sequence, ...sample.evidence }), { qos: 1 })
       }
-      await this.publish(client, this.topics.telemetry, payload, { qos: 1 })
+      if (client !== this.client || this.stopped) return
+      const through = samples.at(-1)!.sequence
+      // Install the flight before MQTT publication: a cloud ACK may arrive
+      // before the broker callback. Retried ranges retain their original age.
+      const flight: InFlightBatch = { first: samples[0]!.sequence, through,
+        sentAt: retry?.sentAt ?? stageStartedAt, lastSentAt: this.now(), selectionMs: this.now() - stageStartedAt, publishStartedAt: this.now() }
+      if (retry) {
+        retry.lastSentAt = flight.lastSentAt
+        retry.retryAfter = through
+        retry.retry = through < retry.through
+      } else this.inFlight.push(flight)
       this.backlogTokens -= Buffer.byteLength(payload)
-      const through = samples.at(-1)?.sequence ?? this.nextPublishAfter
-      this.inFlight.push({ through, sentAt: this.now() })
-      this.nextPublishAfter = through
-    } catch (error) { this.transportFailure(error) }
-    finally { this.pumpRunning = false }
+      this.nextPublishAfter = Math.max(this.nextPublishAfter, through)
+      await this.publish(client, this.topics.telemetry, payload, { qos: 1 })
+      if (client === this.client && !this.stopped) (retry ?? flight).brokerAt ??= this.now()
+    } catch (error) { if (client === this.client && !this.stopped) this.transportFailure(error) }
+    finally { if (this.pumpRunning === client) this.pumpRunning = undefined }
   }
 
   private async onMessage(topic: string, payload: Buffer): Promise<void> {
     if (topic === this.topics.ack) await this.handleAcknowledgement(payload)
     else if (topic === this.topics.profile) await this.handleProfile(payload)
     else if (topic === this.topics.course && this.options.onCourse) {
-      await this.options.onCourse(payload)
-      await this.publishCourseAcknowledgement()
+      try {
+        await this.options.onCourse(payload)
+        await this.publishCourseAcknowledgement()
+      } catch { /* optional course failures never constrain telemetry */ }
     } else if (topic === this.topics.racePackManifest && this.options.onRacePackManifest) {
       const ack = await this.options.onRacePackManifest(payload)
       if (ack) await this.publishRacePackAck(ack)
@@ -354,23 +399,35 @@ export class WakeLoggerTransport {
     }
   }
 
-  private async handleAcknowledgement(payload: Buffer): Promise<void> {
+  private acknowledgementOperation: Promise<void> = Promise.resolve()
+  private handleAcknowledgement(payload: Buffer): Promise<void> {
+    const receiptAt = this.now()
+    const operation = this.acknowledgementOperation.then(() => this.commitAcknowledgement(payload, receiptAt))
+    this.acknowledgementOperation = operation.catch(() => undefined)
+    return operation
+  }
+  private async commitAcknowledgement(payload: Buffer, receiptAt: number): Promise<void> {
     if (payload.length > 4096) return
     try {
       const ack = JSON.parse(payload.toString('utf8')) as ApplicationAck
       if (ack.v !== 1 || ack.deviceId !== this.credentials.deviceId || !Number.isSafeInteger(ack.ackSequence)) return
       const before = await this.outbox.stats()
       if (ack.ackSequence < 0 || ack.ackSequence > before.currentSequence) return
-      const acknowledgedBatch = this.inFlight.find((batch) => ack.ackSequence >= batch.through)
-      if (acknowledgedBatch) {
-        this.acknowledgementLatencyMs = this.now() - acknowledgedBatch.sentAt
-        this.monitor.acknowledgement(this.acknowledgementLatencyMs)
-      }
+      const acknowledgedBatch = this.inFlight.find((batch) => ack.ackSequence >= batch.first)
       this.supportsTripPolicy = ack.capabilities?.includes('confirmed-trip-upload-v1') === true
       const excludedCount = Number.isSafeInteger(ack.excludedSampleCount) && ack.excludedSampleCount! >= 0 ? ack.excludedSampleCount : undefined
+      const persistenceAt = this.now()
       if (excludedCount === undefined) await this.outbox.acknowledge(ack.ackSequence)
       else await this.outbox.acknowledge(ack.ackSequence, excludedCount)
       const committed = await this.outbox.stats()
+      if (committed.acknowledgedSequence > before.acknowledgedSequence && acknowledgedBatch) {
+        this.acknowledgementLatencyMs = this.now() - acknowledgedBatch.sentAt
+        this.uploadTiming = { selectionMs: acknowledgedBatch.selectionMs ?? 0,
+          brokerMs: acknowledgedBatch.brokerAt === undefined ? null : acknowledgedBatch.brokerAt - (acknowledgedBatch.publishStartedAt ?? acknowledgedBatch.lastSentAt),
+          receiptMs: Math.max(0, receiptAt - acknowledgedBatch.sentAt), persistenceMs: this.now() - persistenceAt,
+          durableMs: this.acknowledgementLatencyMs }
+        this.monitor.acknowledgement(this.acknowledgementLatencyMs)
+      }
       if (Array.isArray(ack.recordingAcks) && ack.recordingAcks.length <= 25) {
         await this.options.onRecordingAcks?.(ack.recordingAcks.filter((entry) => entry && typeof entry.id === 'string' && Number.isSafeInteger(entry.lastSequence) && ['complete', 'cancelled', 'interrupted'].includes(entry.state)))
       }
@@ -419,13 +476,11 @@ export class WakeLoggerTransport {
   }
 
   private async checkAcknowledgementTimeout(): Promise<void> {
-    const oldest = this.inFlight[0]
-    if (!oldest || this.now() - oldest.sentAt < 30_000) return
+    const expired = this.inFlight.filter(batch => !batch.retry && this.now() - batch.lastSentAt >= 30_000)
+    if (!expired.length) return
     this.monitor.failure('acknowledgement_timeout')
     this.syncMode()
-    const stats = await this.outbox.stats()
-    this.inFlight = []
-    this.nextPublishAfter = stats.acknowledgedSequence
+    for (const batch of expired) { batch.retry = true; batch.retryAfter = undefined }
     void this.pump()
   }
 
@@ -450,6 +505,7 @@ export class WakeLoggerTransport {
   }
 
   private transportFailure(error: unknown): void {
+    if (this.stopped) return
     this.monitor.failure('publish_failure')
     this.syncMode()
     this.options.onState('degraded', sanitizeError(error instanceof Error ? error.message : String(error)))
@@ -521,5 +577,12 @@ function mqttOperation(client: MqttClient, send: (done: (error?: Error | null) =
     const closed = (): void => done(new Error('MQTT connection closed before acknowledgement'))
     client.once('close', closed)
     try { send(done) } catch (error) { done(error instanceof Error ? error : new Error(String(error))) }
+  })
+}
+
+function bounded<T>(operation: Promise<T>, timeoutMs = 2000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Optional course operation timed out')), timeoutMs)
+    operation.then(value => { clearTimeout(timer); resolve(value) }, error => { clearTimeout(timer); reject(error) })
   })
 }

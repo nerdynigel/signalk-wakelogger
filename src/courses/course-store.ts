@@ -12,7 +12,7 @@ export class CourseStore {
   private latestLegPosition: { position: { latitude: number; longitude: number }; at: number } | null = null
   constructor(private readonly target: string, private readonly native: NativeCourseService) {}
 
-  async open(): Promise<void> {
+  async open(options: { restoreNative?: boolean } = {}): Promise<void> {
     try {
       const stored = JSON.parse(await fs.readFile(this.target, 'utf8')) as Snapshot
       if (stored.version !== 1) throw new CourseError('course_checkpoint_invalid')
@@ -25,6 +25,15 @@ export class CourseStore {
       if (stored.desired?.action === 'activate' && JSON.stringify(stored.desired) !== JSON.stringify(stored.cachedCourse)) throw new CourseError('course_checkpoint_invalid')
       if (stored.acknowledgement && (!['applied', 'rejected'].includes(stored.acknowledgement.status) || !Number.isSafeInteger(stored.acknowledgement.revision) || stored.acknowledgement.revision < 0)) throw new CourseError('course_checkpoint_invalid')
       this.snapshot = stored
+      if (options.restoreNative !== false) await this.restoreNative()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+
+  async restoreNative(): Promise<void> {
+    return this.exclusive(async () => {
+    const stored = this.snapshot
       if (stored.cachedCourse && this.native.available()) {
         try {
           await this.native.ensureResource(stored.cachedCourse)
@@ -41,9 +50,7 @@ export class CourseStore {
           }
         }
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
+    })
   }
 
   async acknowledgement(): Promise<CourseAcknowledgement | undefined> {
@@ -180,7 +187,8 @@ export class CourseStore {
     })
   }
 
-  async close(): Promise<void> { await this.operation }
+  stopNative(): void { this.native.close() }
+  async close(): Promise<void> { this.stopNative(); await this.operation }
   private async activation(): Promise<'active' | 'inactive' | 'conflict'> {
     const course = this.snapshot.cachedCourse
     if (course && this.snapshot.desired?.action === 'activate' && await this.native.matches(course)) return 'active'

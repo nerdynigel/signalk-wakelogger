@@ -95,3 +95,15 @@ Review: 364 plugin tests passed (one opt-in test skipped), lint/typecheck/build 
 Review: 50 service tests and 14 distinct affected browser scenarios passed, including three viewport widths, value range/availability changes, tracking/Finish controls, recommendations and ETA behavior. Build/lint passed. Installed script, instruments, markup and stylesheet hashes match. Live replay: 394 frames, one unchanged race-row layout, no headings/subtext/status banner/top detail visible, standard labels and no page errors.
 
 - [x] Remove the unrequested navigation-success banner and overlay; verify all tabs remain clickable after real mocked navigation actions and in the installed test UI.
+
+
+## Upload recovery, 15 November 2026
+
+- [x] Reverify current origin/main, preserve other worktrees, isolate fix/upload-recovery.
+- [x] Remove optional native restore/subscription/ACK from telemetry startup dependencies.
+- [x] Bound native calls, reject ambiguous route responses, quarantine unsettled mutations, guard stop/reconnect.
+- [x] Keep original send age through bounded replay, serialize durable acknowledgements, expose stage timing diagnostics.
+- [x] Keep legacy 120 profiles compatible with the 60-sample ingestion boundary.
+- [x] Add focused regressions and repeatable 6,100-sample file/SQLite measurement.
+- [x] Review old-trip/stationary cleanup without clearing unknown or unacknowledged history.
+- [x] Complete final repository checks and document exact outcomes (383 full-suite passes, three explicit skips; final course/outbox 38 passes).

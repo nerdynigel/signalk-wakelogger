@@ -224,7 +224,9 @@ it('retains the full local trip after the delivery queue is uploaded, acknowledg
   try {
     for (let index = 0; index < 4; index += 1) {
       f.ingest({ latitude: -27.4 + index * 0.001, longitude: 153.17 + index * 0.001 })
-      await new Promise((resolve) => setTimeout(resolve, 600))
+      // Advance only once the sampler has durably archived this fix. Fixed
+      // sleeps can coalesce positions on a busy host and weaken this test.
+      await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(index + 1), { timeout: 10000 })
     }
     await vi.waitFor(async () => expect((await f.request('GET', '/track')).data.points.length).toBeGreaterThanOrEqual(3), { timeout: 10000 })
     const before = (await f.request('GET', '/track')).data

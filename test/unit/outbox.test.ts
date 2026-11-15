@@ -20,6 +20,23 @@ function options(overrides: object = {}): any {
 afterEach(async () => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
 
 describe('FileOutbox', () => {
+  it('does not advance the in-memory cursor or reclaim data when ACK metadata persistence fails', async () => {
+    const dir = await tempDir()
+    const outbox = new FileOutbox(dir, options())
+    await outbox.open(); await outbox.append('dev_1', draft())
+    const persist = vi.spyOn(outbox as any, 'persistMetadata').mockRejectedValueOnce(new Error('synthetic fsync failure'))
+    await expect(outbox.acknowledge(1, 1)).rejects.toThrow('synthetic fsync failure')
+    expect(await outbox.stats()).toMatchObject({ acknowledgedSequence: 0, excludedCount: 0, messageCount: 1 })
+    expect((await outbox.pending(10, 10000)).map(s => s.sequence)).toEqual([1])
+    persist.mockRestore()
+    const reopened = new FileOutbox(dir, options()); await reopened.open()
+    expect(await reopened.stats()).toMatchObject({ acknowledgedSequence: 0, messageCount: 1 })
+    await reopened.close()
+    await outbox.acknowledge(1)
+    expect(await outbox.stats()).toMatchObject({ acknowledgedSequence: 1, messageCount: 0 })
+    await outbox.close()
+  })
+
   it('retains unacknowledged trip history past the age limit and refuses capacity pressure before committing another sample', async () => {
     const dir = await tempDir()
     let now = 1000

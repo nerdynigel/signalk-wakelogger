@@ -1,5 +1,12 @@
 # What's new in Wake Logger for Signal K
 
+## Unreleased
+
+- Recorded trips can start uploading while onboard course synchronisation is unavailable.
+- Upload recovery keeps the original age of retried data, so delayed confirmations do not look like a fast connection.
+- Unreadable route responses no longer count as an empty course target. Existing navigation remains protected.
+- Larger telemetry profiles upload in compatible batches without losing the end of a batch.
+
 ## [0.2.0-beta.17] - 2026-11-15
 
 - Choose Map + data, a full-width Map, or a dedicated Instruments display. Your view choice is remembered in this browser tab.
