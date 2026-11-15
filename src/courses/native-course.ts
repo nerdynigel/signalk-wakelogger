@@ -38,10 +38,40 @@ export function nativeRouteId(courseId: string): string {
 }
 export function nativeRouteHref(courseId: string): string { return `/resources/routes/${nativeRouteId(courseId)}` }
 
+// The same Signal K app survives plugin stop/start. Quarantine must survive
+// replacing this service too, because provider mutations cannot be cancelled.
+const pendingMutations = new WeakMap<NativeCourseApp, Promise<unknown>>()
+
 export class NativeCourseService {
-  constructor(private readonly app: NativeCourseApp) {}
+  private closed = false
+  constructor(private readonly app: NativeCourseApp, private readonly timeoutMs = 1500) {}
+  close(): void { this.closed = true }
+  private async call<T>(action: () => Promise<T> | T): Promise<T> {
+    if (this.closed) throw new CourseError('native_course_unavailable')
+    let timer: NodeJS.Timeout | undefined
+    try {
+      const value = await Promise.race([Promise.resolve().then(() => { if (this.closed) throw new CourseError('native_course_unavailable'); return action() }), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new CourseError('native_course_timeout')), this.timeoutMs) })])
+      if (this.closed) throw new CourseError('native_course_unavailable')
+      return value
+    } finally { if (timer) clearTimeout(timer) }
+  }
+  private async write<T>(action: () => Promise<T> | T): Promise<T> {
+    if (this.closed) throw new CourseError('native_course_unavailable')
+    // Providers have no cancellation contract. A timed-out mutation remains
+    // quarantined until its real promise settles; never race a later takeover
+    // against a late completion of an earlier activation/write.
+    if (pendingMutations.has(this.app)) throw new CourseError('native_course_busy')
+    const pending = Promise.resolve().then(() => {
+      if (this.closed) throw new CourseError('native_course_unavailable')
+      return action()
+    })
+    pendingMutations.set(this.app, pending)
+    void pending.then(() => { if (pendingMutations.get(this.app) === pending) pendingMutations.delete(this.app) }, () => { if (pendingMutations.get(this.app) === pending) pendingMutations.delete(this.app) })
+    return this.call(() => pending)
+  }
+
   available(): boolean { return [this.app.resourcesApi?.getResource, this.app.resourcesApi?.setResource, this.app.getCourse, this.app.activateRoute, this.app.clearDestination].every((method) => typeof method === 'function') }
-  async current(): Promise<NativeCourse | null> { return this.app.getCourse ? structuredClone(await this.app.getCourse() ?? null) : null }
+  async current(): Promise<NativeCourse | null> { return this.app.getCourse ? structuredClone(await this.call(() => this.app.getCourse!()) ?? null) : null }
   async matches(course: ActiveCourseDocument): Promise<boolean> { return (await this.current())?.activeRoute?.href === nativeRouteHref(course.courseId) }
 
   async ensureResource(course: ActiveCourseDocument, options: { explicit?: boolean } = {}): Promise<void> {
@@ -54,7 +84,12 @@ export class NativeCourseService {
         properties: { wakelogger: { courseId: course.courseId, revision: course.revision }, coordinatesMeta: coursePoints(course).map((point) => ({ name: point.name, ...(point.notes !== undefined ? { notes: point.notes } : {}) })) }
       }
     }
-    const existing = await this.readRoute(id)
+    const existing = await this.readRoute(id).catch((error: unknown) => {
+      // Only a deliberate local activation may repair an unreadable target.
+      // Timeout, provider availability and arbitrary I/O errors still fail.
+      if (options.explicit && error instanceof CourseError && error.code === 'native_route_unreadable') return undefined
+      throw error
+    })
     if (existing && !ownedBy(existing, course.courseId)) {
       // Implicit sync (delivery/replay/restart) must never clobber a foreign or
       // unowned resource. Explicit activation is the only path allowed to
@@ -62,11 +97,14 @@ export class NativeCourseService {
       if (!options.explicit) throw new CourseError('native_route_conflict', targetBlocker(id, existing))
     }
     if (JSON.stringify(existing) === JSON.stringify(resource)) return
-    await this.app.resourcesApi!.setResource('routes', id, resource)
+    await this.write(() => this.app.resourcesApi!.setResource('routes', id, resource))
     // Signal K 2.31's wrapper does not return its provider write promise. Read
     // back the resource before activating, and fail visibly if it never commits.
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const stored = await this.readRoute(id)
+      const stored = await this.readRoute(id).catch((error: unknown) => {
+        if (error instanceof CourseError && error.code === 'native_route_unreadable') return undefined
+        throw error
+      })
       if (stored && ownedBy(stored, course.courseId)
         && JSON.stringify((stored as RouteResource).feature.geometry) === JSON.stringify(resource.feature.geometry)
         && (stored as RouteResource).feature.properties.wakelogger.revision === course.revision) return
@@ -96,7 +134,7 @@ export class NativeCourseService {
     const pointIndex = current === target && !explicit && Number.isInteger(existingIndex)
       ? Math.min(existingIndex!, coursePoints(course).length - 1)
       : course.activeWaypointIndex ?? Math.min(1, coursePoints(course).length - 1)
-    await this.app.activateRoute!({ href: target, pointIndex, reverse: false })
+    await this.write(() => this.app.activateRoute!({ href: target, pointIndex, reverse: false }))
     if (!await this.matches(course)) throw new CourseError('native_activation_unconfirmed')
     return 'active'
   }
@@ -105,7 +143,7 @@ export class NativeCourseService {
     this.assertAvailable()
     if (course && await this.matches(course)) {
       const resource = await this.readRoute(nativeRouteId(course.courseId))
-      if (resource && ownedBy(resource, course.courseId)) await this.app.clearDestination!()
+      if (resource && ownedBy(resource, course.courseId)) await this.write(() => this.app.clearDestination!())
     }
   }
 
@@ -139,16 +177,21 @@ export class NativeCourseService {
   }
 
   private async readRoute(id: string): Promise<unknown> {
-    try { return await this.app.resourcesApi!.getResource('routes', id) }
+    try {
+      const value = await this.call(() => this.app.resourcesApi!.getResource('routes', id))
+      if (value === undefined || value === null) throw new CourseError('native_route_unreadable')
+      // Supported providers return the resource body. Unknown envelopes are
+      // not evidence of absence and must never authorise an implicit write.
+      if (typeof value !== 'object' || Array.isArray(value) || !('feature' in value) && !('name' in value)) throw new CourseError('native_route_unreadable')
+      return value
+    }
     catch (error) {
       const failure = error as { status?: number; statusCode?: number; code?: string; message?: string }
       if (/no provider for routes/i.test(failure.message ?? '')) throw new CourseError('native_routes_unavailable')
       if (failure.status === 404 || failure.statusCode === 404 || failure.code === 'ENOENT' || /not found/i.test(failure.message ?? '')) return undefined
-      // Signal K 2.31's file-backed resource provider can briefly expose a
-      // partial file while its write settles (an empty/incomplete JSON read).
-      // Treat that transient state as "not readable yet" so the ensureResource
-      // read-back loop retries instead of rejecting the whole course with a 409.
-      if (error instanceof SyntaxError || /unexpected end of json|unexpected token|invalid json|not readable|EBUSY|EAGAIN/i.test(failure.message ?? '')) return undefined
+      // A transient read failure is unknown, never confirmed absence. Only
+      // the post-write verification loop may retry it without a new write.
+      if (error instanceof SyntaxError || /unexpected end of json|unexpected token|invalid json|not readable|EBUSY|EAGAIN/i.test(failure.message ?? '')) throw new CourseError('native_route_unreadable')
       throw error
     }
   }

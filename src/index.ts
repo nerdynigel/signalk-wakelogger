@@ -774,6 +774,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
   }
 
   async function cleanupResources(): Promise<void> {
+    courses?.stopNative()
     stopSubscription?.()
     stopSubscription = undefined
     if (sampleTimer) clearTimeout(sampleTimer)
@@ -895,7 +896,7 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
 
   async function startTelemetry(config: PluginConfig, credentials: DeviceCredentials, credentialStore: CredentialStore, dataDirectory: string, thisGeneration: number): Promise<void> {
     courses = new CourseStore(path.join(dataDirectory, 'courses', credentials.deviceId, 'state.json'), new NativeCourseService(app as unknown as NativeCourseApp))
-    try { await courses.open() }
+    try { await courses.open({ restoreNative: false }) }
     catch (error) {
       courses = undefined
       courseInitializationError = safeError(error)
@@ -909,7 +910,6 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
       progression = undefined
       app.error(`Wake Logger mark detection unavailable: ${safeError(error)}`)
     }
-    await syncProgressionCourse()
     observations = new ObservationCollector()
     guidance = new GuidanceService(config.guidance)
     const packs = new RacePackStore(path.join(dataDirectory, 'race-packs', credentials.deviceId))
@@ -1025,6 +1025,10 @@ const constructor: PluginConstructor = (app: ServerAPI): Plugin => {
     if (activeUploadMode === 'local_only') {
       transport = new WakeLoggerTransport(credentials, selected.store, { profile, onState: () => undefined })
     }
+    const optionalCourses = courses
+    void optionalCourses?.restoreNative().then(async () => {
+      if (generation === thisGeneration && courses === optionalCourses) await syncProgressionCourse()
+    }).catch(() => app.error('Wake Logger optional course restoration failed'))
     stopSubscription = subscribeToTelemetry(app, (delta) => {
       normaliser.ingest(delta)
       observations?.ingest(delta)

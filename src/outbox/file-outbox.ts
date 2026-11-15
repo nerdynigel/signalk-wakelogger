@@ -111,9 +111,11 @@ export class FileOutbox implements OutboxStore {
       const maximum = this.metadata.nextSequence - 1
       if (!Number.isSafeInteger(sequence) || sequence < this.metadata.acknowledgedSequence || sequence > maximum) return
       if (sequence === this.metadata.acknowledgedSequence && (excludedCount === undefined || excludedCount <= (this.metadata.excludedCount ?? 0))) return
+      const previous = { ...this.metadata }
       if (excludedCount !== undefined && Number.isSafeInteger(excludedCount) && excludedCount >= 0) this.metadata.excludedCount = Math.max(this.metadata.excludedCount ?? 0, excludedCount)
       this.metadata.acknowledgedSequence = sequence
-      await this.persistMetadata()
+      try { await this.persistMetadata() }
+      catch (error) { this.metadata = previous; throw error }
       await this.reclaimAcknowledgedSegments()
     })
   }

@@ -510,3 +510,104 @@ describe('transport shutdown semantics', () => {
     expect(client.endForce).toBe(false)
   })
 })
+
+
+describe('upload recovery isolation', () => {
+  const credentials: any = { version: 1, deviceId: 'dev_1', clientId: 'client_1', username: 'dev_1', password: 'synthetic-test-password', mqttHost: 'broker.example.invalid', mqttPort: 8883, tls: true, pairedAt: 1000 }
+  function setup(count = 8, options: any = {}, batchSize = 2) {
+    let ack = 0
+    let now = 1000
+    const samples = Array.from({ length: count }, (_, i) => ({ ...sample, sequence: i + 1 }))
+    const outbox: any = { latest: vi.fn(async () => samples.at(-1)),
+      pendingAfter: vi.fn(async (cursor: number, limit: number) => samples.filter(s => s.sequence > Math.max(cursor, ack)).slice(0, limit)),
+      stats: vi.fn(async () => ({ currentSequence: count, acknowledgedSequence: ack, messageCount: count - ack, droppedThrough: 0 })),
+      acknowledge: vi.fn(async (through: number) => { ack = Math.max(ack, through) }) }
+    const transport = new WakeLoggerTransport(credentials, outbox, { profile: { ...DEFAULT_TELEMETRY_PROFILE, transport: { ...DEFAULT_TELEMETRY_PROFILE.transport, batchSize } }, onState: vi.fn(), now: () => now, ...options })
+    const sendAck = async (through: number) => { clients.at(-1)!.emit('message', 'wakelogger/v1/devices/dev_1/ack', Buffer.from(JSON.stringify({ v: 1, deviceId: 'dev_1', ackSequence: through }))); await tick(); await tick() }
+    const start = async () => { transport.start(); await tick(); clients.at(-1)!.emit('connect'); await tick(); await tick() }
+    return { transport, outbox, start, sendAck, setNow: (value: number) => { now = value }, samples }
+  }
+
+  it.each(['reject', 'hang'])('starts telemetry despite optional course inspection %s and does not publish its late ACK after stop', async failure => {
+    let resolve: ((value: any) => void) | undefined
+    const f = setup(2, { getCourseAcknowledgement: failure === 'reject' ? () => Promise.reject(new Error('provider failed')) : () => new Promise(r => { resolve = r }) })
+    await f.start()
+    expect(clients.at(-1)!.publications.some(p => p.topic.endsWith('/telemetry'))).toBe(true)
+    await f.transport.stop({ publishOffline: false, force: true })
+    resolve?.({ v: 1, revision: 1, status: 'applied' }); await tick()
+    expect(clients.at(-1)!.publications.filter(p => p.topic.endsWith('/course-ack'))).toHaveLength(0)
+  })
+
+  it('separates selection, broker callback, cloud receipt and local ACK persistence timings', async () => {
+    const f = setup(2)
+    f.outbox.pendingAfter.mockImplementation(async () => { f.setNow(1200); return f.samples })
+    f.transport.start(); await tick()
+    const client = clients.at(-1)!; client.delayNextTelemetry = true
+    client.emit('connect'); await tick(); await tick()
+    f.setNow(2200); client.releasePublish(); await tick()
+    f.outbox.acknowledge.mockImplementation(async () => { f.setNow(4600); f.outbox.stats.mockResolvedValue({ currentSequence: 2, acknowledgedSequence: 2, messageCount: 0 }) })
+    f.setNow(4200); await f.sendAck(2)
+    expect(f.transport.uploadTimings()).toEqual({ selectionMs: 200, brokerMs: 1000, receiptMs: 3200, persistenceMs: 400, durableMs: 3600 })
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+
+  it('does not revive a pump when a startup publication completes after stop', async () => {
+    const f = setup(2)
+    f.transport.start(); await tick()
+    const client = clients.at(-1)!; client.delayNextState = true
+    client.emit('connect'); await tick()
+    await f.transport.stop({ publishOffline: false, force: true })
+    client.releasePublish(); await tick(); await tick()
+    expect(client.publications.filter(p => p.topic.endsWith('/telemetry'))).toHaveLength(0)
+    expect((f.transport as any).pumpTimer).toBeUndefined()
+  })
+
+  it('retains the original send age across timeout replay and measures local durable persistence', async () => {
+    const f = setup(2)
+    await f.start()
+    f.setNow(32000)
+    await (f.transport as any).checkAcknowledgementTimeout(); await tick()
+    expect(clients.at(-1)!.publications.filter(p => p.topic.endsWith('/telemetry'))).toHaveLength(2)
+    f.outbox.acknowledge.mockImplementation(async () => { f.setNow(35000); f.outbox.stats.mockResolvedValue({ currentSequence: 2, acknowledgedSequence: 2, messageCount: 0 }) })
+    f.setNow(33000); await f.sendAck(2)
+    expect(f.transport.transportMetrics().acknowledgementLatencyMs).toBe(34000)
+    expect(f.transport.uploadTimings()).toMatchObject({ receiptMs: 32000, persistenceMs: 2000, durableMs: 34000 })
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+
+  it('keeps at most four outstanding ranges and delayed cumulative progress releases them', async () => {
+    const f = setup(20)
+    await f.start()
+    for (let i = 0; i < 6; i++) await (f.transport as any).pump()
+    expect((f.transport as any).inFlight).toHaveLength(4)
+    await f.sendAck(6)
+    expect((f.transport as any).inFlight.length).toBeLessThanOrEqual(4)
+    expect(f.outbox.acknowledge).toHaveBeenCalledWith(6)
+    await f.sendAck(2) // duplicate/stale ACK cannot refresh health
+    expect(f.transport.transportMetrics().acknowledgementLatencyMs).toBe(0)
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+
+  it('splits retry ranges under a smaller budget without losing the original age or blocking the tail', async () => {
+    const f = setup(6, {}, 6)
+    await f.start()
+    f.outbox.pendingAfter.mockImplementation(async (cursor: number) => f.samples.filter(s => s.sequence > cursor).slice(0, 2))
+    f.setNow(32000); await (f.transport as any).checkAcknowledgementTimeout(); await tick()
+    await (f.transport as any).pump(); await (f.transport as any).pump()
+    const replay = clients.at(-1)!.publications.filter(p => p.topic.endsWith('/telemetry')).slice(1).flatMap(p => JSON.parse(p.payload).samples.map((s: any) => s.sequence))
+    expect(replay).toEqual([1, 2, 3, 4, 5, 6])
+    expect((f.transport as any).inFlight).toHaveLength(1)
+    f.setNow(33000); await f.sendAck(6)
+    expect(f.transport.transportMetrics().acknowledgementLatencyMs).toBe(32000)
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+
+  it('caps a legacy 120-sample profile to 60 without discarding its tail', async () => {
+    const f = setup(120, {}, 120)
+    await f.start(); await (f.transport as any).pump()
+    const batches = clients.at(-1)!.publications.filter(p => p.topic.endsWith('/telemetry')).map(p => JSON.parse(p.payload).samples)
+    expect(batches.map(s => s.length)).toEqual([60, 60])
+    expect(batches.flat().map(s => s.sequence)).toEqual(Array.from({ length: 120 }, (_, i) => i + 1))
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+})

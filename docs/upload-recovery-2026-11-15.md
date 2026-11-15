@@ -1,0 +1,39 @@
+# Upload recovery validation, 15 November 2026
+
+Source baseline: origin/main 02aab209bfb934a8074039cb27fd6f5ddc6896f1. Local source fixes only; no deployment, publication or production changes.
+
+## Changes and boundaries
+
+Telemetry starts independently of optional course restoration, course subscription and native ACK inspection. Native reads/writes have a 1.5-second deadline, optional subscription/ACK operations a two-second deadline, and failed optional synchronisation retries every 30 seconds. Native resource restoration remains serialized with desired-state delivery and explicit crew activation. Shutdown invalidates native work before waiting on other resources.
+
+A late read cannot invoke navigation after shutdown. Signal K providers expose no cancellation contract for a mutation already invoked: the service quarantines its unsettled promise, refusing later writes/activations until it actually settles. It cannot undo an already invoked provider mutation after shutdown. No implicit overwrite is permitted by undefined/null, empty/wrapped/primitive responses or transient parse/read failures. Only supported bare resource bodies are interpreted; confirmed missing-resource errors permit creation. Explicit activation retains the existing ownership and foreign-route safeguards.
+
+The transport tracks at most four original in-flight ranges. A timeout makes ranges retryable without discarding first-send age. Retry prefixes fit the current byte budget while retaining the original range; a delayed cumulative ACK cannot be relabelled as a new fast receipt. ACK persistence is serialized. Only durable cursor growth updates health/timing. Selection, broker callback, receipt arrival, local ACK persistence and original-to-durable completion are separately available through uploadTimings(). These internal measurements do not add product UI. Reconnect and late publication callbacks are guarded against stopped/retired clients.
+
+Profiles that request 120 samples remain accepted, but actual wire batches are capped at 60; the remaining samples stay queued. Rate limits, live priority and legitimate qualification remain intact. No native activation check was added to recording eligibility.
+
+## Existing old-trip / stationary cleanup
+
+RecordingStore.uploadDisposition uses durable recording decisions, not course activation. Recovery requires durable trip-start evidence or sustained movement (120 seconds and 200 metres) to confirm unknown recordings. Proven idle prefixes use an explicit capability-negotiated exclusion marker; unknown history remains waiting rather than silently discarded. Stationary powered-on sampling does not create new queued trip history. The file ACK path now restores its in-memory cursor/exclusion count if metadata persistence fails, so failed fsync/rename cannot hide still-pending data or falsify durable progress. SQLite already keeps this transaction atomic. Protected file/database retention retains unacknowledged recording data and fails capacity reservation rather than erasing it. File segment reclamation and SQLite row deletion follow the durable ACK cursor. Long stationary intervals do not themselves prove loss or permit skipping unknown sequence gaps. Existing recovery, retention and stationary integration tests are included in the suite.
+
+The file backend repeatedly decodes retained segments for statistics and reclamation. The measurement below quantifies this cost, but does not prove the physical Callisto backend or explain its reported 0.71 samples/sec. No speculative storage rewrite is included.
+
+## Repeatable measurement
+
+Run `MEASURE_UPLOAD=1 npx vitest run test/integration/upload-backlog-measurement.test.ts`. The opt-in test uses 6,100 synthetic frames with seven-leg guidance, real checksummed file storage and real file-backed SQLite WAL/FULL. Setup/capture time is excluded from drain time. File frames are preseeded with valid checksums and verified by open(); SQLite frames are appended through DatabaseOutbox. Each cycle selects a payload-bounded batch, reads statistics and durably acknowledges it. No MQTT/network/server is simulated by this storage-only measurement, and no real navigation payload is used or logged.
+
+All runs drained exactly 6,100 unique samples in 175 batches of 10–35 samples, 11,022,843 aggregate JSON bytes. Retransmission ratio was zero because this storage measurement injects no replay. Transport regressions separately inject delays/replay: original age 32 seconds remains 32 seconds at cloud receipt, and two seconds of local persistence produces 34 seconds to durable acknowledgement; a separate staged test measures 200ms selection, 1000ms broker callback, 3200ms original-to-receipt and 400ms local persistence (3600ms total). These are controlled clocks, not hardware timings.
+
+Modified source storage measurements: file 66.49 seconds / 91.75 samples/sec (selection 13.62s, statistics 25.76s, persistence 26.98s); real SQLite 1.708 seconds / 3571.56 samples/sec (0.180s, 0.302s, 1.117s respectively). Repeat under concurrent validation: file 80.56 seconds / 75.72 samples/sec; SQLite 0.880 seconds / 6928.17 samples/sec. Storage implementation is unchanged: variation is host/filesystem load, not a claimed speedup. Baseline storage-only run from 02aab20: file 81.15s / 75.17 samples/sec (selection 16.68s, statistics 31.81s, persistence 32.53s). Baseline SQLite eventually drained all 6,100 at 42.66s / 142.98 samples/sec (selection 0.144s, statistics 0.229s, persistence 42.21s), but the test failed its 180-second deadline because setup plus drain took 245.9s. Host-wide IO pressure reached full avg60 approximately 56%; this makes the baseline SQLite run unsuitable as a comparative speedup claim. No boat slowdown was reproduced. Disposable baseline worktree and benchmark directories were removed after measurement.
+
+These measurements are from the development machine, not the boat or Codex Cloud hardware. No target-hardware throughput, broker transit/lock wait, cloud receipt rate or production derived-work lag is established by them. API-side measurements and receipt/derived-work changes are documented in the matching website repository.
+
+## Incident uncertainty
+
+These fix verified source defects, not a proven root cause of the November 15 incident. The original route body and exact onboard activation action remain unknown. An ordinary native_route_conflict rejection did not itself block telemetry; a provider failure/hang on awaited optional startup work could. Activating a course and recording/uploading a trip remain separate actions. Needed aboard: provider/version and sanitized shape/error classification, real selection/publish/receipt/persistence timings, outbox backend and durable progress across retries.
+
+## Checks
+
+`npm run check` completed public-repository checks, lint and typecheck; the full suite passed 383 tests, with three explicit skips (two opt-in measurement cases plus the external-broker case). The course module loaded before the final explicit-unreadable-target regression was added; afterwards the complete course/outbox targets passed 38 tests, including that regression and file metadata-persistence failure. Lint, typecheck and build were repeated on the final source. Real SQLite crash/restart tests ran (not skipped); a separate seven-file focused run passed 89 tests. No browser UI was modified.
+
+An initial full run failed one field-incident fixture because four 600ms sleeps produced only two sampler frames under IO load. The fixture now waits for each actual durable archived point before moving to the next fix. Its isolated test and the final full integration suite pass. This was a test scheduling assumption, not a claimed production upload failure. The opt-in modified file/SQLite measurement passed both tests; the baseline SQLite timeout is explicitly retained above as a measurement failure.

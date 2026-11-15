@@ -260,3 +260,72 @@ describe('durable leg start provenance', () => {
     expect((await restarted.status() as any).legStart.startedAt).toBeNull()
   })
 })
+
+
+describe('native provider uncertainty', () => {
+  it.each([{}, { value: { feature: {} } }, null, [], 'invalid'])('does not overwrite an unknown provider response %j', async value => {
+    const { app, native } = await fixture()
+    vi.mocked(app.resourcesApi!.getResource).mockResolvedValue(value)
+    await expect(native.ensureResource(document())).rejects.toMatchObject({ code: 'native_route_unreadable' })
+    expect(app.resourcesApi!.setResource).not.toHaveBeenCalled()
+    expect(app.activateRoute).not.toHaveBeenCalled()
+  })
+  it('allows deliberate explicit activation to repair an unreadable deterministic target', async () => {
+    const { app, native, resources } = await fixture()
+    resources.set(nativeRouteId(document().courseId), {})
+    await expect(native.ensureResource(document())).rejects.toMatchObject({ code: 'native_route_unreadable' })
+    expect(app.resourcesApi!.setResource).not.toHaveBeenCalled()
+    await native.ensureResource(document(), { explicit: true })
+    expect(resources.get(nativeRouteId(document().courseId)).feature.properties.wakelogger.courseId).toBe(document().courseId)
+  })
+
+  it('does not treat a transient parse error as permission to write', async () => {
+    const { app, native } = await fixture()
+    vi.mocked(app.resourcesApi!.getResource).mockRejectedValueOnce(new SyntaxError('Unexpected end of JSON input'))
+    await expect(native.ensureResource(document())).rejects.toMatchObject({ code: 'native_route_unreadable' })
+    expect(app.resourcesApi!.setResource).not.toHaveBeenCalled()
+  })
+  it('bounds a hanging read and never writes when the timed out lookup eventually completes', async () => {
+    const { app } = await fixture()
+    let resolve!: (value: unknown) => void
+    vi.mocked(app.resourcesApi!.getResource).mockImplementation(() => new Promise(r => { resolve = r }))
+    const native = new NativeCourseService(app, 10)
+    await expect(native.ensureResource(document())).rejects.toMatchObject({ code: 'native_course_timeout' })
+    resolve({ name: 'Foreign route', feature: {} }); await Promise.resolve()
+    expect(app.resourcesApi!.setResource).not.toHaveBeenCalled()
+  })
+  it('cancels before a queued provider invocation and prevents late reads from activating navigation after close', async () => {
+    const { app } = await fixture()
+    const native = new NativeCourseService(app)
+    const current = native.current(); native.close()
+    await expect(current).rejects.toMatchObject({ code: 'native_course_unavailable' })
+    expect(app.getCourse).not.toHaveBeenCalled()
+    expect(app.activateRoute).not.toHaveBeenCalled()
+  })
+  it('quarantines a timed-out mutation until the provider actually settles', async () => {
+    const { app } = await fixture()
+    let resolve!: () => void
+    vi.mocked(app.activateRoute!).mockImplementationOnce(() => new Promise<void>(r => { resolve = r }))
+    const native = new NativeCourseService(app, 10)
+    await expect(native.activate(document(), true)).rejects.toMatchObject({ code: 'native_course_timeout' })
+    await expect(native.activate({ ...document(2), courseId: 'another-course' }, true)).rejects.toMatchObject({ code: 'native_course_busy' })
+    expect(app.activateRoute).toHaveBeenCalledTimes(1)
+    native.close()
+    const replacement = new NativeCourseService(app, 10)
+    await expect(replacement.activate(document(), true)).rejects.toMatchObject({ code: 'native_course_busy' })
+    resolve(); await Promise.resolve(); await Promise.resolve()
+    await replacement.activate(document(), true)
+    expect(app.activateRoute).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens a cached course without waiting for optional native restoration', async () => {
+    const f = await fixture()
+    await f.store.receive(encoded(document()))
+    vi.mocked(f.app.resourcesApi!.getResource).mockImplementation(() => new Promise(() => undefined))
+    const fresh = new CourseStore(f.target, new NativeCourseService(f.app, 10))
+    await fresh.open({ restoreNative: false })
+    const restoration = fresh.restoreNative()
+    await restoration
+    await fresh.close()
+  })
+})
