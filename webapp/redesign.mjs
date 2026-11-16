@@ -11,13 +11,14 @@ const node = (tag, className, text) => { const n = document.createElement(tag); 
 export function displayValue(element, formatted) {
   const text = String(formatted ?? '—')
   const parts = /^(.*)( (?:PT|STB|NM|kn|°T))$/.exec(text)
-  if (parts) element.append(document.createTextNode(parts[1]), node('small', / (PT|STB)$/.test(parts[2]) ? 'side-suffix' : 'unit', parts[2]))
+  if (parts) { const suffix = node('small', / (PT|STB)$/.test(parts[2]) ? 'side-suffix' : 'unit', parts[2]); if (suffix.className === 'side-suffix') suffix.dataset.side = parts[2].trim(); element.append(document.createTextNode(parts[1]), suffix) }
   else element.textContent = text
   return element
 }
 export const STATUS_ICONS = {
   signal: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 6a15 15 0 0 0 0 20M22 6a15 15 0 0 1 0 20M13 10a9 9 0 0 0 0 12M19 10a9 9 0 0 1 0 12M16 18v10"/><circle cx="16" cy="15" r="2"/></svg>',
-  cloud: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 25a6 6 0 0 1-1-12 9 9 0 0 1 17-2 7 7 0 0 1 0 14Z"/><path d="m11 17 4 4 7-8"/></svg>',
+  cloud: '<svg viewBox="-1 -5 28 28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18C2.7 18 0 15.6 0 12.6C0 9.9 2.1 7.7 4.9 7.3C5.6 3.1 9.1 0 13.4 0C17.1 0 20.3 2.4 21.3 5.8C24 6.5 26 8.9 26 11.8C26 15.2 23.3 18 19.9 18L6 18Z"/><path d="M9 9.8L12 12.8L17.6 7.2"/></svg>',
+  cloudUpload: '<svg viewBox="-1 -5 28 28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18C2.7 18 0 15.6 0 12.6C0 9.9 2.1 7.7 4.9 7.3C5.6 3.1 9.1 0 13.4 0C17.1 0 20.3 2.4 21.3 5.8C24 6.5 26 8.9 26 11.8C26 15.2 23.3 18 19.9 18L6 18Z"/><path d="M13 13V5M9 9L13 5L17 9"/></svg>',
   vessel: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 23h26l-5 6H9Zm13-3V3L5 20Zm3 0V6l9 14Z"/></svg>'
 }
 export function statusPresentation(tracking, connected) {
@@ -127,20 +128,24 @@ export function renderDisplay(grid, view, readings, snapshot, tile, waypoint) {
   const windCard = (id, angleId, title, angle) => {
     const wrapper = node('div', `wind-card ${id}-card`)
     const speed = tileFor(id); speed.querySelector('.label').textContent = title
+    wrapper.dataset.windBasis = wind.basis
+    speed.title = id === 'tws' ? 'True wind · ' + wind.basis : 'Apparent wind'
+    const main = node('div', 'wind-main'); main.append(speed)
     const angleRow = angleId ? tileFor(angleId) : node('div', 'wind-secondary')
     if (!angleId) angleRow.append(node('span', 'label', 'TWA'), displayValue(node('span', 'value'), angle?.available ? windAngleText(angle.value) : '—'))
     if (!angleId) {
-      const twd = node('span', 'wind-direction-note', byId.twd?.available ? `TWD ${String(Math.round(byId.twd.value)%360).padStart(3,'0')}°` : 'TWD —')
-      angleRow.append(twd)
+      const twd = node('span', 'wind-direction-note')
+      twd.append(node('span', 'label', 'TWD'), node('span', 'value', byId.twd?.available ? `${String(Math.round(byId.twd.value)%360).padStart(3,'0')}°` : '—'))
+      main.append(twd)
     }
-    wrapper.append(speed, angleRow)
+    wrapper.append(main, angleRow)
     return wrapper
   }
   const hero = grid.querySelector('.hero-dial') || createDial()
   hero.dataset.area = 'dial'
   const legend = node('p', 'dial-legend', 'A apparent · T true · inner ring: wind angle · ◆ mark · dashed COG')
   if (hero.parentElement === grid) hero.remove()
-  grid.replaceChildren(sog, stw, hero, windCard('aws', 'awa', 'APPARENT WIND'), windCard('tws', null, `TRUE WIND · ${wind.basis === 'water' ? 'WATER' : wind.basis === 'ground' ? 'GROUND' : 'UNAVAILABLE'}`, wind.angle), ...small, legend)
+  grid.replaceChildren(sog, stw, hero, windCard('aws', 'awa', 'APPARENT WIND'), windCard('tws', null, 'TRUE WIND', wind.angle), ...small, legend)
   dialControllers.get(hero).update(readings, wind, waypoint?.[0])
 }
 export function windMarkerMarkup(readings, snapshot, now = Date.now()) {

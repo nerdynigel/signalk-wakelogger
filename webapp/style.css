@@ -122,3 +122,86 @@ body[data-view=instruments] .wind-card{justify-content:flex-start;overflow-wrap:
 .hero-dial .dial-heading{top:0;min-width:0;padding:0;border:0;border-radius:0;background:transparent;line-height:1.1}
 .hero-dial .dial-heading strong{font-size:22px;font-weight:500}
 @media(max-width:760px){body[data-view=instruments] .hero-dial .dial-heading{top:0;padding:0}body[data-view=instruments] .hero-dial .dial-heading strong{font-size:20px}}
+
+/* FigCraft pages 06–08: a quiet weather field below all navigation overlays. */
+.wind-flow-layer{position:absolute;inset:0;width:100%;height:100%;z-index:250;pointer-events:none}
+.wind-calm{position:absolute;left:16px;bottom:auto;z-index:250;pointer-events:none;font-size:11px;color:#fff;text-shadow:0 1px 3px #29343f}
+.wind-main{display:contents}
+.wind-card .wind-direction-note{display:none}
+.wind-card .side-suffix{display:inline-block;margin-left:4px;padding:3px 6px;border-radius:4px;background:#2fb774;color:#071813;font-size:12px;line-height:1.1;font-weight:600;vertical-align:middle;letter-spacing:0}
+.wind-card .side-suffix[data-side=PT]{background:#e5484d;color:#19090a}
+body[data-view=instruments] .wind-card .instrument .value{font-size:clamp(34px,5.3vw,76px)}
+body[data-view=instruments] .wind-card .instrument[data-reading=awa] .value,body[data-view=instruments] .wind-secondary .value{font-size:clamp(20px,2.5vw,36px);line-height:1.2}
+body[data-view=instruments] .wind-card .instrument[data-reading=awa]{flex-wrap:wrap}
+body[data-view=instruments] .wind-secondary{display:flex;flex-wrap:wrap;align-items:center}
+body[data-view=instruments] .wind-card .side-suffix{font-size:14px}
+.status-icon{align-items:center;justify-content:center}
+.status-icon svg{display:block;flex:none}
+.mobile-status{align-items:center}
+.upload-progress{margin:-4px 0 18px 40px}
+.upload-progress p{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 7px}
+.upload-progress progress{display:block;width:100%;height:6px;border:0;border-radius:6px;overflow:hidden;accent-color:var(--warning);background:#29343f}
+.upload-progress progress::-webkit-progress-bar{background:#29343f;border-radius:6px}
+.upload-progress progress::-webkit-progress-value{background:var(--warning);border-radius:6px}
+.upload-progress progress::-moz-progress-bar{background:var(--warning);border-radius:6px}
+.race-next-mark{margin:6px 0 16px}
+#choose-next-mark{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;border:0;padding:0;background:transparent;width:100%;color:var(--ink);font-size:24px}
+#choose-next-mark small{color:var(--panel-accent);font-size:12px;white-space:nowrap}
+#mark-picker{position:fixed;inset:150px 32px auto auto;margin:0;width:360px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 170px);padding:16px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;z-index:20000}
+#mark-picker[open]{display:flex;flex-direction:column;gap:12px}
+#mark-picker::backdrop{background:#0008}
+#mark-picker .dialog-heading{margin:0}
+#mark-picker .dialog-heading button{padding:6px;background:transparent;border:0;color:var(--panel-accent);font-size:12px}
+.mark-picker-help{font-size:12px;color:var(--muted);line-height:1.45;margin:0}
+.mark-picker-list{overflow:auto;min-height:0;display:grid;gap:3px}
+.mark-picker-row{display:flex;align-items:center;gap:10px;min-height:40px;width:100%;border:1px solid transparent;background:transparent;text-align:left;padding:5px 8px;font-size:13px;color:var(--ink)}
+.mark-picker-row.passed{color:var(--muted)}
+.mark-picker-row[aria-selected=true]{border-color:var(--panel-accent)}
+.mark-badge{display:inline-flex;flex:none;justify-content:center;align-items:center;width:23px;height:23px;border:1px solid currentColor;background:#006a85;color:#f6fbff;border-radius:50%;font-size:11px}
+.passed .mark-badge{color:var(--muted);background:#29343f}
+.current .mark-badge{background:#ff6fd8;color:#111923}
+.mark-picker-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.mark-picker-tag{font-size:9px;letter-spacing:.06em;color:var(--muted)}
+.current .mark-picker-tag{color:#ff6fd8}
+.mark-picker-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mark-picker-actions button{min-height:44px;font-size:12px}
+.mark-picker-error{font-size:11px;line-height:1.4;color:var(--warning);margin:0}
+.mark-picker-error:empty{display:none}
+.map-mark-card{position:absolute;z-index:750;width:280px;padding:12px;background:var(--paper);border:1px solid var(--panel-accent);border-radius:12px;box-shadow:0 4px 20px #0005}
+.map-mark-heading{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:13px}
+.map-mark-heading button{padding:0 6px;min-height:28px;border:0;background:transparent;color:var(--muted)}
+.map-mark-detail{display:block;color:var(--muted);font-size:11px;margin:0 0 10px}
+.map-mark-card>.primary{width:100%;min-height:40px;font-size:12px}
+.mark.selected{outline:2px solid var(--panel-accent);outline-offset:3px}
+@media(max-width:760px){
+ body[data-view=instruments] .wind-card{padding:8px 12px;gap:3px}
+ body[data-view=instruments] .wind-main{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:end;min-width:0}
+ body[data-view=instruments] .wind-main .instrument .value{font-size:clamp(28px,8.5vw,34px);line-height:1.15}
+ body[data-view=instruments] .wind-main>.instrument{grid-column:1;grid-row:1!important}
+ body[data-view=instruments] .wind-main .wind-direction-note{display:grid;margin:0;color:var(--ink);align-self:end;grid-column:2;grid-row:1}
+ body[data-view=instruments] .wind-direction-note .label{font-size:9px;color:var(--muted)}
+ body[data-view=instruments] .wind-direction-note .value{font-size:22px;line-height:1.15;font-weight:400;white-space:nowrap}
+ body[data-view=instruments] .wind-card .instrument[data-reading=awa] .value,body[data-view=instruments] .wind-secondary .value{font-size:20px;line-height:1.2}
+ body[data-view=instruments] .wind-secondary{display:flex;align-items:center;gap:5px;margin:0}
+ body[data-view=instruments] .wind-secondary .label{font-size:9px}
+ body[data-view=instruments] .wind-card .side-suffix{font-size:11px;padding:2px 4px}
+ #mark-picker{inset:auto 0 0;margin:0;width:100%;max-width:100%;max-height:calc(100dvh - 90px);border-radius:16px 16px 0 0;padding:16px 12px}
+ .mark-picker-row{min-height:44px}
+ .map-mark-card{left:12px;right:12px;top:74px;width:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;padding:7px 10px}
+ .map-mark-card[hidden]{display:none}
+ .map-mark-heading{grid-column:1;font-size:12px}
+ .map-mark-heading button{min-height:24px}
+ .map-mark-detail{grid-column:1;font-size:10px;margin:0}
+ .map-mark-card>.primary{grid-column:2;grid-row:1/3;width:auto;padding:6px 10px;min-height:44px}
+ .map-mark-card .mark-picker-error{grid-column:1/-1}
+}
+
+
+@media(min-width:761px){
+ #mark-picker::backdrop{background:transparent}
+ .mark-picker-open .instrument-rail{position:relative}
+ .mark-picker-open .instrument-rail:after{content:"";position:absolute;inset:0;background:#0008;pointer-events:none;border-radius:12px;z-index:20}
+}
+
+.mark-picker-selected{font-size:16px;color:var(--panel-accent);line-height:1}
+.mark-picker-actions .primary,.map-mark-card>.primary,#advance-point{background:var(--panel-accent);border-color:var(--panel-accent);color:var(--shell)}
