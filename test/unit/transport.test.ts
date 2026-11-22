@@ -358,6 +358,20 @@ describe('WakeLoggerTransport', () => {
     expect(onProfile).toHaveBeenCalledWith(replacement)
     const acknowledgement = JSON.parse(client.publications.filter((entry) => entry.topic.endsWith('/profile-ack')).at(-1)!.payload)
     expect(acknowledgement).toMatchObject({ profileId: 'coastal', revision: 2, status: 'applied' })
+    // The server missed the ACK. A resumed session resubscribes and receives the retained assignment.
+    client.emit('close')
+    await vi.waitFor(() => expect(clients.length).toBe(2), { timeout: 2000 })
+    const resumed = clients[1]!
+    resumed.emit('connect'); await tick()
+    expect(resumed.subscriptions).toContain('wakelogger/v1/devices/dev_1/profile')
+    const deliver = async (candidate: typeof replacement) => {
+      resumed.emit('message', 'wakelogger/v1/devices/dev_1/profile', Buffer.from(JSON.stringify(candidate)))
+      await tick(); await tick()
+      return JSON.parse(resumed.publications.filter(entry => entry.topic.endsWith('/profile-ack')).at(-1)!.payload)
+    }
+    expect(await deliver(replacement)).toMatchObject({ revision: 2, status: 'applied' })
+    expect(await deliver({ ...replacement, revision: 1 })).toMatchObject({ status: 'rejected' })
+    expect(await deliver({ ...replacement, profileId: 'standard', revision: 1 })).toMatchObject({ status: 'applied' })
     await transport.stop()
   })
 
@@ -599,6 +613,28 @@ describe('upload recovery isolation', () => {
     expect((f.transport as any).inFlight).toHaveLength(1)
     f.setNow(33000); await f.sendAck(6)
     expect(f.transport.transportMetrics().acknowledgementLatencyMs).toBe(32000)
+    await f.transport.stop({ publishOffline: false, force: true })
+  })
+
+  it('drains a full-rate historical cohort through durable acknowledgements', async () => {
+    const f = setup(5612, { profile: { ...DEFAULT_TELEMETRY_PROFILE, revision: 2, transport: {
+      batchSize: 60, maxPayloadBytes: 65536, normalBacklogBytesPerSecond: 65536, constrainedBacklogBytesPerSecond: 65536
+    } } })
+    await f.start()
+    const client = clients.at(-1)!
+    let cursor = 0
+    for (let second = 1; second <= 100 && cursor < 5612; second++) {
+      f.setNow(1000 + second * 1000)
+      await (f.transport as any).pump()
+      const batches = client.publications.splice(0).filter(p => p.topic.endsWith('/telemetry'))
+      for (const batch of batches) {
+        const samples = JSON.parse(batch.payload).samples
+        expect(samples[0].sequence).toBe(cursor + 1)
+        cursor = samples.at(-1).sequence
+        await f.sendAck(cursor)
+      }
+    }
+    expect(await f.outbox.stats()).toMatchObject({ acknowledgedSequence: 5612, messageCount: 0 })
     await f.transport.stop({ publishOffline: false, force: true })
   })
 

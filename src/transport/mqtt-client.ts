@@ -29,7 +29,7 @@ interface TransportOptions {
   now?: () => number
 }
 
-interface InFlightBatch { first: number; through: number; sentAt: number; lastSentAt: number; retry?: boolean; retryAfter?: number; selectionMs?: number; brokerAt?: number; publishStartedAt?: number }
+interface InFlightBatch { first: number; through: number; sentAt: number; lastSentAt: number; retry?: boolean; timeoutMs?: number; retryAfter?: number; selectionMs?: number; brokerAt?: number; publishStartedAt?: number }
 
 export class WakeLoggerTransport {
   private client?: MqttClient
@@ -246,7 +246,7 @@ export class WakeLoggerTransport {
     if (client !== this.client || this.stopped) return
     this.reconnectAttempt = 0
     this.supportsTripPolicy = false
-    this.inFlight.forEach(batch => { batch.retry = true; batch.retryAfter = undefined })
+    this.inFlight.forEach(batch => { batch.retry = true; batch.retryAfter = undefined; batch.timeoutMs = undefined })
     const stats = await this.outbox.stats()
     this.backlogMessageCount = stats.messageCount
     this.inFlight = this.inFlight.filter(batch => batch.through > stats.acknowledgedSequence)
@@ -458,13 +458,22 @@ export class WakeLoggerTransport {
     }
   }
 
+  private profileOperation: Promise<void> = Promise.resolve()
+
   private async handleProfile(payload: Buffer): Promise<void> {
+    const operation = this.profileOperation.then(() => this.applyManagedProfile(payload))
+    this.profileOperation = operation.then(() => undefined, () => undefined)
+    const acknowledgement = await operation
+    if (this.client?.connected) await this.publish(this.client, this.topics.profileAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
+  }
+
+  private async applyManagedProfile(payload: Buffer): Promise<ProfileAcknowledgement> {
     let acknowledgement: ProfileAcknowledgement
     try {
       if (payload.length > 16_384) throw new Error('profile_too_large')
       const profile = parseTelemetryProfile(JSON.parse(payload.toString('utf8')))
       if (!profile) throw new Error('profile_invalid')
-      if (profile.revision < this.profile.revision) throw new Error('profile_revision_rollback')
+      if (profile.profileId === this.profile.profileId && profile.revision < this.profile.revision) throw new Error('profile_revision_rollback')
       await this.options.onProfile?.(profile)
       this.profile = profile
       acknowledgement = { v: 1, profileId: profile.profileId, revision: profile.revision, status: 'applied', at: this.now() }
@@ -472,15 +481,19 @@ export class WakeLoggerTransport {
       const candidate = safeProfileIdentity(payload)
       acknowledgement = { v: 1, profileId: candidate.profileId, revision: candidate.revision, status: 'rejected', at: this.now(), errorCode: sanitizeProfileError(error) }
     }
-    if (this.client?.connected) await this.publish(this.client, this.topics.profileAck, JSON.stringify(acknowledgement), { qos: 1, retain: true })
+    return acknowledgement
   }
 
   private async checkAcknowledgementTimeout(): Promise<void> {
-    const expired = this.inFlight.filter(batch => !batch.retry && this.now() - batch.lastSentAt >= 30_000)
+    const expired = this.inFlight.filter(batch => !batch.retry && this.now() - batch.lastSentAt >= (batch.timeoutMs ?? 30_000))
     if (!expired.length) return
     this.monitor.failure('acknowledgement_timeout')
     this.syncMode()
-    for (const batch of expired) { batch.retry = true; batch.retryAfter = undefined }
+    for (const batch of expired) {
+      batch.retry = true
+      batch.retryAfter = undefined
+      batch.timeoutMs = Math.min(120_000, (batch.timeoutMs ?? 30_000) * 2)
+    }
     void this.pump()
   }
 
