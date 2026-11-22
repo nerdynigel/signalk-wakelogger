@@ -23,6 +23,7 @@ interface SegmentContents { name: string; records: SegmentRecord[]; bytes: numbe
 
 export class FileOutbox implements OutboxStore {
   private metadata: Metadata = { version: 1, nextSequence: 1, acknowledgedSequence: 0, droppedCount: 0, droppedThrough: 0 }
+  private summaries = new Map<string, { name: string; bytes: number; records: { sequence: number; capturedAt: number; protected: boolean }[] }>()
   private opened = false
   private operation: Promise<void> = Promise.resolve()
 
@@ -30,6 +31,7 @@ export class FileOutbox implements OutboxStore {
 
   async open(): Promise<void> {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 })
+    this.summaries.clear()
     this.metadata = await this.readMetadata()
     const segments = await this.readSegments(true)
     const maximum = segments.flatMap((s) => s.records).reduce((value, r) => Math.max(value, r.sample.sequence), 0)
@@ -57,6 +59,7 @@ export class FileOutbox implements OutboxStore {
         segment = segmentName(sample.sequence)
         rotated = true
       }
+      this.summaries.delete(segment)
       const handle = await fs.open(path.join(this.directory, segment), 'a', 0o600)
       try {
         await handle.write(record)
@@ -133,14 +136,14 @@ export class FileOutbox implements OutboxStore {
 
   async stats(): Promise<OutboxStats> {
     return this.exclusive(async () => {
-      const segments = await this.readSegments(false)
+      const segments = await this.segmentSummaries()
       const pending = segments.flatMap((segment) => segment.records)
-        .filter((record) => record.sample.sequence > this.metadata.acknowledgedSequence)
+        .filter((record) => record.sequence > this.metadata.acknowledgedSequence)
       return {
         storageBackend: 'file',
         messageCount: pending.length,
         diskBytes: segments.reduce((total, segment) => total + segment.bytes, 0),
-        oldestCapturedAt: pending[0]?.sample.capturedAt,
+        oldestCapturedAt: pending[0]?.capturedAt,
         acknowledgedSequence: this.metadata.acknowledgedSequence,
         currentSequence: this.metadata.nextSequence - 1,
         excludedCount: this.metadata.excludedCount ?? 0,
@@ -161,7 +164,7 @@ export class FileOutbox implements OutboxStore {
   }
 
   private async enforceLimitsUnlocked(reserveBytes = 0): Promise<void> {
-    const segments = await this.readSegments(false)
+    const segments = await this.segmentSummaries()
     let total = segments.reduce((sum, segment) => sum + segment.bytes, 0)
     const now = this.options.now?.() ?? Date.now()
     const cutoff = now - this.options.maxAgeMs
@@ -169,16 +172,17 @@ export class FileOutbox implements OutboxStore {
     for (let index = 0; index < segments.length - 1; index += 1) {
       const segment = segments[index]
       if (!segment) continue
-      const newest = segment.records.at(-1)?.sample
+      const newest = segment.records.at(-1)
       const tooOld = newest !== undefined && newest.capturedAt < cutoff
       if (!tooOld && total + reserveBytes <= this.options.maxBytes) break
-      const unacknowledged = segment.records.filter((record) => record.sample.sequence > this.metadata.acknowledgedSequence)
-      if (this.options.protectRecordingHistory && unacknowledged.some(({ sample }) => sample.trackingSessionId || sample.recording)) break
+      const unacknowledged = segment.records.filter((record) => record.sequence > this.metadata.acknowledgedSequence)
+      if (this.options.protectRecordingHistory && unacknowledged.some(record => record.protected)) break
       if (unacknowledged.length) {
         this.metadata.droppedCount += unacknowledged.length
-        this.metadata.droppedThrough = unacknowledged.at(-1)?.sample.sequence ?? this.metadata.droppedThrough
+        this.metadata.droppedThrough = unacknowledged.at(-1)?.sequence ?? this.metadata.droppedThrough
         metadataChanged = true
       }
+      this.summaries.delete(segment.name)
       await fs.unlink(path.join(this.directory, segment.name)).catch(ignoreMissing)
       total -= segment.bytes
     }
@@ -187,10 +191,11 @@ export class FileOutbox implements OutboxStore {
   }
 
   private async reclaimAcknowledgedSegments(): Promise<void> {
-    const segments = await this.readSegments(false)
+    const segments = await this.segmentSummaries()
     for (const segment of segments.slice(0, -1)) {
-      const lastSequence = segment.records.at(-1)?.sample.sequence ?? 0
+      const lastSequence = segment.records.at(-1)?.sequence ?? 0
       if (lastSequence > this.metadata.acknowledgedSequence) break
+      this.summaries.delete(segment.name)
       await fs.unlink(path.join(this.directory, segment.name)).catch(ignoreMissing)
     }
   }
@@ -225,6 +230,22 @@ export class FileOutbox implements OutboxStore {
       await handle.close()
     }
     await fs.rename(temporary, target)
+  }
+
+  private async segmentSummaries() {
+    const result = []
+    for (const name of await this.segmentNames()) {
+      let summary = this.summaries.get(name)
+      if (!summary) {
+        const segment = await this.readSegment(name, false)
+        summary = { name, bytes: segment.bytes, records: segment.records.map(({ sample }) => ({
+          sequence: sample.sequence, capturedAt: sample.capturedAt, protected: Boolean(sample.trackingSessionId || sample.recording)
+        })) }
+        this.summaries.set(name, summary)
+      }
+      result.push(summary)
+    }
+    return result
   }
 
   private async readSegments(repair: boolean): Promise<SegmentContents[]> {
