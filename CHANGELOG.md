@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.2.0-beta.19] - 2026-11-22
+
+- Post-race uploads spend less time scanning the file queue and retry less often while waiting for a slow receipt.
+- Managed profile changes apply in order and reconnects confirm the current revision again.
+
+[Release notes and upgrade instructions](docs/releases/0.2.0-beta.19.md)
+
 ## [0.2.0-beta.18] - 2026-11-16
 
 - Larger AWA/TWA readings and a larger phone TWD readout keep wind speed as the main value. The true-wind heading is simpler and the cloud icon is centred.
